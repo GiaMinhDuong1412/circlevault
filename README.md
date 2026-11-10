@@ -5,6 +5,8 @@ Giao diện theo phong cách CircleLifeTeam. Cài một lần, app tự báo và
 
 ## Cài cho người dùng
 
+Hướng dẫn từng bước có ảnh cho người mới: https://claude.ai/artifact/JkiAeGUDjzY7RP3P97e2h7
+
 1. Vào **https://github.com/GiaMinhDuong1412/circlevault-releases/releases/latest**
 2. Tải `CircleVault-Setup-<phiên bản>.exe`, bấm đúp để cài (không cần quyền admin).
 3. Mở **CircleVault** từ màn hình Desktop. Đã kèm sẵn ffmpeg và Deno, không phải cài thêm gì.
