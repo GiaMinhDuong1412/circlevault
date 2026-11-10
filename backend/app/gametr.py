@@ -1,0 +1,1161 @@
+"""Việt hóa game từ file (tab Dịch → Việt hóa game): Ren'Py và RPG Maker MV/MZ.
+
+Quy trình: quét thư mục game → lấy mọi câu chữ (không trùng) → dịch theo thứ tự kịch bản → người dùng xem/sửa → áp dụng.
+
+Ren'Py: KHÔNG sửa file của game. Chỉ thêm `game/zz_circlevault_vi.rpy` + `game/circlevault_vi.json`:
+  - `config.say_menu_text_filter` thay câu thoại/lựa chọn (khóa = chuỗi đúng như trong kịch bản, trước khi thay [biến]),
+  - `config.replace_text` thay chữ giao diện (nút, tên nhân vật…),
+  - `config.font_replacement_map` đổi phông của game sang DejaVuSans (có dấu tiếng Việt) nếu người dùng bật.
+  Đọc kịch bản từ .rpy, hoặc .rpyc (pickle – mở bằng bộ đọc an toàn, chỉ dựng đối tượng giả, không chạy mã), cả trong .rpa.
+RPG Maker MV/MZ: sửa data/*.json (sao lưu bản gốc vào `<game>/CircleVault-ban-goc/` trước), tự xuống dòng câu thoại,
+  thêm khung thoại khi dài quá 4 dòng; đổi phông (gamefont.css / System.json) sang phông Windows có dấu nếu bật.
+Không làm game có mã hóa/chống chỉnh sửa (không vượt bảo vệ).
+"""
+from __future__ import annotations
+
+import copy
+import io
+import json
+import os
+import pickle
+import re
+import shutil
+import threading
+import time
+import uuid
+import zlib
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from . import config, translate
+
+router = APIRouter(prefix="/api/translate/games", dependencies=[Depends(translate._local_only)])
+GAMES = config.DATA / "translate" / "games"
+BACKUP_DIR = "CircleVault-ban-goc"
+RENPY_PATCH = "zz_circlevault_vi.rpy"
+RENPY_JSON = "circlevault_vi.json"
+FONT_NAME = "circlevault-vi.ttf"
+BATCH = 60
+_lock = threading.Lock()
+
+
+class GameError(RuntimeError):
+    pass
+
+
+# ================================================================== mã trong câu (giữ nguyên khi dịch)
+CODES = {
+    "renpy": re.compile(r"\{\{|\[\[|\{[^{}]*\}|\[[^\[\]]*\]|%\([^)]*\)[sdif]|%[sd]"),
+    "rpg": re.compile(r"\\[A-Za-z]+\[[^\]]*\]|\\[A-Za-z]+<[^>]*>|\\[{}$.|!><^\\]|%\d"),
+}
+
+
+def protect(text: str, kind: str) -> tuple[str, list[str]]:
+    codes: list[str] = []
+
+    def sub(m):
+        codes.append(m.group(0))
+        return f"⟦{len(codes)}⟧"
+    return CODES[kind].sub(sub, text), codes
+
+
+def restore_codes(text: str, codes: list[str]) -> str | None:
+    """Trả về None nếu bản dịch làm mất / thêm mã (khi đó giữ câu gốc để game không lỗi)."""
+    found = re.findall(r"⟦(\d+)⟧", text)
+    if sorted(int(x) for x in found) != list(range(1, len(codes) + 1)):
+        return None
+    return re.sub(r"⟦(\d+)⟧", lambda m: codes[int(m.group(1)) - 1], text)
+
+
+# ================================================================== pickle an toàn (RPA, RPYC)
+class _Stub:
+    """Đối tượng giả cho lớp của Ren'Py: chỉ giữ dữ liệu, không chạy mã."""
+    _cls = "?"
+
+    def __init__(self, *a, **k):
+        self._args = a
+
+    def __setstate__(self, state):
+        if isinstance(state, tuple) and len(state) == 2:
+            d, slots = state
+            if isinstance(d, dict):
+                self.__dict__.update(d)
+            if isinstance(slots, dict):
+                self.__dict__.update(slots)
+        elif isinstance(state, dict):
+            self.__dict__.update(state)
+        else:
+            self._state = state
+
+    def __repr__(self):
+        return f"<{self._cls}>"
+
+
+_stub_cache: dict[str, type] = {}
+
+
+def _stub(module: str, name: str) -> type:
+    key = module + "." + name
+    if key not in _stub_cache:
+        base: tuple = (_Stub,)
+        if name == "PyExpr":                     # renpy.ast.PyExpr là str kèm tên file, số dòng
+            cls = type(name, (str,), {"_cls": key, "__new__": lambda c, s="", *a, **k: str.__new__(c, s),
+                                      "__setstate__": lambda self, st: None})
+            _stub_cache[key] = cls
+            return cls
+        if "List" in name:
+            base = (list,)
+        elif "Dict" in name or name == "OrderedDict":
+            base = (dict,)
+        elif "Set" in name:
+            base = (set,)
+        cls = type(name, base, {"_cls": key})
+        if base != (_Stub,):
+            cls.__setstate__ = lambda self, st: self.__dict__.update(st) if isinstance(st, dict) else None
+        _stub_cache[key] = cls
+    return _stub_cache[key]
+
+
+_SAFE_BUILTINS = {"set", "frozenset", "list", "dict", "tuple", "str", "bytes", "int", "float", "complex", "bool",
+                  "object", "bytearray", "slice", "range"}
+
+
+class SafeUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module in ("builtins", "__builtin__") and name in _SAFE_BUILTINS:
+            import builtins
+            return getattr(builtins, name)
+        if module == "collections" and name in ("OrderedDict", "defaultdict", "deque"):
+            import collections
+            return getattr(collections, name)
+        if module.startswith(("renpy", "store", "_ast", "ast")) or module == "__main__":
+            return _stub(module, name)
+        if module in ("copy_reg", "copyreg") and name == "_reconstructor":
+            return _reconstructor
+        raise pickle.UnpicklingError(f"không cho phép {module}.{name}")
+
+
+def _reconstructor(cls, base, state):
+    if base is object or not isinstance(cls, type):
+        return cls.__new__(cls) if isinstance(cls, type) else _Stub()
+    obj = base.__new__(cls, state) if state is not None else base.__new__(cls)
+    return obj
+
+
+def safe_loads(data: bytes):
+    return SafeUnpickler(io.BytesIO(data), encoding="utf-8", errors="surrogateescape").load()
+
+
+# ================================================================== Ren'Py: đọc file
+def _rpa_index(path: Path) -> dict[str, tuple[int, int, bytes]]:
+    with open(path, "rb") as f:
+        head = f.read(64).split(b"\n")[0].decode("latin-1")
+        parts = head.split()
+        if not parts or parts[0] not in ("RPA-3.0", "RPA-2.0", "RPA-3.2"):
+            raise GameError(f"{path.name}: định dạng .rpa lạ ({parts[0] if parts else '?'})")
+        offset = int(parts[1], 16)
+        key = 0
+        if parts[0] == "RPA-3.0":
+            key = int(parts[2], 16)
+        elif parts[0] == "RPA-3.2":
+            key = int(parts[3], 16)
+        f.seek(offset)
+        index = safe_loads(zlib.decompress(f.read()))
+    out = {}
+    for name, entries in index.items():
+        if isinstance(name, bytes):
+            name = name.decode("utf-8", "replace")
+        e = entries[0]
+        off, length = e[0] ^ key, e[1] ^ key
+        prefix = e[2] if len(e) > 2 else b""
+        if isinstance(prefix, str):
+            prefix = prefix.encode("latin-1")
+        out[name] = (off, length, prefix)
+    return out
+
+
+def _rpa_read(path: Path, entry) -> bytes:
+    off, length, prefix = entry
+    with open(path, "rb") as f:
+        f.seek(off)
+        return prefix + f.read(length - len(prefix))
+
+
+def renpy_sources(game: Path) -> list[tuple[str, str, bytes]]:
+    """[(tên tương đối, 'rpy'|'rpyc', dữ liệu)] – file rời + trong .rpa; bỏ thư mục tl/ (bản dịch có sẵn)."""
+    files: dict[str, tuple[str, bytes]] = {}
+
+    def add(rel: str, data_fn):
+        rel = rel.replace("\\", "/")
+        low = rel.lower()
+        if low.startswith(("tl/", "renpy/")) or "/tl/" in low or rel.endswith(RENPY_PATCH) or rel.endswith(RENPY_PATCH + "c"):
+            return
+        base, ext = os.path.splitext(rel)
+        if ext not in (".rpy", ".rpyc"):
+            return
+        cur = files.get(base)
+        if cur is None or (cur[0] == "rpy" and ext == ".rpyc"):   # ưu tiên .rpyc: đúng y như game đang chạy
+            files[base] = (ext[1:], data_fn())
+
+    for p in sorted(game.rglob("*.rpa")):
+        try:
+            idx = _rpa_index(p)
+        except (GameError, OSError, zlib.error, pickle.UnpicklingError, ValueError, IndexError) as e:
+            raise GameError(f"Không đọc được {p.name}: {e}")
+        for name, entry in idx.items():
+            if name.endswith((".rpy", ".rpyc")):
+                add(name, lambda p=p, entry=entry: _rpa_read(p, entry))
+    for p in sorted(game.rglob("*")):
+        if p.suffix in (".rpy", ".rpyc") and p.is_file():
+            add(str(p.relative_to(game)), p.read_bytes)
+    return [(b + "." + k, k, d) for b, (k, d) in files.items()]
+
+
+# ------------------------------------------------------------------ .rpy
+def _dequote(m):
+    c = m.group(1)
+    if c == "{":
+        return "{{"
+    if c == "[":
+        return "[["
+    if c == "%":
+        return "%%"
+    if c == "n":
+        return "\n"
+    if c[0] == "u" and m.group(2):
+        return chr(int(m.group(2), 16))
+    return c
+
+
+_ESC = re.compile(r"\\(u([0-9a-fA-F]{1,4})|.)", re.S)
+
+
+def _lits(lit: str) -> list[str]:
+    """Chuỗi trong .rpy → chuỗi Ren'Py thật sự dùng (giống renpy/lexer.py: string() và triple_string()).
+    Chuỗi 3 dấu nháy ở câu thoại được tách thành nhiều câu theo dòng trống (chế độ monologue)."""
+    raw = lit.startswith("r")
+    if raw:
+        lit = lit[1:]
+    if lit[:3] in ('"""', "'''", "```"):
+        body = lit[3:-3]
+        if raw:
+            return [body]
+        body = re.sub(r" *\n *", "\n", body)
+        out = []
+        for part in body.split("\n\n"):
+            part = part.strip()
+            if part:
+                out.append(_ESC.sub(_dequote, re.sub(r"[ \n]+", " ", part)))
+        return out
+    body = lit[1:-1]
+    if raw:
+        return [body]
+    return [_ESC.sub(_dequote, re.sub(r"[ \n]+", " ", body))]
+
+
+def _lit(lit: str) -> str:
+    return " ".join(_lits(lit))
+
+
+_STR = r'r?(?:"""(?:[^"\\]|\\.|"(?!""))*"""|\'\'\'(?:[^\'\\]|\\.|\'(?!\'\'))*\'\'\'|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|`(?:[^`\\\n]|\\.)*`)'
+_STR_RE = re.compile(_STR, re.S)
+_KEYWORDS = {"define", "default", "show", "scene", "hide", "play", "stop", "queue", "jump", "call", "return", "pause",
+             "with", "window", "voice", "image", "if", "elif", "else", "while", "for", "python", "init", "label", "screen",
+             "style", "transform", "translate", "old", "new", "nvl", "camera", "layeredimage", "menu", "pass", "renpy",
+             "text", "textbutton", "add", "use", "key", "action", "font", "outlines", "imagebutton", "hotspot", "frame",
+             "vbox", "hbox", "has", "at", "zorder", "modal", "tag", "on", "timer", "bar", "vbar", "viewport", "grid",
+             "fixed", "side", "button", "input", "mousearea", "testcase", "rpy", "audio", "sound", "music", "help"}
+_SAY = re.compile(r"^(?:(?P<who>" + _STR + r"|[A-Za-z_][\w.]*)(?:\s+(?:@\s*)?[\w-]+)*\s+)?(?P<what>" + _STR + r")"
+                  r"(?:\s+(?:with\s+\S+|id\s+\S+|nointeract|\(.*\)))*\s*$", re.S)
+_MENU_ITEM = re.compile(r"^(?P<what>" + _STR + r")\s*(?:\(.*\)\s*)?(?:if\s+.+)?:\s*$", re.S)
+
+
+def _logical_lines(text: str):
+    """(số dòng, thụt lề, nội dung) – nối các dòng khi chuỗi/ngoặc chưa đóng."""
+    i, n, line_no = 0, len(text), 1
+    buf, start, depth, indent_of = [], 1, 0, None
+    while i < n:
+        c = text[i]
+        if c in "\"'`":
+            m = _STR_RE.match(text, i)
+            if m:
+                buf.append(m.group(0))
+                line_no += m.group(0).count("\n")
+                i = m.end()
+                continue
+        if c == "#" and depth == 0:
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth = max(0, depth - 1)
+        if c == "\n":
+            line_no += 1
+            if depth == 0:
+                raw = "".join(buf)
+                if raw.strip():
+                    yield start, len(raw) - len(raw.lstrip(" \t")), raw.strip()
+                buf, start = [], line_no
+                i += 1
+                continue
+        buf.append(c)
+        i += 1
+    raw = "".join(buf)
+    if raw.strip():
+        yield start, len(raw) - len(raw.lstrip(" \t")), raw.strip()
+
+
+def parse_rpy(text: str, fname: str, out: list[dict]):
+    stack: list[tuple[int, str]] = []          # (thụt lề, loại khối)
+    label = os.path.splitext(os.path.basename(fname))[0]
+    for _ln, ind, line in _logical_lines(text.replace("\r\n", "\n").lstrip("\ufeff")):
+        while stack and ind <= stack[-1][0]:
+            stack.pop()
+        block = stack[-1][1] if stack else ""
+        in_py = any(b == "python" for _, b in stack)
+        first = re.match(r"[\w$]+", line)
+        word = first.group(0) if first else ""
+        if line.endswith(":"):
+            if word == "label":
+                m = re.match(r"label\s+([\w.]+)", line)
+                if m:
+                    label = m.group(1)
+                stack.append((ind, "label"))
+            elif word == "menu":
+                stack.append((ind, "menu"))
+            elif word == "screen":
+                stack.append((ind, "screen"))
+            elif re.match(r"(init\s+(-?\d+\s+)?)?python\b", line) or line.startswith("python") or word == "translate":
+                stack.append((ind, "python" if word != "translate" else "translate"))
+            elif word in ("image", "transform", "show", "scene", "camera", "style", "layeredimage", "define", "default",
+                          "init", "translate") and not re.match(r"init\s+(-?\d+\s+)?python", line):
+                stack.append((ind, "skip"))
+            elif block == "menu":
+                m = _MENU_ITEM.match(line)
+                if m:
+                    out.append({"t": _lit(m.group("what")), "kind": "menu", "ctx": label})
+                stack.append((ind, "choice"))
+            else:
+                stack.append((ind, block if block in ("screen", "python", "translate") else "block"))
+            if word != "menu" and not (block == "menu"):
+                pass
+            continue
+        if any(b in ("translate", "skip") for _, b in stack):
+            _scan_code(line, label, out)
+            continue
+        _scan_code(line, label, out)                 # _("…") và Character("…") ở mọi nơi
+        if in_py:
+            continue
+        if any(b == "screen" for _, b in stack) or word == "screen":
+            m = re.match(r"(?:text|textbutton|label|tooltip)\s+(" + _STR + ")", line)
+            if m:
+                out.append({"t": _lit(m.group(1)), "kind": "ui", "ctx": "Giao diện"})
+            continue
+        if word in _KEYWORDS or line.startswith(("$", "@")):
+            continue
+        m = _SAY.match(line)
+        if m:
+            who = m.group("who") or ""
+            if who[:1] in "\"'`":
+                who = _lit(who)
+                out.append({"t": who, "kind": "ui", "ctx": "Tên nhân vật"})
+            for t in _lits(m.group("what")):
+                out.append({"t": t, "kind": "say", "ctx": label, "who": who})
+
+
+# ------------------------------------------------------------------ .rpyc
+def _rpyc_root(data: bytes):
+    if data.startswith(b"RENPY RPC2"):
+        pos = 10
+        chunks = {}
+        while True:
+            slot, start, length = (int.from_bytes(data[pos + k:pos + k + 4], "little") for k in (0, 4, 8))
+            if slot == 0:
+                break
+            chunks[slot] = data[start:start + length]
+            pos += 12
+        raw = zlib.decompress(chunks[1])
+    else:
+        raw = zlib.decompress(data)            # bản rất cũ
+    return safe_loads(raw)
+
+
+def _scan_code(v: str, label: str, out: list[dict]):
+    """Chuỗi mã python/screen trong .rpyc: lấy _("…") và Character("…")."""
+    if "_(" in v:
+        for m in re.finditer(r"\b__?\(\s*(" + _STR + r")\s*\)", v):
+            out.append({"t": _lit(m.group(1)), "kind": "ui", "ctx": label})
+    if "Character(" in v:
+        for m in re.finditer(r"\bCharacter\(\s*(" + _STR + r")", v):
+            out.append({"t": _lit(m.group(1)), "kind": "ui", "ctx": "Tên nhân vật"})
+
+
+def _walk(node, label: str, out: list[dict], seen: set, names: dict | None = None):
+    names = {} if names is None else names
+    if isinstance(node, str):
+        _scan_code(node, label, out)
+        return
+    if id(node) in seen:
+        return
+    seen.add(id(node))
+    if isinstance(node, dict):
+        for v in node.values():
+            _walk(v, label, out, seen, names)
+        return
+    if isinstance(node, (list, tuple, set)):
+        for x in node:
+            _walk(x, label, out, seen, names)
+        return
+    if not isinstance(node, _Stub):
+        return
+    cls = node._cls
+    d = node.__dict__
+    if cls.endswith(".Define") and isinstance(d.get("varname"), str) and isinstance(d.get("code"), _Stub):
+        st = getattr(d["code"], "_state", None)
+        src = st[1] if isinstance(st, tuple) and len(st) > 1 and isinstance(st[1], str) else d["code"].__dict__.get("source")
+        if isinstance(src, str):
+            m = re.match(r"\s*Character\(\s*(?:_\(\s*)?(" + _STR + ")", src)
+            if m:
+                names[d["varname"]] = _lit(m.group(1))
+    if cls.endswith(".Label") and isinstance(d.get("name"), str):
+        label = d["name"]
+    if cls.endswith((".Translate", ".TranslateBlock", ".TranslateString", ".TranslateEarlyBlock", ".TranslatePython")):
+        return                                  # bản dịch có sẵn của game
+    if cls.endswith((".Say", ".TranslateSay")) and isinstance(d.get("what"), str):
+        who = d.get("who") if isinstance(d.get("who"), str) else ""
+        out.append({"t": str(d["what"]), "kind": "say", "ctx": label, "who": str(who or "")})
+    if cls.endswith(".Menu") and isinstance(d.get("items"), list):
+        for it in d["items"]:
+            if isinstance(it, (list, tuple)) and it and isinstance(it[0], str) and len(it) > 2 and it[2] is not None:
+                out.append({"t": str(it[0]), "kind": "menu", "ctx": label})
+            if isinstance(it, (list, tuple)) and len(it) > 2:
+                _walk(it[2], label, out, seen, names)
+    if cls.endswith("SLDisplayable") and d.get("name") in ("text", "textbutton", "label") and d.get("positional"):
+        first = str(d["positional"][0]).strip()
+        if _STR_RE.fullmatch(first):
+            out.append({"t": _lit(first), "kind": "ui", "ctx": "Giao diện"})
+    for k, v in d.items():
+        if k in ("what", "items", "name", "location", "filename"):
+            continue
+        _walk(v, label, out, seen, names)
+
+
+def parse_rpyc(data: bytes, fname: str, out: list[dict], names: dict | None = None):
+    root = _rpyc_root(data)
+    stmts = root[1] if isinstance(root, tuple) and len(root) == 2 else root
+    _walk(stmts, os.path.splitext(os.path.basename(fname))[0], out, set(), names if names is not None else {})
+
+
+_CHAR_DEF = re.compile(r"(?:define\s+)?([A-Za-z_]\w*)\s*=\s*Character\(\s*(?:_\(\s*)?(" + _STR + ")")
+
+
+def scan_renpy(game: Path) -> tuple[list[dict], dict]:
+    out: list[dict] = []
+    names: dict[str, str] = {}
+    fonts: set[str] = set()
+    errors = []
+    srcs = renpy_sources(game)
+    if not srcs:
+        raise GameError("Không thấy kịch bản Ren'Py (.rpy/.rpyc/.rpa) trong thư mục game.")
+    for name, kind, data in srcs:
+        try:
+            if kind == "rpy":
+                text = data.decode("utf-8", "replace")
+                parse_rpy(text, name, out)
+                for m in _CHAR_DEF.finditer(text):
+                    names[m.group(1)] = _lit(m.group(2))
+            else:
+                parse_rpyc(data, name, out, names)
+                text = data.decode("latin-1")
+            fonts.update(f for f in re.findall(r"[\"']([^\"'\n]{1,120}\.(?:ttf|otf|ttc))[\"']", text, re.I) if "DejaVu" not in f)
+        except Exception as e:
+            errors.append(f"{name}: {e}")
+    for p in game.rglob("*"):
+        if p.suffix.lower() in (".ttf", ".otf", ".ttc") and "DejaVu" not in p.name:
+            fonts.add(str(p.relative_to(game)).replace("\\", "/"))
+    if not out and errors:
+        raise GameError("Không đọc được kịch bản: " + "; ".join(errors[:3]))
+    for it in out:
+        if it.get("who") in names:
+            it["who"] = names[it["who"]]
+    return out, {"fonts": sorted(fonts), "errors": errors[:20]}
+
+
+def apply_renpy(game: Path, items: list[dict], opts: dict) -> dict:
+    say, ui = {}, {}
+    for it in items:
+        vi = it.get("final")
+        if not vi or vi == it["t"]:
+            continue
+        (say if it["kind"] in ("say", "menu") else ui)[it["t"]] = vi
+    data = {"say": say, "ui": ui, "fonts": opts.get("fonts", []) if opts.get("font", True) else []}
+    (game / RENPY_JSON).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    (game / RENPY_PATCH).write_text(RENPY_SCRIPT, encoding="utf-8")
+    old = game / (RENPY_PATCH + "c")
+    if old.exists():
+        old.unlink()                               # file biên dịch cũ của chính CircleVault
+    return {"say": len(say), "ui": len(ui)}
+
+
+RENPY_SCRIPT = '''# Viet hoa boi CircleVault. Xoa file nay va circlevault_vi.json (hoac bam "Khoi phuc ban goc" trong app) de ve ban goc.
+init 999 python:
+    import json as _cv_json
+    _cv_data = _cv_json.loads(renpy.file("circlevault_vi.json").read().decode("utf-8"))
+    _cv_say = _cv_data.get("say", {})
+    _cv_ui = _cv_data.get("ui", {})
+    _cv_prev_filter = config.say_menu_text_filter
+
+    def _cv_filter(s):
+        if _cv_prev_filter is not None:
+            s = _cv_prev_filter(s)
+        return _cv_say.get(s, s)
+
+    config.say_menu_text_filter = _cv_filter
+
+    if hasattr(config, "replace_text"):
+        _cv_prev_replace = config.replace_text
+
+        def _cv_replace(s):
+            if _cv_prev_replace is not None:
+                s = _cv_prev_replace(s)
+            return _cv_ui.get(s, s)
+
+        config.replace_text = _cv_replace
+
+    for _cv_f in _cv_data.get("fonts", []):
+        for _cv_b in (False, True):
+            for _cv_i in (False, True):
+                config.font_replacement_map[(_cv_f, _cv_b, _cv_i)] = ("DejaVuSans-Bold.ttf" if _cv_b else "DejaVuSans.ttf", False, _cv_i)
+'''
+
+
+def restore_renpy(game: Path):
+    for n in (RENPY_PATCH, RENPY_PATCH + "c", RENPY_JSON):
+        p = game / n
+        if p.exists():
+            p.unlink()
+
+
+# ================================================================== RPG Maker MV/MZ
+DB_FIELDS = {
+    "Actors.json": ["name", "nickname", "profile"], "Classes.json": ["name"],
+    "Skills.json": ["name", "description", "message1", "message2"], "Items.json": ["name", "description"],
+    "Weapons.json": ["name", "description"], "Armors.json": ["name", "description"], "Enemies.json": ["name"],
+    "States.json": ["name", "message1", "message2", "message3", "message4"],
+}
+
+
+def rpg_dirs(root: Path) -> tuple[str, Path, Path] | None:
+    """(engine, thư mục gốc web, thư mục data)."""
+    for web in (root / "www", root):
+        data = web / "data"
+        if (data / "System.json").exists():
+            if (web / "js" / "rmmz_core.js").exists():
+                return "rpgmz", web, data
+            return "rpgmv", web, data
+    return None
+
+
+def _cmd_lists(fname: str, obj):
+    """(nhãn, danh sách lệnh) trong Map/CommonEvents/Troops."""
+    if fname.startswith("Map") and isinstance(obj, dict):
+        for ev in obj.get("events") or []:
+            if ev:
+                for pi, page in enumerate(ev.get("pages") or []):
+                    yield f"{fname} · {ev.get('name') or 'Sự kiện'} {ev.get('id')}", page.get("list") or []
+    elif fname == "CommonEvents.json":
+        for ev in obj or []:
+            if ev:
+                yield f"Sự kiện chung · {ev.get('name')}", ev.get("list") or []
+    elif fname == "Troops.json":
+        for tr in obj or []:
+            if tr:
+                for page in tr.get("pages") or []:
+                    yield f"Trận · {tr.get('name')}", page.get("list") or []
+
+
+def _messages(lst: list):
+    """Gom lệnh: ('msg'|'scroll', i_header, [i dòng], người nói) / ('choice', i) / ('text1', i, chỉ số tham số)."""
+    i, n = 0, len(lst)
+    while i < n:
+        c = lst[i]
+        code = c.get("code")
+        if code in (101, 105):
+            j = i + 1
+            lines = []
+            want = 401 if code == 101 else 405
+            while j < n and lst[j].get("code") == want:
+                lines.append(j)
+                j += 1
+            who = ""
+            if code == 101 and len(c.get("parameters") or []) > 4 and isinstance(c["parameters"][4], str):
+                who = c["parameters"][4]
+            yield ("msg" if code == 101 else "scroll", i, lines, who)
+            i = j
+            continue
+        if code == 102:
+            yield ("choices", i, None, "")
+        elif code == 402:
+            yield ("when", i, None, "")
+        elif code in (320, 324, 325):
+            yield ("text1", i, None, "")
+        i += 1
+
+
+def _rpg_files(data: Path):
+    names = sorted(p.name for p in data.glob("*.json"))
+    for n in names:
+        if n in DB_FIELDS or n in ("System.json", "CommonEvents.json", "Troops.json") or re.fullmatch(r"Map\d+\.json", n):
+            yield n
+
+
+def _load_json(p: Path):
+    try:
+        return json.loads(p.read_text(encoding="utf-8-sig"))
+    except ValueError:
+        raise GameError(f"{p.name} không phải JSON thường (game có thể đã mã hóa dữ liệu) – không Việt hóa được.")
+
+
+def scan_rpg(root: Path) -> tuple[list[dict], dict]:
+    found = rpg_dirs(root)
+    if not found:
+        raise GameError("Không thấy data/System.json.")
+    engine, web, data = found
+    out: list[dict] = []
+
+    def add(t, kind, ctx, who=""):
+        if isinstance(t, str) and t.strip():
+            out.append({"t": t, "kind": kind, "ctx": ctx, "who": who})
+
+    for fn in _rpg_files(data):
+        obj = _load_json(data / fn)
+        if fn in DB_FIELDS:
+            for row in obj or []:
+                if row:
+                    for f in DB_FIELDS[fn]:
+                        add(row.get(f), "db", f"{fn[:-5]} · {f}")
+        elif fn == "System.json":
+            add(obj.get("gameTitle"), "db", "Tên game")
+            add(obj.get("currencyUnit"), "db", "Đơn vị tiền")
+            for k in ("elements", "skillTypes", "weaponTypes", "armorTypes", "equipTypes"):
+                for t in obj.get(k) or []:
+                    add(t, "db", f"Hệ thống · {k}")
+            terms = obj.get("terms") or {}
+            for k in ("basic", "commands", "params"):
+                for t in terms.get(k) or []:
+                    add(t, "db", f"Thuật ngữ · {k}")
+            for k, t in (terms.get("messages") or {}).items():
+                add(t, "db", f"Thông báo · {k}")
+        else:
+            if fn.startswith("Map"):
+                add(obj.get("displayName"), "db", f"{fn} · tên bản đồ")
+            for ctx, lst in _cmd_lists(fn, obj):
+                for kind, i, lines, who in _messages(lst):
+                    if kind in ("msg", "scroll"):
+                        if who:
+                            add(who, "name", "Tên người nói")
+                        add("\n".join(lst[j]["parameters"][0] for j in lines if lst[j].get("parameters")), "msg", ctx, who)
+                    elif kind == "choices":
+                        for t in (lst[i].get("parameters") or [[]])[0] or []:
+                            add(t, "menu", ctx)
+                    elif kind == "text1":
+                        p = lst[i].get("parameters") or []
+                        if len(p) > 1:
+                            add(p[1], "db", ctx)
+    return out, {"engine": engine, "web": str(web.relative_to(root)) if web != root else ""}
+
+
+def _width(s: str) -> int:
+    return len(CODES["rpg"].sub(lambda m: "" if not m.group(0).startswith(("\\N[", "\\P[", "\\V[")) else "xxxxxx", s))
+
+
+def wrap_rpg(text: str, width: int) -> list[str]:
+    lines = []
+    for para in text.split("\n"):
+        cur = ""
+        for word in para.split(" "):
+            t = (cur + " " + word) if cur else word
+            if _width(t) <= width or not cur:
+                cur = t
+            else:
+                lines.append(cur)
+                cur = word
+        lines.append(cur)
+    return lines
+
+
+def _backup(root: Path, p: Path):
+    rel = p.relative_to(root)
+    b = root / BACKUP_DIR / rel
+    if not b.exists():
+        b.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(p, b)
+
+
+def _win_font() -> Path | None:
+    for d in (Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts", Path("/usr/share/fonts/truetype/dejavu")):
+        for f in ("arial.ttf", "segoeui.ttf", "tahoma.ttf", "DejaVuSans.ttf"):
+            if (d / f).exists():
+                return d / f
+    return None
+
+
+def apply_rpg(root: Path, items: list[dict], opts: dict) -> dict:
+    engine, web, data = rpg_dirs(root)
+    tr = {it["t"]: it["final"] for it in items if it.get("final") and it["final"] != it["t"]}
+    width = int(opts.get("width") or 50)
+    width_face = int(opts.get("width_face") or 40)
+    changed = 0
+
+    def t(s):
+        return tr.get(s, s) if isinstance(s, str) else s
+
+    for fn in _rpg_files(data):
+        p = data / fn
+        # luôn đọc từ bản gốc (đã sao lưu) để áp dụng lại nhiều lần không bị dịch chồng
+        src = root / BACKUP_DIR / p.relative_to(root)
+        obj = _load_json(src if src.exists() else p)
+        orig = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+        if fn in DB_FIELDS:
+            for row in obj or []:
+                if row:
+                    for f in DB_FIELDS[fn]:
+                        if f in row:
+                            row[f] = t(row[f])
+        elif fn == "System.json":
+            for k in ("gameTitle", "currencyUnit"):
+                if k in obj:
+                    obj[k] = t(obj[k])
+            for k in ("elements", "skillTypes", "weaponTypes", "armorTypes", "equipTypes"):
+                if isinstance(obj.get(k), list):
+                    obj[k] = [t(x) for x in obj[k]]
+            terms = obj.get("terms") or {}
+            for k in ("basic", "commands", "params"):
+                if isinstance(terms.get(k), list):
+                    terms[k] = [t(x) for x in terms[k]]
+            if isinstance(terms.get("messages"), dict):
+                terms["messages"] = {k: t(v) for k, v in terms["messages"].items()}
+            if engine == "rpgmz" and opts.get("font", True) and _win_font():
+                adv = obj.setdefault("advanced", {})
+                adv["mainFontFilename"] = FONT_NAME
+        else:
+            if fn.startswith("Map") and "displayName" in obj:
+                obj["displayName"] = t(obj["displayName"])
+            for _ctx, lst in _cmd_lists(fn, obj):
+                _apply_list(lst, t, width, width_face)
+        new = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+        if new != orig or src.exists():
+            if not src.exists():
+                _backup(root, p)
+            p.write_text(new, encoding="utf-8")
+            changed += 1
+    if opts.get("font", True):
+        f = _win_font()
+        if f:
+            fonts = web / "fonts"
+            fonts.mkdir(exist_ok=True)
+            shutil.copy2(f, fonts / FONT_NAME)
+            css = fonts / "gamefont.css"
+            if engine == "rpgmv" and css.exists():
+                _backup(root, css)
+                orig_css = (root / BACKUP_DIR / css.relative_to(root)).read_text(encoding="utf-8")
+                css.write_text(re.sub(r'url\(["\']?[^)"\']+["\']?\)', f'url("{FONT_NAME}")', orig_css, count=1), encoding="utf-8")
+    return {"files": changed, "texts": len(tr)}
+
+
+def _apply_list(lst: list, t, width: int, width_face: int):
+    new: list = []
+    i, n = 0, len(lst)
+    while i < n:
+        c = lst[i]
+        code = c.get("code")
+        if code in (101, 105):
+            want = 401 if code == 101 else 405
+            j = i + 1
+            while j < n and lst[j].get("code") == want:
+                j += 1
+            body = lst[i + 1:j]
+            text = "\n".join(x["parameters"][0] for x in body if x.get("parameters"))
+            vi = t(text)
+            head = copy.deepcopy(c)
+            if code == 101 and len(head.get("parameters") or []) > 4 and isinstance(head["parameters"][4], str):
+                head["parameters"][4] = t(head["parameters"][4])
+            if vi == text or not body:
+                new.append(head)
+                new.extend(body)
+            else:
+                face = code == 101 and bool((c.get("parameters") or [""])[0])
+                lines = wrap_rpg(re.sub(r"\s*\n\s*", " ", vi), width_face if face else width) if code == 101 else vi.split("\n")
+                indent = body[0].get("indent", c.get("indent", 0))
+                per = 4 if code == 101 else len(lines)
+                for k in range(0, len(lines), per):
+                    new.append(head if k == 0 else copy.deepcopy(head))
+                    new.extend({"code": want, "indent": indent, "parameters": [ln]} for ln in lines[k:k + per])
+            i = j
+            continue
+        c = copy.deepcopy(c)
+        p = c.get("parameters") or []
+        if code == 102 and p and isinstance(p[0], list):
+            p[0] = [t(x) for x in p[0]]
+        elif code == 402 and len(p) > 1:
+            p[1] = t(p[1])
+        elif code in (320, 324, 325) and len(p) > 1:
+            p[1] = t(p[1])
+        new.append(c)
+        i += 1
+    lst[:] = new
+
+
+def restore_rpg(root: Path) -> int:
+    b = root / BACKUP_DIR
+    n = 0
+    if b.exists():
+        for f in b.rglob("*"):
+            if f.is_file():
+                dst = root / f.relative_to(b)
+                shutil.copy2(f, dst)
+                n += 1
+    found = rpg_dirs(root)
+    if found:
+        extra = found[1] / "fonts" / FONT_NAME
+        if extra.exists():
+            extra.unlink()
+    return n
+
+
+# ================================================================== dự án
+def detect(path: Path) -> tuple[str, Path]:
+    """(engine, thư mục gốc dùng để áp dụng)."""
+    if not path.is_dir():
+        raise GameError("Không thấy thư mục này.")
+    if rpg_dirs(path):
+        return rpg_dirs(path)[0], path
+    for cand in (path / "game", path):
+        if cand.is_dir() and (any(cand.glob("*.rpy*")) or any(cand.glob("*.rpa")) or any(cand.glob("**/*.rpyc"))):
+            if cand.name == "game" or (cand / "script.rpyc").exists() or any(cand.glob("*.rpa")) or any(cand.glob("*.rpy")):
+                return "renpy", cand
+    if any(path.glob("*_Data")) and any(path.glob("*.exe")):
+        raise GameError("Đây là game Unity – app chưa Việt hóa từ file được. Dùng 'Dịch game' (dịch màn hình) "
+                        "hoặc plugin XUnity.AutoTranslator.")
+    if any(path.glob("**/*.pak")):
+        raise GameError("Đây có vẻ là game Unreal – app chưa hỗ trợ. Dùng 'Dịch game' (dịch màn hình).")
+    raise GameError("Không nhận ra game. App hỗ trợ Ren'Py (có thư mục game/ với .rpy/.rpyc/.rpa) "
+                    "và RPG Maker MV/MZ (có data/System.json hoặc www/data/System.json).")
+
+
+ENGINE_NAMES = {"renpy": "Ren'Py", "rpgmv": "RPG Maker MV", "rpgmz": "RPG Maker MZ"}
+
+
+def _proj_dir(pid: str) -> Path:
+    if not re.fullmatch(r"[0-9a-f]{12}", pid or "") or not (GAMES / pid / "project.json").exists():
+        raise HTTPException(404, "Không có dự án này.")
+    return GAMES / pid
+
+
+def _load(pid: str) -> dict:
+    return json.loads((_proj_dir(pid) / "project.json").read_text(encoding="utf-8"))
+
+
+def _save(p: dict):
+    d = GAMES / p["id"]
+    d.mkdir(parents=True, exist_ok=True)
+    tmp = d / "project.tmp"
+    tmp.write_text(json.dumps(p, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, d / "project.json")
+
+
+def _summary(p: dict) -> dict:
+    items = p["items"]
+    done = sum(1 for it in items if it.get("vi") is not None)
+    return {"id": p["id"], "name": p["name"], "path": p["path"], "engine": p["engine"],
+            "engine_name": ENGINE_NAMES.get(p["engine"], p["engine"]), "total": len(items), "done": done,
+            "bad": sum(1 for it in items if it.get("bad")), "edited": sum(1 for it in items if it.get("edited")),
+            "chars": sum(len(it["t"]) for it in items), "status": p.get("status", "idle"), "error": p.get("error"),
+            "applied": p.get("applied"), "opts": p.get("opts", {}), "created": p["created"],
+            "running": WORKER.current == p["id"], "warnings": p.get("warnings", [])}
+
+
+def estimate(chars: int) -> dict:
+    """Ước tính chi phí Claude (USD) – thô: ~4 ký tự/token đầu vào, tiếng Việt ra ~1,6 lần token + suy nghĩ."""
+    tin = chars / 4 * 1.6 + chars / 4 / BATCH * 900 / 10
+    tout = chars / 4 * 1.6 * 1.3
+    price = {"claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10), "claude-haiku-5-5": (0.1, 0.5)}
+    return {m: round(tin / 1e6 * a + tout / 1e6 * b, 2) for m, (a, b) in price.items()}
+
+
+class ScanIn(BaseModel):
+    path: str
+
+
+@router.post("")
+def create(body: ScanIn):
+    path = Path(body.path.strip().strip('"'))
+    try:
+        engine, root = detect(path)
+        if engine == "renpy":
+            raw, info = scan_renpy(root)
+        else:
+            raw, info = scan_rpg(root)
+    except GameError as e:
+        raise HTTPException(400, str(e))
+    seen: dict[str, dict] = {}
+    items = []
+    for it in raw:
+        t = it["t"]
+        if not t.strip() or not re.search(r"[A-Za-z]", t):
+            continue
+        key = ("u:" if it["kind"] in ("ui", "db", "name") and engine == "renpy" else "") + t
+        if key in seen:
+            continue
+        seen[key] = it
+        items.append({"t": t, "kind": it["kind"], "ctx": it.get("ctx", ""), "who": it.get("who", ""), "vi": None})
+    if not items:
+        raise HTTPException(400, "Không tìm thấy câu chữ tiếng Anh nào để dịch.")
+    pid = uuid.uuid4().hex[:12]
+    name = (path.parent.name if path.name.lower() in ("game", "www") else path.name) or "Game"
+    p = {"id": pid, "name": name, "path": str(path), "root": str(root), "engine": engine, "created": time.time(),
+         "items": items, "status": "idle", "opts": {"font": True, "width": 50, "width_face": 40, "fonts": info.get("fonts", [])},
+         "warnings": info.get("errors", [])}
+    _save(p)
+    return {**_summary(p), "estimate": estimate(sum(len(i["t"]) for i in items))}
+
+
+@router.get("")
+def list_projects():
+    out = []
+    if GAMES.exists():
+        for d in GAMES.iterdir():
+            try:
+                out.append(_summary(json.loads((d / "project.json").read_text(encoding="utf-8"))))
+            except (OSError, ValueError, KeyError):
+                continue
+    out.sort(key=lambda x: -x["created"])
+    return {"games": out}
+
+
+@router.get("/{pid}")
+def get_project(pid: str, offset: int = 0, limit: int = 100, q: str = "", filter: str = "all"):
+    p = _load(pid)
+    rows = []
+    ql = q.lower().strip()
+    for i, it in enumerate(p["items"]):
+        if filter == "todo" and it.get("vi") is not None:
+            continue
+        if filter == "bad" and not it.get("bad"):
+            continue
+        if filter == "edited" and not it.get("edited"):
+            continue
+        if ql and ql not in it["t"].lower() and ql not in (it.get("vi") or "").lower():
+            continue
+        rows.append({"i": i, **it})
+    s = _summary(p)
+    return {**s, "estimate": estimate(s["chars"]), "matched": len(rows), "rows": rows[offset:offset + max(1, min(limit, 500))]}
+
+
+class EditIn(BaseModel):
+    i: int
+    vi: str
+
+
+@router.put("/{pid}/items")
+def edit_items(pid: str, body: list[EditIn]):
+    with _lock:
+        p = _load(pid)
+        for e in body:
+            if 0 <= e.i < len(p["items"]):
+                it = p["items"][e.i]
+                it["vi"] = e.vi[:5000]
+                it["edited"] = True
+                it.pop("bad", None)
+        _save(p)
+    return {"ok": True}
+
+
+class OptsIn(BaseModel):
+    font: bool | None = None
+    width: int | None = None
+    width_face: int | None = None
+
+
+@router.patch("/{pid}")
+def set_opts(pid: str, body: OptsIn):
+    with _lock:
+        p = _load(pid)
+        for k, v in body.model_dump(exclude_none=True).items():
+            p["opts"][k] = max(20, min(120, v)) if k.startswith("width") else v
+        _save(p)
+    return _summary(p)
+
+
+@router.post("/{pid}/run")
+def run(pid: str):
+    with _lock:
+        p = _load(pid)
+        p["status"] = "queued"
+        p.pop("error", None)
+        _save(p)
+    WORKER.add(pid)
+    return _summary(p)
+
+
+@router.post("/{pid}/stop")
+def stop(pid: str):
+    WORKER.stop(pid)
+    with _lock:
+        p = _load(pid)
+        p["status"] = "idle"
+        _save(p)
+    return _summary(p)
+
+
+def _final(p: dict) -> list[dict]:
+    code_kind = "renpy" if p["engine"] == "renpy" else "rpg"
+    out = []
+    for it in p["items"]:
+        vi = it.get("vi")
+        if vi and not it.get("edited"):
+            _, codes = protect(it["t"], code_kind)
+            if codes and any(c not in vi for c in codes):
+                vi = None                         # mất mã → giữ câu gốc
+        out.append({**it, "final": vi})
+    return out
+
+
+@router.post("/{pid}/apply")
+def apply(pid: str):
+    p = _load(pid)
+    if WORKER.current == pid:
+        raise HTTPException(409, "Đang dịch, bấm Dừng hoặc đợi dịch xong rồi áp dụng.")
+    root = Path(p["root"])
+    if not root.exists():
+        raise HTTPException(400, f"Không thấy thư mục game: {root}")
+    try:
+        res = apply_renpy(root, _final(p), p["opts"]) if p["engine"] == "renpy" else apply_rpg(root, _final(p), p["opts"])
+    except GameError as e:
+        raise HTTPException(400, str(e))
+    except PermissionError:
+        raise HTTPException(400, "Không ghi được vào thư mục game (đang mở game, hoặc game nằm trong Program Files). "
+                                 "Tắt game rồi thử lại, hoặc chép game ra ổ khác.")
+    with _lock:
+        p = _load(pid)
+        p["applied"] = time.time()
+        _save(p)
+    return {**res, "engine": p["engine"]}
+
+
+@router.post("/{pid}/restore")
+def restore(pid: str):
+    p = _load(pid)
+    root = Path(p["root"])
+    try:
+        n = restore_renpy(root) if p["engine"] == "renpy" else restore_rpg(root)
+    except PermissionError:
+        raise HTTPException(400, "Không ghi được vào thư mục game. Tắt game rồi thử lại.")
+    with _lock:
+        p = _load(pid)
+        p["applied"] = None
+        _save(p)
+    return {"ok": True, "files": n}
+
+
+@router.delete("/{pid}")
+def delete(pid: str):
+    d = _proj_dir(pid)
+    WORKER.stop(pid)
+    shutil.rmtree(d, ignore_errors=True)       # chỉ xóa dự án trong dữ liệu app; game và bản sao lưu giữ nguyên
+    return {"ok": True}
+
+
+# ================================================================== dịch nền
+class Worker:
+    def __init__(self):
+        self.queue: list[str] = []
+        self.current: str | None = None
+        self._stop: set[str] = set()
+        self._cv = threading.Condition()
+        self._thread = None
+
+    def add(self, pid):
+        with self._cv:
+            self._stop.discard(pid)
+            if pid not in self.queue and pid != self.current:
+                self.queue.append(pid)
+            if not self._thread or not self._thread.is_alive():
+                self._thread = threading.Thread(target=self._run, daemon=True, name="gametr")
+                self._thread.start()
+
+    def stop(self, pid):
+        with self._cv:
+            self._stop.add(pid)
+            if pid in self.queue:
+                self.queue.remove(pid)
+
+    def _run(self):
+        while True:
+            with self._cv:
+                if not self.queue:
+                    self.current = None
+                    return
+                pid = self.queue.pop(0)
+                self.current = pid
+            try:
+                self._project(pid)
+            except Exception as e:
+                _status(pid, "error", f"Lỗi: {e}")
+            finally:
+                self.current = None
+
+    def _project(self, pid):
+        _status(pid, "running")
+        s = translate.settings()
+        p = _load(pid)
+        kind = "renpy" if p["engine"] == "renpy" else "rpg"
+        todo = [i for i, it in enumerate(p["items"]) if it.get("vi") is None]
+        for k in range(0, len(todo), BATCH):
+            if pid in self._stop:
+                return
+            idx = todo[k:k + BATCH]
+            src = [p["items"][i] for i in idx]
+            prot = [protect(it["t"], kind) for it in src]
+            try:
+                res = translate.translate_texts([x[0] for x in prot], s, kind="gamefile",
+                                                context=f"Game: {p['name']} ({ENGINE_NAMES.get(p['engine'])}).",
+                                                who=[it.get("who") or "" for it in src])
+            except translate.TranslateError as e:
+                _status(pid, "error", str(e))
+                return
+            with _lock:
+                p = _load(pid)
+                for i, (txt, codes), vi in zip(idx, prot, res):
+                    it = p["items"][i]
+                    if it.get("edited"):
+                        continue
+                    back = restore_codes(vi, codes) if vi else None
+                    if vi and back is None:
+                        it["vi"], it["bad"] = vi, True       # mã bị đổi: giữ bản dịch để người dùng sửa
+                    else:
+                        it["vi"] = back if back is not None else ""
+                        it.pop("bad", None)
+                _save(p)
+        _status(pid, "idle")
+
+
+def _status(pid, status, error=None):
+    with _lock:
+        try:
+            p = _load(pid)
+        except HTTPException:
+            return
+        p["status"] = status
+        if error:
+            p["error"] = error
+        else:
+            p.pop("error", None)
+        _save(p)
+
+
+WORKER = Worker()

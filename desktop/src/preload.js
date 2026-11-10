@@ -7,7 +7,7 @@ contextBridge.exposeInMainWorld('cvDesktop', {
   onUpdate: (cb) => ipcRenderer.on('update', (_e, u) => cb(u)),
   getUpdate: () => ipcRenderer.invoke('update-get'),
   updateAct: () => ipcRenderer.send('update-act'),
-  pickFolder: () => ipcRenderer.invoke('pick-folder'),
+  pickFolder: (title) => ipcRenderer.invoke('pick-folder', title),
   restartServer: () => ipcRenderer.invoke('restart-server'),
   openBrowser: (mode, url) => ipcRenderer.send('open-browser', mode, url),   // 'youtube' | 'web'
   openParty: (url) => ipcRenderer.send('open-party', url),

@@ -162,7 +162,16 @@ def stop_tunnel():
 
 # ------------------------------------------------------------------ máy chủ phòng cho bạn bè
 party_app = FastAPI(title="CircleVault - Xem chung", docs_url=None, redoc_url=None, openapi_url=None)
-party_app.mount("/p", StaticFiles(directory=config.WEB), name="p")
+class NoCacheStatic(StaticFiles):
+    """Giao diện luôn hỏi lại máy chủ (304 nếu không đổi) – cập nhật app xong là thấy giao diện mới ngay."""
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
+party_app.mount("/p", NoCacheStatic(directory=config.WEB), name="p")
 
 
 def _room(token: str) -> Room:

@@ -12,12 +12,11 @@ from pathlib import Path
 import yt_dlp
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import json
 
-from . import config, db, detect, downloader, music, party, storage, translate, ytdlp_update
+from . import config, db, detect, downloader, gametr, music, party, storage, translate, ytdlp_update
 from .manager import manager
 
 WEB = config.WEB
@@ -42,6 +41,7 @@ app = FastAPI(title="CircleVault", lifespan=lifespan)
 app.include_router(music.router)
 app.include_router(party.router)
 app.include_router(translate.router)
+app.include_router(gametr.router)
 
 
 # ------------------------------------------------------------------ status / config
@@ -255,9 +255,9 @@ async def update_ytdlp():
 
 
 # ------------------------------------------------------------------ giao diện
-app.mount("/static", StaticFiles(directory=WEB), name="static")
+app.mount("/static", party.NoCacheStatic(directory=WEB), name="static")
 
 
 @app.get("/")
 def index():
-    return FileResponse(WEB / "index.html")
+    return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-cache"})

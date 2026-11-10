@@ -200,6 +200,8 @@ Quy tắc:
 - Từ tượng thanh (SFX) dịch ngắn gọn (ví dụ "BOOM" → "BÙM") hoặc giữ nguyên nếu là ký hiệu.
 - Chữ được nhận diện tự động nên có thể sai chính tả, thiếu chữ hay dính chữ: tự sửa theo ngữ cảnh{img_rule}.
 - Mục nào là ký tự rác không có nghĩa, chữ ký nhóm dịch hoặc watermark thì trả về chuỗi rỗng.
+- Mã dạng ⟦số⟧ là mã của game (màu chữ, tên biến, biểu tượng): giữ đủ và đúng từng mã, đặt vào vị trí hợp lý trong câu dịch, không dịch, không thêm mã mới.
+- Giữ số lần xuống dòng tương tự bản gốc nếu bản gốc có xuống dòng.
 - Trả về đúng mọi id được gửi, mỗi id một bản dịch, không thêm chú thích.{terms}{style}"""
 
 SCHEMA = {"type": "object", "additionalProperties": False, "required": ["items"],
@@ -208,7 +210,8 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": ["items"]
               "properties": {"id": {"type": "integer"}, "vi": {"type": "string"}}}}}}
 
 
-def _claude(texts: list[str], s: dict, image: bytes | None, kind: str, context: str) -> list[str]:
+def _claude(texts: list[str], s: dict, image: bytes | None, kind: str, context: str,
+            who: list[str] | None = None) -> list[str]:
     try:
         import anthropic
     except ImportError as e:
@@ -222,13 +225,15 @@ def _claude(texts: list[str], s: dict, image: bytes | None, kind: str, context: 
         img_rule=" và theo ảnh được gửi kèm (nhìn nhân vật đang nói để chọn xưng hô)" if image else "",
         terms=("\n\nBảng thuật ngữ (bắt buộc dùng):\n" + "\n".join(f"- {a} → {b}" for a, b in terms)) if terms else "",
         style=("\n\nYêu cầu thêm của người đọc: " + s["style"].strip()) if s.get("style", "").strip() else "")
-    items = [{"id": i, "text": t} for i, t in enumerate(texts)]
+    items = [{"id": i, "text": t, **({"who": who[i]} if who and who[i] else {})} for i, t in enumerate(texts)]
     content: list[dict] = []
     if image:
         import base64
         content.append({"type": "image", "source": {"type": "base64", "media_type": _mime(image),
                                                      "data": base64.standard_b64encode(image).decode("ascii")}})
-    where = "các khung thoại trên một trang truyện tranh, theo thứ tự đọc" if kind == "comic" else "chữ trên màn hình game"
+    where = {"comic": "các khung thoại trên một trang truyện tranh, theo thứ tự đọc",
+             "gamefile": "câu thoại và chữ giao diện lấy từ file game, theo thứ tự trong kịch bản (who = nhân vật đang nói)"
+             }.get(kind, "chữ trên màn hình game")
     content.append({"type": "text", "text": (f"{context}\n" if context else "") + f"Dịch {where}:\n"
                     + json.dumps(items, ensure_ascii=False)})
     client = anthropic.Anthropic(api_key=key, max_retries=3, timeout=180)
@@ -236,7 +241,7 @@ def _claude(texts: list[str], s: dict, image: bytes | None, kind: str, context: 
         resp = client.beta.messages.create(
             model=s["claude_model"], max_tokens=16000, system=system,
             messages=[{"role": "user", "content": content}],
-            output_config={"effort": "low" if kind == "game" else "medium",
+            output_config={"effort": "low" if kind in ("game", "gamefile") else "medium",
                            "format": {"type": "json_schema", "schema": SCHEMA}},
             betas=["server-side-fallback-2026-07-01"], fallbacks="default")
     except anthropic.AuthenticationError:
@@ -289,16 +294,19 @@ def _small_jpeg(im) -> bytes:
 
 
 def translate_texts(texts: list[str], s: dict | None = None, image: bytes | None = None,
-                    kind: str = "comic", context: str = "") -> list[str]:
+                    kind: str = "comic", context: str = "", who: list[str] | None = None) -> list[str]:
     s = s or settings()
     keys = [_cache_key(s, t) for t in texts]
     have = _cache_get(list(set(keys)))
     todo = list(dict.fromkeys(t for t, k in zip(texts, keys) if k not in have and t.strip()))
     if todo:
         if s["engine"] == "claude":
+            speaker = {t: w for t, w in zip(texts, who or []) if w}
             res = []
             for i in range(0, len(todo), 80):
-                res += _claude(todo[i:i + 80], s, image if s.get("send_image") else None, kind, context)
+                part = todo[i:i + 80]
+                res += _claude(part, s, image if s.get("send_image") else None, kind, context,
+                               [speaker.get(t, "") for t in part] if who else None)
         else:
             res = _google(todo, s)
         new = {_cache_key(s, t): v.strip() for t, v in zip(todo, res)}

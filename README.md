@@ -27,7 +27,7 @@ Video/nhạc tải về nằm ở thư mục ổ đĩa bạn chọn trong tab **
 | Nghe Nhạc | Thư viện nhạc (nhạc tải từ YouTube + thư mục nhạc có sẵn trên máy), playlist, trộn bài, lặp, phím media trên bàn phím. **EQ 10 dải** với 14 preset (Tăng Bass, Giọng hát rõ, Bolero, EDM, Loa laptop…), lưu preset riêng, đường cong + phổ âm thanh trực tiếp, tự hạ preamp và chống rè. |
 | Xem Online | Cửa sổ YouTube trong app, đăng nhập tài khoản (Premium = không quảng cáo), nút "Tải video này"; tải bằng tài khoản đó (video giới hạn tuổi, hội viên). Trình duyệt bắt link cho trang phim khác: chặn quảng cáo/popup, tự bắt luồng `.m3u8`/`.mpd`/`.mp4` kèm Referer/Cookie để tải. |
 | Xem Chung | Tạo phòng xem chung (phim trong thư viện hoặc video YouTube), bạn bè mở link bằng trình duyệt, không cần cài. Đồng bộ phát/dừng/tua, chat, thả cảm xúc. Link Internet qua Cloudflare Quick Tunnel (không cần tài khoản). |
-| Dịch | Dịch truyện tranh tiếng Anh (CBZ/ảnh, kể cả webtoon dài) sang tiếng Việt: tự tìm khung thoại, đặt chữ dịch đè lên, sửa tay, xuất CBZ tiếng Việt. Khung dịch màn hình nổi trên game (khoanh vùng chữ, tự dịch khi chữ đổi). Bộ dịch Google (miễn phí) hoặc Claude AI (API key riêng, dịch theo ngữ cảnh). |
+| Dịch | Dịch truyện tranh tiếng Anh (CBZ/ảnh, kể cả webtoon dài) sang tiếng Việt: tự tìm khung thoại, đặt chữ dịch đè lên, sửa tay, xuất CBZ tiếng Việt. Khung dịch màn hình nổi trên game (khoanh vùng chữ, tự dịch khi chữ đổi). Việt hóa game từ file (Ren'Py, RPG Maker MV/MZ): dịch cả kịch bản, xem/sửa, áp dụng vào game, khôi phục bản gốc. Bộ dịch Google (miễn phí) hoặc Claude AI (API key riêng, dịch theo ngữ cảnh). |
 | Lưu Trữ | Chọn thư mục cho từng ổ, ổ ưu tiên cho từng loại, ngưỡng đầy, số luồng, cookie trình duyệt, cập nhật yt-dlp. |
 
 ## Cấu trúc mã nguồn

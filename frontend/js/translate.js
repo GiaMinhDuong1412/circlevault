@@ -4,10 +4,10 @@
 const {api, esc, toast} = window.CV;
 const $ = (s, r = document) => r.querySelector(s);
 const desk = window.cvDesktop;
-const T = {sub: 'comic', settings: null, book: null, view: 'vi', poll: null, edit: null};
+const T = {sub: 'comic', settings: null, book: null, view: 'vi', poll: null, edit: null, gp: null, gq: {filter: 'all', q: '', offset: 0}};
 try { T.sub = localStorage.getItem('cv-tr-sub') || 'comic'; } catch (e) { /* bỏ qua */ }
 
-const SUBS = [['comic', 'Dịch truyện'], ['game', 'Dịch game'], ['quick', 'Dịch nhanh'], ['settings', 'Cài đặt bộ dịch']];
+const SUBS = [['comic', 'Dịch truyện'], ['game', 'Dịch màn hình game'], ['vh', 'Việt hóa game'], ['quick', 'Dịch nhanh'], ['settings', 'Cài đặt bộ dịch']];
 
 async function upload(path, file) {
   const r = await fetch(path, {method: 'POST', body: file, headers: {'content-type': 'application/octet-stream'}});
@@ -33,12 +33,12 @@ async function render() {
     </div>
     <div id="trSub" class="main"></div>`;
   box.querySelectorAll('[data-sub]').forEach(b => b.addEventListener('click', () => {
-    T.sub = b.dataset.sub; T.book = null;
+    T.sub = b.dataset.sub; T.book = null; T.gp = null;
     try { localStorage.setItem('cv-tr-sub', T.sub); } catch (e) { /* bỏ qua */ }
     render();
   }));
   if (!s) { $('#trSub').innerHTML = '<div class="notice box err"><b>Không tải được cài đặt dịch.</b><span>Thử khởi động lại app.</span></div>'; return; }
-  ({comic: T.book ? renderReader : renderBooks, game: renderGame, quick: renderQuick, settings: renderSettings})[T.sub]();
+  ({comic: T.book ? renderReader : renderBooks, game: renderGame, vh: T.gp ? renderProject : renderGames, quick: renderQuick, settings: renderSettings}[T.sub] || renderBooks)();
 }
 
 /* ================================================================ DỊCH TRUYỆN – danh sách */
@@ -505,6 +505,230 @@ function renderSettings() {
     if (body.engine === 'claude' && !key && !s.has_key) { toast('Nhập API key của Claude trước (hoặc chọn Google Dịch).', 'err'); return; }
     try { await api('/api/translate/settings', {method: 'PUT', body}); toast('Đã lưu cài đặt dịch.'); render(); } catch (err) { toast(err.message, 'err'); }
   });
+}
+
+
+/* ================================================================ VIỆT HÓA GAME (từ file) */
+const KIND = {say: 'Thoại', menu: 'Lựa chọn', ui: 'Giao diện', msg: 'Thoại', db: 'Dữ liệu', name: 'Tên'};
+const usd = (v) => v < 0.01 ? 'dưới 0,01 USD' : `~${v.toLocaleString('vi-VN', {maximumFractionDigits: 2})} USD`;
+
+async function renderGames() {
+  const el = $('#trSub');
+  el.innerHTML = `
+    <div class="box pcard">
+      <h3>Việt hóa game từ file</h3>
+      <p>Lấy toàn bộ câu chữ trong file game, dịch cả lượt theo đúng thứ tự kịch bản, cho bạn xem và sửa, rồi ghi vào game. Chơi như bản tiếng Việt, không cần khung dịch nổi.</p>
+      <div class="vh-engines"><span class="chip">Ren'Py</span><span class="chip">RPG Maker MV</span><span class="chip">RPG Maker MZ</span></div>
+      <form class="paste-row" id="vhForm">
+        <input type="text" id="vhPath" placeholder="Thư mục game, ví dụ D:\\Games\\TenGame" aria-label="Thư mục game">
+        ${desk && desk.pickFolder ? '<button class="btn plain" type="button" id="vhPick">Chọn thư mục…</button>' : ''}
+        <button class="btn green" type="submit">QUÉT GAME</button>
+      </form>
+      <p class="hint" id="vhMsg">Chọn thư mục chứa file .exe của game. App tự nhận loại game.</p>
+      <details class="tr-help"><summary>Lưu ý trước khi Việt hóa</summary>
+        <ul class="tick">
+          <li><b>Ren'Py</b>: app không sửa file nào của game, chỉ thêm 2 file <code>zz_circlevault_vi.rpy</code> và <code>circlevault_vi.json</code> vào thư mục <code>game</code>. Khôi phục = xóa 2 file đó.</li>
+          <li><b>RPG Maker MV/MZ</b>: app sửa các file trong <code>data</code>, nhưng sao lưu bản gốc vào thư mục <code>CircleVault-ban-goc</code> trước. Bấm <b>Khôi phục bản gốc</b> là về như cũ.</li>
+          <li>Tắt game trước khi bấm Áp dụng. Game nằm trong <code>Program Files</code> thì chép ra ổ khác trước (Windows không cho ghi vào đó).</li>
+          <li>Chỉ dùng với game bạn sở hữu, để chơi cá nhân. Nếu chia sẻ, chỉ chia sẻ phần dịch, không chia sẻ file game đã sửa.</li>
+          <li>Game Unity, Unreal hay game có mã hóa dữ liệu: dùng <b>Dịch màn hình game</b>.</li>
+        </ul>
+      </details>
+    </div>
+    <div class="sec-title">Game đã quét</div>
+    <div id="vhList" class="main"><div class="loading"><span class="spin"></span>Đang tải…</div></div>`;
+  if ($('#vhPick')) $('#vhPick').addEventListener('click', async () => {
+    const f = await desk.pickFolder('Chọn thư mục game');
+    if (f) { $('#vhPath').value = f; $('#vhForm').requestSubmit(); }
+  });
+  $('#vhForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const path = $('#vhPath').value.trim();
+    if (!path) return;
+    const btn = e.target.querySelector('[type=submit]');
+    btn.disabled = true; $('#vhMsg').textContent = 'Đang đọc kịch bản game… (game lớn mất vài chục giây)';
+    try {
+      const g = await api('/api/translate/games', {method: 'POST', body: {path}});
+      toast(`Tìm thấy ${g.total.toLocaleString('vi-VN')} câu cần dịch (${g.engine_name}).`);
+      T.gp = g.id; T.gq = {filter: 'all', q: '', offset: 0};
+      render();
+    } catch (err) { $('#vhMsg').innerHTML = `<span class="tr-err">${esc(err.message)}</span>`; }
+    finally { btn.disabled = false; }
+  });
+  await loadGames();
+  T.poll = setInterval(() => { if (!document.hidden && $('#vhList')) loadGames(); else if (!$('#vhList')) clearInterval(T.poll); }, 3000);
+}
+
+async function loadGames() {
+  const el = $('#vhList');
+  if (!el) return;
+  let d;
+  try { d = await api('/api/translate/games'); } catch (e) { el.innerHTML = `<div class="notice box err">${esc(e.message)}</div>`; return; }
+  if (!d.games.length) { el.innerHTML = '<div class="box empty"><h3>Chưa có game nào</h3><p>Nhập thư mục game ở khung trên rồi bấm Quét game.</p></div>'; return; }
+  el.innerHTML = d.games.map(g => gameRow(g)).join('');
+  el.querySelectorAll('[data-gid]').forEach(row => row.addEventListener('click', e => gameAct(e, row.dataset.gid)));
+}
+
+function gameRow(g) {
+  const pct = g.total ? Math.round(g.done / g.total * 100) : 0;
+  const working = g.running || g.status === 'queued';
+  const st = working ? `Đang dịch ${g.done.toLocaleString('vi-VN')}/${g.total.toLocaleString('vi-VN')} câu` : `Đã dịch ${g.done.toLocaleString('vi-VN')}/${g.total.toLocaleString('vi-VN')} câu`;
+  return `<div class="box tr-book" data-gid="${g.id}">
+    <div class="tr-book-main">
+      <span><b class="tr-name">${esc(g.name)}</b> <span class="badge" style="background:var(--violet)">${esc(g.engine_name)}</span>
+        ${g.applied ? '<span class="badge" style="background:var(--green)">Đã áp dụng</span>' : ''}</span>
+      <div class="prog"><div class="bar"><i class="${pct ? '' : 'w0'}" style="width:${pct}%;background:${g.status === 'error' ? 'var(--red)' : 'var(--green)'}"></i></div>
+        <span class="hint">${st}${g.bad ? ` · ${g.bad} câu cần xem lại` : ''}</span></div>
+      ${g.error ? `<span class="tr-err">${esc(g.error)}</span>` : ''}
+      <span class="hint mono tr-path">${esc(g.path)}</span>
+    </div>
+    <div class="btn-row">
+      <button class="btn sm yellow" type="button" data-a="open">Mở</button>
+      ${working ? '<button class="btn sm plain" type="button" data-a="stop">Dừng</button>' : g.done < g.total ? '<button class="btn sm green" type="button" data-a="run">Dịch</button>' : ''}
+      <button class="btn sm cyan" type="button" data-a="apply" ${g.done && !working ? '' : 'disabled'}>Áp dụng vào game</button>
+      ${g.applied ? '<button class="btn sm plain" type="button" data-a="restore">Khôi phục bản gốc</button>' : ''}
+      <button class="btn sm plain" type="button" data-a="del" aria-label="Xóa dự án ${esc(g.name)}">Xóa</button>
+    </div></div>`;
+}
+
+async function gameAct(e, id) {
+  const btn = e.target.closest('[data-a]');
+  if (!btn) return;
+  const a = btn.dataset.a;
+  try {
+    if (a === 'open') { T.gp = id; T.gq = {filter: 'all', q: '', offset: 0}; return render(); }
+    if (a === 'run') {
+      const s = T.settings;
+      const g = await api(`/api/translate/games/${id}?limit=1`);
+      if (s.engine === 'claude' && g.total - g.done > 2000) {
+        const cost = g.estimate[s.claude_model];
+        if (!confirm(`Game có ${(g.total - g.done).toLocaleString('vi-VN')} câu chưa dịch. Ước tính chi phí với ${engineName(s)}: ${usd(cost)}. Bắt đầu dịch?`)) return;
+      }
+      await api(`/api/translate/games/${id}/run`, {method: 'POST'});
+    }
+    if (a === 'stop') await api(`/api/translate/games/${id}/stop`, {method: 'POST'});
+    if (a === 'apply') {
+      if (!confirm('Tắt game trước khi áp dụng. Áp dụng bản dịch vào game ngay?')) return;
+      btn.disabled = true; btn.textContent = 'Đang ghi…';
+      const r = await api(`/api/translate/games/${id}/apply`, {method: 'POST'});
+      toast(r.engine === 'renpy' ? `Đã Việt hóa: ${r.say} câu thoại, ${r.ui} chữ giao diện. Mở game để chơi.` : `Đã Việt hóa ${r.texts} câu trong ${r.files} file. Mở game để chơi.`);
+    }
+    if (a === 'restore') {
+      if (!confirm('Đưa game về bản tiếng Anh gốc?')) return;
+      await api(`/api/translate/games/${id}/restore`, {method: 'POST'});
+      toast('Đã khôi phục bản gốc.');
+    }
+    if (a === 'del') {
+      if (!confirm('Xóa dự án dịch này khỏi app? (Game và bản đã áp dụng vẫn giữ nguyên; muốn bỏ Việt hóa thì bấm Khôi phục bản gốc trước.)')) return;
+      await api(`/api/translate/games/${id}`, {method: 'DELETE'});
+      if (T.gp === id) T.gp = null;
+    }
+  } catch (err) { toast(err.message, 'err'); }
+  if (T.gp) refreshProject(); else loadGames();
+}
+
+async function renderProject() {
+  const el = $('#trSub');
+  el.innerHTML = '<div class="loading"><span class="spin"></span>Đang mở…</div>';
+  let g;
+  try { g = await api(`/api/translate/games/${T.gp}?limit=1`); } catch (e) { T.gp = null; toast(e.message, 'err'); return render(); }
+  const rpg = g.engine !== 'renpy';
+  el.innerHTML = `
+    <div class="box tr-bar">
+      <button class="btn sm plain" type="button" id="vhBack">← Danh sách game</button>
+      <b class="tr-name">${esc(g.name)}</b>
+      <span class="badge" style="background:var(--violet)">${esc(g.engine_name)}</span>
+      <span class="hint" id="vhStat"></span>
+    </div>
+    <div id="vhHead"></div>
+    <div class="box pcard">
+      <div class="row-between"><h3>Tùy chọn khi áp dụng</h3></div>
+      <label class="check"><input type="checkbox" id="vhFont" ${g.opts.font !== false ? 'checked' : ''}> Đổi phông chữ của game sang phông có dấu tiếng Việt</label>
+      <p class="hint">${rpg ? 'Phông gốc của RPG Maker thường không có dấu tiếng Việt (hiện ô vuông). App chép phông Arial của Windows vào game.' : 'Nhiều game Ren\'Py dùng phông riêng không có dấu tiếng Việt. App đổi sang phông DejaVuSans có sẵn trong Ren\'Py.'}</p>
+      ${rpg ? `<div class="vh-widths">
+        <label class="field">Số ký tự mỗi dòng<input type="number" id="vhW" min="20" max="120" value="${g.opts.width || 50}"></label>
+        <label class="field">Khi có ảnh mặt nhân vật<input type="number" id="vhWF" min="20" max="120" value="${g.opts.width_face || 40}"></label>
+        <small class="hint">Chữ tràn khung thoại thì giảm số này rồi Áp dụng lại. Câu dài hơn 4 dòng tự tách sang khung thoại mới.</small></div>` : ''}
+    </div>
+    <div class="box pcard">
+      <div class="vh-tools">
+        <div class="tr-seg" role="group" aria-label="Lọc">${[['all', 'Tất cả'], ['todo', 'Chưa dịch'], ['bad', 'Cần xem lại'], ['edited', 'Đã sửa tay']]
+          .map(([k, n]) => `<button type="button" class="chip${T.gq.filter === k ? ' on' : ''}" data-f="${k}">${n}</button>`).join('')}</div>
+        <input type="search" id="vhQ" placeholder="Tìm câu…" value="${esc(T.gq.q)}" aria-label="Tìm câu">
+      </div>
+      <p class="hint">Sửa trực tiếp ở cột Tiếng Việt, rời ô là tự lưu. Giữ nguyên các mã như <code>[name]</code>, <code>{b}</code>, <code>\\C[2]</code>, <code>%1</code>. "Cần xem lại" là câu máy dịch làm mất mã: app tạm giữ câu gốc cho đến khi bạn sửa.</p>
+      <div id="vhRows"></div>
+      <div class="row-between" id="vhPager"></div>
+    </div>`;
+  $('#vhBack').addEventListener('click', () => { T.gp = null; render(); });
+  $('#vhFont').addEventListener('change', e => api(`/api/translate/games/${T.gp}`, {method: 'PATCH', body: {font: e.target.checked}}).catch(err => toast(err.message, 'err')));
+  if (rpg) ['vhW', 'vhWF'].forEach(id => $('#' + id).addEventListener('change', e => api(`/api/translate/games/${T.gp}`, {method: 'PATCH',
+    body: id === 'vhW' ? {width: +e.target.value} : {width_face: +e.target.value}}).catch(err => toast(err.message, 'err'))));
+  el.querySelectorAll('[data-f]').forEach(c => c.addEventListener('click', () => { T.gq.filter = c.dataset.f; T.gq.offset = 0;
+    el.querySelectorAll('[data-f]').forEach(x => x.classList.toggle('on', x === c)); loadRows(); }));
+  let qt = 0;
+  $('#vhQ').addEventListener('input', e => { clearTimeout(qt); qt = setTimeout(() => { T.gq.q = e.target.value; T.gq.offset = 0; loadRows(); }, 300); });
+  paintHead(g);
+  await loadRows();
+  T.poll = setInterval(() => { if ($('#vhRows') && T.gp) refreshProject(); else clearInterval(T.poll); }, 3000);
+}
+
+function paintHead(g) {
+  const working = g.running || g.status === 'queued';
+  $('#vhStat').textContent = `${g.done.toLocaleString('vi-VN')}/${g.total.toLocaleString('vi-VN')} câu đã dịch` + (working ? ' · đang dịch…' : '');
+  const s = T.settings;
+  $('#vhHead').innerHTML = `${g.error ? `<div class="notice box err"><b>Dịch bị dừng</b><span>${esc(g.error)}</span></div>` : ''}
+    <div class="box tr-book" data-gid="${g.id}">
+      <div class="tr-book-main">
+        <span class="hint">${g.total.toLocaleString('vi-VN')} câu · ${g.chars.toLocaleString('vi-VN')} ký tự. Ước tính nếu dịch bằng Claude: Opus 5.5 ${usd(g.estimate['claude-opus-5-5'])}, Sonnet 5.5 ${usd(g.estimate['claude-sonnet-5-5'])}, Haiku 5.5 ${usd(g.estimate['claude-haiku-5-5'])}. Bộ dịch đang chọn: <b>${esc(engineName(s))}</b>.</span>
+        ${g.warnings && g.warnings.length ? `<span class="hint">Bỏ qua ${g.warnings.length} file không đọc được: ${esc(g.warnings.slice(0, 2).join('; '))}</span>` : ''}
+      </div>
+      <div class="btn-row">
+        ${working ? '<button class="btn sm plain" type="button" data-a="stop">Dừng</button>' : g.done < g.total ? '<button class="btn sm green" type="button" data-a="run">Dịch</button>' : ''}
+        <button class="btn sm cyan" type="button" data-a="apply" ${g.done && !working ? '' : 'disabled'}>Áp dụng vào game</button>
+        ${g.applied ? '<button class="btn sm plain" type="button" data-a="restore">Khôi phục bản gốc</button>' : ''}
+      </div></div>`;
+  $('#vhHead [data-gid]').addEventListener('click', e => gameAct(e, g.id));
+  T.gstate = g;
+}
+
+async function refreshProject() {
+  if (!T.gp || !$('#vhHead')) return;
+  if (document.activeElement && document.activeElement.closest && document.activeElement.closest('#vhRows')) return;   // đang sửa
+  try {
+    const g = await api(`/api/translate/games/${T.gp}?limit=1`);
+    const changed = !T.gstate || g.done !== T.gstate.done || g.status !== T.gstate.status || g.applied !== T.gstate.applied;
+    paintHead(g);
+    if (changed) loadRows();
+  } catch (e) { /* bỏ qua */ }
+}
+
+async function loadRows() {
+  const el = $('#vhRows');
+  if (!el) return;
+  const {filter, q, offset} = T.gq;
+  let d;
+  try { d = await api(`/api/translate/games/${T.gp}?offset=${offset}&limit=100&filter=${filter}&q=${encodeURIComponent(q)}`); }
+  catch (e) { el.innerHTML = `<div class="notice box err">${esc(e.message)}</div>`; return; }
+  el.innerHTML = d.rows.length ? `<div class="vh-table" role="table">
+    <div class="vh-tr vh-th" role="row"><span role="columnheader">Gốc</span><span role="columnheader">Tiếng Việt</span></div>
+    ${d.rows.map(r => `<div class="vh-tr${r.bad ? ' bad' : ''}" role="row">
+      <div class="vh-src" role="cell"><span class="vh-meta">${KIND[r.kind] || r.kind}${r.who ? ' · ' + esc(r.who) : ''}${r.ctx ? ' · ' + esc(r.ctx) : ''}</span>${esc(r.t)}</div>
+      <div role="cell"><textarea rows="${Math.min(6, Math.max(2, Math.ceil((r.vi || r.t).length / 60)))}" data-i="${r.i}" aria-label="Bản dịch" placeholder="Chưa dịch">${esc(r.vi || '')}</textarea></div>
+    </div>`).join('')}</div>` : '<p class="hint">Không có câu nào.</p>';
+  el.querySelectorAll('textarea').forEach(ta => {
+    ta.dataset.orig = ta.value;
+    ta.addEventListener('blur', async () => {
+      if (ta.value === ta.dataset.orig) return;
+      try { await api(`/api/translate/games/${T.gp}/items`, {method: 'PUT', body: [{i: +ta.dataset.i, vi: ta.value}]}); ta.dataset.orig = ta.value; ta.closest('.vh-tr').classList.remove('bad'); }
+      catch (err) { toast(err.message, 'err'); }
+    });
+  });
+  const pages = Math.ceil(d.matched / 100), cur = Math.floor(offset / 100) + 1;
+  $('#vhPager').innerHTML = pages > 1 ? `<span class="hint">${d.matched.toLocaleString('vi-VN')} câu · trang ${cur}/${pages}</span>
+    <div class="btn-row"><button class="btn sm plain" type="button" data-p="-1" ${cur === 1 ? 'disabled' : ''}>← Trước</button>
+    <button class="btn sm plain" type="button" data-p="1" ${cur === pages ? 'disabled' : ''}>Sau →</button></div>` : `<span class="hint">${d.matched.toLocaleString('vi-VN')} câu</span>`;
+  $('#vhPager').querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => { T.gq.offset = Math.max(0, offset + (+b.dataset.p) * 100); loadRows(); $('#vhRows').scrollIntoView({block: 'start'}); }));
 }
 
 window.CV.views.translate = render;

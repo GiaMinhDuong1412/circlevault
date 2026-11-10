@@ -191,13 +191,19 @@ function createWindow() {
   win.webContents.on('before-input-event', (e, i) => {
     if (i.type !== 'keyDown') return;
     const k = i.key.toLowerCase();
-    if (k === 'f5' || (i.control && k === 'r')) { win.webContents.reload(); e.preventDefault(); }
+    if ((k === 'f5' || k === 'r') && (i.control || k === 'f5') && i.shift) { win.webContents.reloadIgnoringCache(); e.preventDefault(); }
+    else if (k === 'f5' || (i.control && k === 'r')) { win.webContents.reload(); e.preventDefault(); }
     else if (k === 'f12' || (i.control && i.shift && k === 'i')) { win.webContents.toggleDevTools(); e.preventDefault(); }
     else if (i.control && (k === '=' || k === '+')) { win.webContents.setZoomLevel(win.webContents.getZoomLevel() + 0.5); e.preventDefault(); }
     else if (i.control && k === '-') { win.webContents.setZoomLevel(win.webContents.getZoomLevel() - 0.5); e.preventDefault(); }
     else if (i.control && k === '0') { win.webContents.setZoomLevel(0); e.preventDefault(); }
   });
-  win.loadURL(`http://127.0.0.1:${port}/`);
+  // Bản mới: xóa bộ nhớ đệm giao diện cũ, nếu không trình duyệt trong app có thể dùng lại app.js/index.html của bản trước
+  // (bản 2026.11.3 bị vậy nên không thấy tab Dịch).
+  const fresh = cfg.uiVersion !== app.getVersion()
+    ? session.defaultSession.clearCache().catch(() => {}).then(() => { cfg.uiVersion = app.getVersion(); saveCfg(); })
+    : Promise.resolve();
+  fresh.then(() => win.loadURL(`http://127.0.0.1:${port}/`));
 }
 
 function setupDownloads() {
@@ -250,8 +256,8 @@ async function init() {
   ipcMain.handle('update-get', () => (updater ? updater.getState() : null));
   ipcMain.on('update-act', () => { if (updater) updater.act(); });
   ipcMain.on('quit', () => app.quit());
-  ipcMain.handle('pick-folder', async () => {
-    const r = await dialog.showOpenDialog(win, { title: 'Chọn thư mục nhạc', properties: ['openDirectory'] });
+  ipcMain.handle('pick-folder', async (_e, title) => {
+    const r = await dialog.showOpenDialog(win, { title: typeof title === 'string' ? title.slice(0, 80) : 'Chọn thư mục nhạc', properties: ['openDirectory'] });
     return r.canceled ? null : r.filePaths[0];
   });
   ipcMain.handle('restart-server', () => restartServer().catch((e) => { log('Lỗi khởi động lại:', e.message); return false; }));
