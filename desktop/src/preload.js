@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('cvDesktop', {
   openBrowser: (mode, url) => ipcRenderer.send('open-browser', mode, url),   // 'youtube' | 'web'
   openParty: (url) => ipcRenderer.send('open-party', url),
   youtubeLogout: () => ipcRenderer.invoke('youtube-logout'),
+  youtubeImport: () => ipcRenderer.invoke('youtube-import'),   // nạp cookie lấy từ trình duyệt của người dùng vào cửa sổ YouTube
   onYoutubeLogin: (cb) => ipcRenderer.on('youtube-login', (_e, v) => cb(v)),
   openScreenTranslate: () => ipcRenderer.send('open-screen-translate'),   // khung dịch màn hình game
   musicState: (st) => ipcRenderer.send('music-state', st),               // trình phát mini khi thu nhỏ app

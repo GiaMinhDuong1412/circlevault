@@ -29,12 +29,13 @@ const wins = {};             // mode -> {win, view, mode, streams, adblock}
 let sniffing = false;
 let lastLogin = null;
 let exportTimer = 0;
+let importing = false;
 
 function setup(options) {
   ctx = options;
   for (const p of ['persist:youtube', 'persist:web']) session.fromPartition(p).setUserAgent(CHROME_UA);
   const yt = session.fromPartition('persist:youtube');
-  yt.cookies.on('changed', () => { clearTimeout(exportTimer); exportTimer = setTimeout(exportYoutubeCookies, 1500); });
+  yt.cookies.on('changed', () => { if (importing) return; clearTimeout(exportTimer); exportTimer = setTimeout(exportYoutubeCookies, 1500); });
   exportYoutubeCookies();
   ipcMain.on('bshell', onShellMessage);
 }
@@ -56,7 +57,7 @@ async function exportYoutubeCookies() {
       fs.mkdirSync(ctx.dataDir, { recursive: true });
       fs.writeFileSync(file + '.tmp', lines.join('\n') + '\n', { mode: 0o600 });
       fs.renameSync(file + '.tmp', file);
-    } else if (fs.existsSync(file)) {
+    } else if (lastLogin === true && fs.existsSync(file)) {   // vừa đăng xuất trong cửa sổ YouTube (file có thể lấy từ trình duyệt khác)
       fs.unlinkSync(file);
     }
     if (lastLogin !== logged) {
@@ -66,6 +67,38 @@ async function exportYoutubeCookies() {
       if (wins.youtube) pushState(wins.youtube);
     }
   } catch (e) { ctx.log('Lỗi ghi cookie YouTube:', e.message); }
+}
+
+/** Nạp file cookie (backend lấy từ trình duyệt của người dùng / file cookies.txt) vào cửa sổ YouTube của app. */
+async function importYoutubeCookies() {
+  const file = path.join(ctx.dataDir, 'youtube-cookies.txt');
+  let text = '';
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return { ok: false, count: 0 }; }
+  const ses = session.fromPartition('persist:youtube');
+  importing = true;
+  let n = 0;
+  try {
+    for (let line of text.split(/\r?\n/)) {
+      let httpOnly = false;
+      if (line.startsWith('#HttpOnly_')) { line = line.slice(10); httpOnly = true; }
+      if (!line || line.startsWith('#')) continue;
+      const [domain, sub, cpath, secure, expires, name, ...rest] = line.split('\t');
+      if (!name || !domain) continue;
+      const host = domain.replace(/^\./, '');
+      const c = { url: `https://${host}${cpath || '/'}`, name, value: rest.join('\t'), path: cpath || '/', secure: secure === 'TRUE',
+        httpOnly: httpOnly || /^(__Secure-|SID$|HSID$|SSID$|LOGIN_INFO$)/.test(name), sameSite: name.startsWith('__Secure-3P') ? 'no_restriction' : 'unspecified' };
+      if (name.startsWith('__Host-')) c.path = '/';
+      else if (sub === 'TRUE' || domain.startsWith('.')) c.domain = '.' + host;
+      if (Number(expires) > 0) c.expirationDate = Number(expires);
+      try { await ses.cookies.set(c); n++; } catch (e) { ctx.log('Không nạp được cookie', name, e.message); }
+    }
+    await ses.cookies.flushStore();
+  } finally { importing = false; }
+  ctx.log('Nạp cookie YouTube từ trình duyệt khác:', n);
+  lastLogin = null;
+  await exportYoutubeCookies();
+  if (wins.youtube) wins.youtube.view.webContents.loadURL(HOME.youtube);
+  return { ok: true, count: n };
 }
 
 async function youtubeLogout() {
@@ -345,4 +378,4 @@ function openParty(url) {
   win.loadURL(url);
 }
 
-module.exports = { setup, openBrowser, openParty, youtubeLogout, exportYoutubeCookies, _windows: () => wins };
+module.exports = { setup, openBrowser, openParty, youtubeLogout, importYoutubeCookies, exportYoutubeCookies, _windows: () => wins };

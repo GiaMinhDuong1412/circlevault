@@ -268,6 +268,7 @@ async function init() {
   ipcMain.on('open-browser', (_e, mode, url) => browser.openBrowser(mode, url));
   ipcMain.on('open-party', (_e, url) => { if (isLocal(url) || /^http:\/\/127\.0\.0\.1:\d+\/r\//.test(url)) browser.openParty(url); });
   ipcMain.handle('youtube-logout', () => browser.youtubeLogout());
+  ipcMain.handle('youtube-import', () => browser.importYoutubeCookies());
   screenTr.setup({ userData: HOME, port: () => port, icon: ICON, log });
   ipcMain.on('open-screen-translate', () => screenTr.open());
   miniPlayer.setup({ userData: HOME, icon: ICON, log });

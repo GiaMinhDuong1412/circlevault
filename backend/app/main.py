@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CircleVault", lifespan=lifespan)
 app.include_router(ytmusic.router)
+app.include_router(ytmusic.acct)
 app.include_router(music.router)
 app.include_router(party.router)
 app.include_router(translate.router)

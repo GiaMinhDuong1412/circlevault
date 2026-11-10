@@ -43,7 +43,8 @@ _lock = threading.Lock()
 def _ydl_info(url: str, **extra) -> dict:
     cfg = config.load()
     log = downloader._Logger()
-    opts = {**downloader._base_opts(cfg), "logger": log, "skip_download": True, **extra}
+    opts = {**downloader._base_opts(cfg), "logger": log, "skip_download": True,
+            "extractor_args": {"youtubetab": {"skip": ["authcheck"]}}, **extra}
     with downloader._account(cfg, url, f"yt-{time.time_ns()}") as acc, yt_dlp.YoutubeDL({**opts, **acc}) as ydl:
         try:
             info = ydl.extract_info(url, download=False)
@@ -57,6 +58,8 @@ def _ydl_info(url: str, **extra) -> dict:
 
 def _nice(msg: str) -> str:
     m = msg.lower()
+    if "unable to connect" in m or "timed out" in m or "connection" in m or "getaddrinfo" in m:
+        return "Không kết nối được YouTube. Kiểm tra mạng rồi thử lại."
     if "sign in" in m or "login" in m or "cookies" in m:
         return "YouTube yêu cầu đăng nhập. Bấm Đăng nhập YouTube rồi thử lại."
     if "private" in m:
@@ -312,3 +315,81 @@ def stream(vid: str, request: Request):
     if m:
         headers["Content-Range"] = f"bytes {start}-{end}/{total}"
     return StreamingResponse(gen(), status_code=206 if m else 200, media_type=mime, headers=headers)
+
+
+# ------------------------------------------------------------------ lấy đăng nhập YouTube từ trình duyệt khác
+# Google hay chặn đăng nhập trong trình duyệt nhúng ("This browser or app may not be secure"). Cách thay thế: người dùng
+# đã đăng nhập YouTube trong Firefox/Chrome/Edge… thì lấy cookie YouTube/Google từ trình duyệt đó (yt-dlp đọc), hoặc nhập
+# file cookies.txt xuất bằng tiện ích trình duyệt. Chỉ giữ cookie của youtube.com / google.com, ghi vào DATA/youtube-cookies.txt.
+acct = APIRouter(prefix="/api/youtube", dependencies=[Depends(_local_only)])
+BROWSERS = ("firefox", "chrome", "edge", "brave", "opera", "vivaldi", "chromium")
+_KEEP = re.compile(r"(^|\.)(youtube\.com|google\.com)$")
+_LOGIN = {"SAPISID", "__Secure-3PAPISID", "LOGIN_INFO"}
+
+
+def _save_jar(jar, source: str) -> dict:
+    from yt_dlp.cookies import YoutubeDLCookieJar
+    out = YoutubeDLCookieJar()
+    n = 0
+    for c in jar:
+        if _KEEP.search(c.domain.lstrip(".")):
+            out.set_cookie(c)
+            n += 1
+    if not any(c.name in _LOGIN and c.domain.lstrip(".").endswith("youtube.com") for c in out):
+        raise HTTPException(400, f"Không thấy tài khoản YouTube đã đăng nhập trong {source}.")
+    tmp = config.YT_COOKIES.with_suffix(".tmp")
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    out.save(str(tmp))
+    tmp.replace(config.YT_COOKIES)
+    try:
+        c = _read_cache()
+        c.pop("items", None)
+        c["at"] = 0
+        _write_cache(c)
+    except OSError:
+        pass
+    return {"ok": True, "count": n, "logged_in": downloader.youtube_logged_in()}
+
+
+@acct.post("/import")
+def import_browser(body: dict):
+    browser = str(body.get("browser") or "").lower()
+    if browser not in BROWSERS:
+        raise HTTPException(400, "Chọn trình duyệt.")
+    from yt_dlp.cookies import extract_cookies_from_browser
+    log = downloader._Logger()
+    try:
+        jar = extract_cookies_from_browser(browser, logger=log)
+    except Exception as e:  # noqa: BLE001 – lỗi của yt-dlp rất đa dạng (không thấy hồ sơ, file bị khóa…)
+        msg = downloader.clean(str(e))
+        low = msg.lower()
+        if "could not find" in low or "not found" in low:
+            raise HTTPException(400, f"Không thấy {browser.title()} trên máy này.") from e
+        if "copy" in low or "lock" in low or "permission" in low:
+            raise HTTPException(400, f"{browser.title()} đang mở nên khóa file cookie. Tắt hẳn {browser.title()} rồi bấm lại.") from e
+        raise HTTPException(400, f"Không đọc được cookie của {browser.title()}: {msg[:200]}") from e
+    try:
+        return _save_jar(jar, browser.title())
+    except HTTPException as e:
+        if browser != "firefox":
+            e.detail += (f" Nếu bạn chắc chắn đã đăng nhập YouTube trên {browser.title()}: bản {browser.title()} mới mã hóa cookie"
+                         " nên app không đọc được – dùng Firefox, hoặc cách nhập file cookies.txt.")
+        else:
+            e.detail += " Mở youtube.com trong Firefox, đăng nhập, rồi bấm lại."
+        raise
+
+
+@acct.post("/import-file")
+async def import_file(request: Request):
+    import http.cookiejar
+    import io
+    from yt_dlp.cookies import YoutubeDLCookieJar
+    raw = (await request.body())[: 4 * 1024 * 1024].decode("utf-8", "replace")
+    if not re.match(r"#( Netscape)? HTTP Cookie File", raw.lstrip("\ufeff")):
+        raw = "# Netscape HTTP Cookie File\n" + raw.lstrip("\ufeff")
+    jar = YoutubeDLCookieJar()
+    try:
+        jar.load(io.StringIO(raw))
+    except (http.cookiejar.LoadError, ValueError) as e:
+        raise HTTPException(400, "File không đúng định dạng cookies.txt (Netscape).") from e
+    return _save_jar(jar, "file cookies.txt")

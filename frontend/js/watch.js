@@ -5,6 +5,72 @@ const {api, esc, toast} = window.CV;
 const $ = (s, r = document) => r.querySelector(s);
 const desk = window.cvDesktop;
 
+/* ================================================================ ĐĂNG NHẬP YOUTUBE
+ * Google thường chặn đăng nhập trong cửa sổ nhúng của app ("Couldn't sign you in"). Cách chắc ăn: lấy đăng nhập YouTube
+ * có sẵn trong trình duyệt của bạn, hoặc nhập file cookies.txt. Cookie chỉ lưu trên máy này. */
+async function ytDone(res) {
+  if (desk && desk.youtubeImport) { try { await desk.youtubeImport(); } catch (e) { /* bỏ qua */ } }
+  toast(`Đã đăng nhập YouTube (${res.count} cookie). Playlist của bạn sẽ hiện ở tab Nghe Nhạc.`);
+  $('#ytDlg')?.close();
+  window.dispatchEvent(new Event('cv-youtube'));
+}
+function ytLogin() {
+  let dlg = $('#ytDlg');
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.id = 'ytDlg'; dlg.className = 'box yt-dlg';
+    document.body.appendChild(dlg);
+  }
+  dlg.innerHTML = `<div class="dlg-head"><h3>Đăng nhập YouTube</h3><button class="btn plain iconbtn" type="button" data-ytx aria-label="Đóng">✕</button></div>
+    <p class="hint">Google thường chặn đăng nhập ngay trong app (báo "Couldn't sign you in"). Dùng cách 1 hoặc 2: app dùng lại đăng nhập YouTube bạn đã có. Mật khẩu không đi qua app, cookie chỉ lưu trên máy này.</p>
+    <section class="yt-way">
+      <h4>1. Lấy từ trình duyệt bạn đang dùng</h4>
+      <p>Mở youtube.com trên trình duyệt đó và đăng nhập trước. Chrome, Edge… thì <b>tắt hẳn trình duyệt</b> rồi mới bấm.</p>
+      <div class="btn-row"><select id="ytBrowser" aria-label="Trình duyệt">
+        ${[['firefox', 'Firefox'], ['chrome', 'Chrome'], ['edge', 'Edge'], ['brave', 'Brave'], ['opera', 'Opera'], ['vivaldi', 'Vivaldi'], ['chromium', 'Chromium']].map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+      </select><button class="btn green" type="button" id="ytFromBrowser">LẤY ĐĂNG NHẬP</button></div>
+      <p class="hint">Firefox đọc được chắc chắn. Chrome/Edge bản mới mã hóa cookie nên có thể không đọc được, khi đó dùng cách 2.</p>
+    </section>
+    <section class="yt-way">
+      <h4>2. Nhập file cookies.txt</h4>
+      <ol class="steps">
+        <li>Trên Chrome/Edge, cài tiện ích <b>Get cookies.txt LOCALLY</b> (Chrome Web Store / Edge Add-ons).</li>
+        <li>Mở youtube.com (đã đăng nhập), bấm biểu tượng tiện ích → <b>Export</b> → được file <code>youtube.com_cookies.txt</code>.</li>
+        <li>Chọn file đó ở đây. Xong thì xóa file trong thư mục Tải về cho an toàn.</li>
+      </ol>
+      <label class="btn yellow file-btn">CHỌN FILE COOKIES.TXT<input type="file" id="ytFile" accept=".txt,text/plain" hidden></label>
+    </section>
+    <section class="yt-way">
+      <h4>3. Đăng nhập trong cửa sổ YouTube của app</h4>
+      <p class="hint">Có thể bị Google từ chối như trên. Nếu vào được thì app tự nhận.</p>
+      <button class="btn plain" type="button" id="ytInApp" ${desk ? '' : 'disabled'}>Mở trang đăng nhập</button>
+    </section>
+    <p class="hint err" id="ytErr" role="alert"></p>`;
+  const err = m => { $('#ytErr').textContent = m || ''; };
+  dlg.querySelector('[data-ytx]').onclick = () => dlg.close();
+  $('#ytFromBrowser').onclick = async e => {
+    const b = e.currentTarget; err(''); b.disabled = true; b.textContent = 'ĐANG ĐỌC…';
+    try { await ytDone(await api('/api/youtube/import', {method: 'POST', body: {browser: $('#ytBrowser').value}})); }
+    catch (x) { err(x.message); }
+    finally { b.disabled = false; b.textContent = 'LẤY ĐĂNG NHẬP'; }
+  };
+  $('#ytFile').onchange = async e => {
+    const f = e.target.files[0]; e.target.value = ''; err('');
+    if (!f) return;
+    if (f.size > 4 * 1024 * 1024) return err('File quá lớn, không phải file cookies.txt.');
+    try {
+      const r = await fetch('/api/youtube/import-file', {method: 'POST', headers: {'content-type': 'text/plain'}, body: await f.text()});
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'Lỗi ' + r.status);
+      await ytDone(d);
+    } catch (x) { err(x.message); }
+  };
+  $('#ytInApp').onclick = () => { dlg.close(); desk.openBrowser('youtube', 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2F'); };
+  dlg.showModal();
+}
+window.CV.ytLogin = ytLogin;
+window.addEventListener('cv-youtube', () => { if (window.CV.S.view === 'online') renderOnline(); });
+
 /* ================================================================ XEM ONLINE */
 async function renderOnline() {
   let yt = {logged_in: false, use_account: true};
@@ -20,12 +86,12 @@ async function renderOnline() {
       <ul class="tick">
         <li>Đăng nhập một lần, app nhớ cho lần sau.</li>
         <li>Tải bằng tài khoản: tải được video giới hạn tuổi, video dành cho hội viên kênh, chất lượng 1080p Premium nếu có.</li>
-        <li>Mật khẩu chỉ nhập trên trang của Google; CircleVault không đọc và không lưu mật khẩu.</li>
+        <li>Đăng nhập bằng tài khoản YouTube có sẵn trong Firefox/Chrome/Edge của bạn hoặc file cookies.txt; CircleVault không đọc và không lưu mật khẩu.</li>
       </ul>
       <div class="btn-row">
         <button class="btn green" type="button" data-open="youtube" ${desk ? '' : 'disabled'}>MỞ YOUTUBE</button>
         ${yt.logged_in ? '<button class="btn plain" type="button" id="ytLogout" ' + (desk ? '' : 'disabled') + '>Đăng xuất</button>'
-          : '<button class="btn yellow" type="button" data-open="youtube-login" ' + (desk ? '' : 'disabled') + '>Đăng nhập YouTube</button>'}
+          : '<button class="btn yellow" type="button" id="ytLoginBtn">Đăng nhập YouTube</button>'}
       </div>
       <label class="check"><input type="checkbox" id="useYt" ${yt.use_account ? 'checked' : ''}> Dùng tài khoản này khi tải video YouTube</label>
     </div>
@@ -58,8 +124,9 @@ async function renderOnline() {
     try { await api('/api/config', {method: 'PUT', body: {use_youtube_account: e.target.checked}}); toast('Đã lưu.'); }
     catch (err) { toast(err.message, 'err'); }
   });
+  $('#ytLoginBtn')?.addEventListener('click', ytLogin);
   $('#ytLogout')?.addEventListener('click', async () => {
-    await desk.youtubeLogout();
+    if (desk) await desk.youtubeLogout(); else await api('/api/youtube', {method: 'DELETE'}).catch(() => {});
     toast('Đã đăng xuất YouTube trong app.'); renderOnline();
   });
   document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => {

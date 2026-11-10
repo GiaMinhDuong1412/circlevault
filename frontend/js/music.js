@@ -117,7 +117,7 @@ function ytSide(item) {
   let body;
   if (y.loading && !y.items.length) body = '<p class="hint">Đang lấy playlist YouTube của bạn…</p>';
   else if (!y.logged_in) body = `<p class="hint">Đăng nhập YouTube trong app để thấy playlist, video đã thích, xem sau của bạn.</p>
-    ${window.cvDesktop?.openBrowser ? '<button class="btn sm red" type="button" id="ytLogin">Đăng nhập YouTube</button>' : ''}`;
+    <button class="btn sm red" type="button" id="ytLogin">Đăng nhập YouTube</button>`;
   else body = `<ul>${y.items.map(p => item('yt:' + p.id, (p.builtin ? '♥ ' : '▶ ') + esc(p.title))).join('')}</ul>
     ${y.error ? `<p class="hint err">${esc(y.error)}</p>` : ''}
     ${y.items.length <= 2 && !y.error ? '<p class="hint">Chưa thấy playlist nào. Bấm ⟳ để tải lại.</p>' : ''}`;
@@ -176,7 +176,7 @@ document.addEventListener('click', async e => {
   const a = e.target.closest('[data-list]');
   if (a) { const v = a.dataset.list; M.list = /^\d+$/.test(v) ? +v : v; renderSide(); loadTracks(); return; }
   if (e.target.id === 'ytRefresh') return loadYt(true);
-  if (e.target.id === 'ytLogin') return window.cvDesktop.openBrowser('youtube');
+  if (e.target.id === 'ytLogin') return window.CV.ytLogin ? window.CV.ytLogin() : window.cvDesktop?.openBrowser('youtube');
   const fg = e.target.closest('[data-forget]');
   if (fg) { try { M.yt.saved = (await api('/api/music/yt/saved/' + encodeURIComponent(fg.dataset.forget), {method: 'DELETE'})).saved; } catch (err) { toast(err.message, 'err'); } renderSide(); return; }
   const yb = e.target.closest('[data-yta]');
@@ -497,6 +497,7 @@ window.CV.views.music = async () => {
   M.eq && M.eq.redraw();
 };
 if (window.cvDesktop && window.cvDesktop.onYoutubeLogin) window.cvDesktop.onYoutubeLogin(() => { if (M.yt.loaded) loadYt(true); });
+window.addEventListener('cv-youtube', () => { if (M.yt.loaded) loadYt(true); });
 window.CV.music = {reload: () => { if (M.loaded) loadTracks(); }, initOnce};
 initBar();
 initOnce();   // nạp cài đặt EQ ngay để thanh phát nhạc dùng được ở mọi trang

@@ -19,6 +19,9 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   - `tunnel.py`: cloudflared quick tunnel → party_app (tải cloudflared vào DATA/bin lần đầu).
   - Tác vụ có cột `headers` (JSON Referer/Origin/User-Agent/Cookie) cho link phim bắt từ trình duyệt → `http_headers` yt-dlp.
   - Tài khoản YouTube: app desktop ghi `DATA/youtube-cookies.txt`; `downloader._account` dùng bản sao cho link YouTube.
+    Google hay chặn đăng nhập trong cửa sổ nhúng → hộp "Đăng nhập YouTube" (`CV.ytLogin`, watch.js): lấy cookie từ trình duyệt
+    của người dùng (`POST /api/youtube/import`, yt-dlp đọc) hoặc file cookies.txt (`/api/youtube/import-file`), rồi
+    `cvDesktop.youtubeImport` nạp vào partition `persist:youtube`. Không giả danh trình duyệt để lách kiểm tra của Google.
   - `translate.py` + `ocr.py`: tab Dịch, router `/api/translate/*` (chỉ nhận từ 127.0.0.1 vì có API key). `ocr.py` = RapidOCR
     (onnxruntime, offline) đọc chữ, cắt ảnh webtoon dài thành đoạn, gom dòng thành khung thoại, lấy màu nền. Bộ dịch: `google`
     (web miễn phí, từng câu) hoặc `claude` (SDK anthropic, API key người dùng trong `DATA/translate.json`, dịch cả trang một lần,
