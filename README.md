@@ -25,6 +25,8 @@ Video/nhạc tải về nằm ở thư mục ổ đĩa bạn chọn trong tab **
 | Hàng Đợi | Tốc độ, thời gian còn lại, tạm dừng / tải tiếp từ chỗ dừng, hủy, thử lại. Tắt app giữa chừng thì lần sau tải tiếp. |
 | Thư Viện | Tìm, lọc, xem video ngay trong app, mở thư mục chứa file. |
 | Nghe Nhạc | Thư viện nhạc (nhạc tải từ YouTube + thư mục nhạc có sẵn trên máy), playlist, trộn bài, lặp, phím media trên bàn phím. **EQ 10 dải** với 14 preset (Tăng Bass, Giọng hát rõ, Bolero, EDM, Loa laptop…), lưu preset riêng, đường cong + phổ âm thanh trực tiếp, tự hạ preamp và chống rè. |
+| Xem Online | Cửa sổ YouTube trong app, đăng nhập tài khoản (Premium = không quảng cáo), nút "Tải video này"; tải bằng tài khoản đó (video giới hạn tuổi, hội viên). Trình duyệt bắt link cho trang phim khác: chặn quảng cáo/popup, tự bắt luồng `.m3u8`/`.mpd`/`.mp4` kèm Referer/Cookie để tải. |
+| Xem Chung | Tạo phòng xem chung (phim trong thư viện hoặc video YouTube), bạn bè mở link bằng trình duyệt, không cần cài. Đồng bộ phát/dừng/tua, chat, thả cảm xúc. Link Internet qua Cloudflare Quick Tunnel (không cần tài khoản). |
 | Lưu Trữ | Chọn thư mục cho từng ổ, ổ ưu tiên cho từng loại, ngưỡng đầy, số luồng, cookie trình duyệt, cập nhật yt-dlp. |
 
 ## Cấu trúc mã nguồn
@@ -35,6 +37,8 @@ backend/            Python (FastAPI) – tải, hàng đợi, thư viện, nhạ
   app/manager.py      hàng đợi, giới hạn luồng mỗi ổ, tạm dừng / tiếp tục
   app/downloader.py   gọi yt-dlp: phân tích link, tải, ghi vào thư viện
   app/music.py        thư viện nhạc, playlist, ảnh bìa, cài đặt EQ (API /api/music/…)
+  app/party.py        phòng xem chung: API /api/party + máy chủ riêng cho bạn bè (cổng app + 1)
+  app/tunnel.py       đường hầm Internet cho phòng (cloudflared, tải lần đầu khi cần)
   app/ytdlp_update.py cập nhật yt-dlp từ PyPI (không cần pip)
   app/storage.py      đo dung lượng, chọn ổ theo quy tắc
   app/detect.py       nhận diện loại link
@@ -46,8 +50,12 @@ frontend/           Giao diện web (JS thuần, không cần build)
   js/app.js           trang chủ, hàng đợi, thư viện, lưu trữ, cập nhật app
   js/eq.js            bộ chỉnh âm 10 dải (Web Audio API)
   js/music.js         trang nghe nhạc + thanh phát nhạc
+  js/watch.js         tab Xem Online + tab Xem Chung
+  party.html, js/party.js, css/party.css   trang phòng xem chung (bạn bè mở)
 desktop/            Vỏ app Windows (Electron) – chạy backend bằng Python nhúng, tự cập nhật
   src/main.js, src/updater.js, src/preload.js
+  src/browser.js      cửa sổ YouTube (đăng nhập, xuất cookie cho yt-dlp) + trình duyệt bắt link phim (chặn quảng cáo)
+  src/browser.html, browser-ui.js, browser-preload.js   thanh công cụ của cửa sổ trình duyệt
   build/icon.ico, build/installer.nsh
 tools/
   dong_goi_app.py     chuẩn bị Python nhúng + thư viện + ffmpeg + Deno cho bộ cài

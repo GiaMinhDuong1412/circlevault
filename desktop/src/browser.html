@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>CircleVault</title>
+<style>
+:root{--bg:#fbf9f4;--surface:#fff;--surface-2:#f3f1ea;--ink:#121212;--text:#121212;--muted:#5d5b55;--cyan:#19bde8;--yellow:#fcc419;--green:#3be08c;--red:#ff5a5f;--violet:#9b8cff;--on:#121212;
+  --f:"Be Vietnam Pro","Segoe UI",system-ui,sans-serif;--mono:"JetBrains Mono",Consolas,ui-monospace,monospace}
+@media (prefers-color-scheme: dark){:root{--bg:#131418;--surface:#1d1f25;--surface-2:#262830;--ink:#e8e5da;--text:#f2f0ea;--muted:#a9a69c;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font:14px/1.4 var(--f)}
+.bar{position:fixed;inset:0 0 auto 0;height:56px;display:flex;align-items:center;gap:8px;padding:0 10px;background:var(--cyan);border-bottom:2.5px solid #121212}
+.ib{width:36px;height:34px;display:grid;place-items:center;border:2px solid #121212;border-radius:4px;background:#fff;color:#121212;cursor:pointer;flex:none;box-shadow:2px 2px 0 #121212}
+.ib:disabled{opacity:.4;cursor:default;box-shadow:none}
+.ib svg{width:18px;height:18px}
+.addr{flex:1;min-width:120px;height:36px;border:2.5px solid #121212;border-radius:4px;padding:0 10px;font:500 14px var(--f);background:#fff;color:#121212}
+.addr:focus{outline:3px solid var(--yellow);outline-offset:0}
+.btn{height:36px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border:2px solid #121212;border-radius:4px;background:#fff;color:#121212;font:800 13px var(--f);cursor:pointer;white-space:nowrap;box-shadow:2px 2px 0 #121212;flex:none}
+.btn.g{background:var(--green)} .btn.y{background:var(--yellow)} .btn.p{background:#f7a8ec}
+.btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
+.btn:active:not(:disabled),.ib:active:not(:disabled){transform:translate(2px,2px);box-shadow:none}
+.chip{font:800 11.5px var(--f);letter-spacing:.03em;text-transform:uppercase;border:2px solid #121212;border-radius:3px;padding:4px 7px;background:#fff;color:#121212;white-space:nowrap;flex:none}
+.chip.ok{background:var(--green)}
+.count{display:inline-grid;place-items:center;min-width:22px;height:20px;padding:0 5px;border-radius:999px;background:#121212;color:#fff;font:800 12px var(--mono)}
+.load{position:fixed;top:54px;left:0;height:3px;width:0;background:var(--yellow);transition:width 1.5s ease-out;z-index:3}
+.load.on{width:80%}
+.panel{position:fixed;top:56px;right:0;bottom:0;width:360px;background:var(--surface);border-left:2.5px solid var(--ink);display:flex;flex-direction:column}
+.panel[hidden]{display:none}
+.ph{padding:14px 14px 10px;border-bottom:2px solid var(--ink);display:flex;flex-direction:column;gap:6px}
+.ph h2{margin:0;font-size:15px;font-weight:900;letter-spacing:.04em;text-transform:uppercase}
+.ph p{margin:0;color:var(--muted);font-size:12.5px}
+.ph label{display:flex;flex-direction:column;gap:4px;font-weight:700;font-size:12.5px}
+.ph input{height:32px;border:2px solid var(--ink);border-radius:4px;padding:0 8px;font:500 13px var(--f);background:var(--surface);color:var(--text)}
+.list{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px}
+.st{border:2px solid var(--ink);border-radius:5px;padding:9px 10px;display:flex;flex-direction:column;gap:6px;background:var(--surface);box-shadow:3px 3px 0 var(--ink)}
+.st .top{display:flex;gap:6px;align-items:center}
+.st .t{font:800 11px var(--f);border:2px solid var(--ink);border-radius:3px;padding:2px 6px;background:var(--yellow);color:var(--on)}
+.st .t.HLS{background:var(--cyan)} .st .t.DASH{background:var(--violet)}
+.st .h{font:600 11.5px var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.st .n{font:600 12.5px var(--mono);overflow-wrap:anywhere}
+.st .row{display:flex;gap:6px}
+.st .btn{height:30px;font-size:12px}
+.empty{padding:20px 16px;color:var(--muted);font-size:13px;display:flex;flex-direction:column;gap:8px}
+.empty b{color:var(--text)}
+.foot{padding:8px 12px;border-top:2px solid var(--ink);display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);top:6px;z-index:9;background:var(--surface);color:var(--text);border:2.5px solid var(--ink);border-left-width:10px;border-left-color:var(--green);box-shadow:4px 4px 0 var(--ink);border-radius:5px;padding:10px 14px;font-weight:700;max-width:80vw}
+.toast.err{border-left-color:var(--red)}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<div class="bar">
+  <button class="ib" id="back" title="Quay lại (Alt+←)" aria-label="Quay lại"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M15 5l-7 7 7 7"/></svg></button>
+  <button class="ib" id="fwd" title="Tiến tới (Alt+→)" aria-label="Tiến tới"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M9 5l7 7-7 7"/></svg></button>
+  <button class="ib" id="reload" title="Tải lại (F5)" aria-label="Tải lại"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></button>
+  <button class="ib" id="home" title="Trang đầu" aria-label="Trang đầu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/></svg></button>
+  <input class="addr" id="addr" spellcheck="false" aria-label="Địa chỉ trang hoặc từ khóa tìm kiếm">
+  <span id="ytTools" class="hide" style="display:flex;gap:8px;align-items:center">
+    <button class="btn g" id="dlVideo" title="Tải video đang xem về ổ cứng">Tải video này</button>
+    <button class="btn y" id="dlAudio" title="Chỉ lấy âm thanh MP3">Tải MP3</button>
+    <span class="chip" id="loginChip">Chưa đăng nhập</span>
+    <button class="btn p" id="loginBtn">Đăng nhập</button>
+  </span>
+  <span id="webTools" class="hide" style="display:flex;gap:8px;align-items:center">
+    <button class="btn y" id="panelBtn" title="Danh sách luồng phim bắt được trên trang này">Luồng phim bắt được <span class="count" id="count">0</span></button>
+  </span>
+</div>
+<div class="load" id="load"></div>
+
+<aside class="panel" id="panel" hidden>
+  <div class="ph">
+    <h2>Luồng phim bắt được</h2>
+    <p>Bấm phát phim trên trang, các luồng hiện ở đây. Thường chọn luồng HLS đầu tiên (danh sách chất lượng) hoặc file MP4 lớn nhất.</p>
+    <label>Tên lưu file<input id="title" maxlength="200" placeholder="Tên phim – Tập 1"></label>
+  </div>
+  <div class="list" id="list"></div>
+  <div class="foot"><span id="adb">Chặn quảng cáo: đang bật…</span><button class="btn" id="clear" style="height:28px">Xóa danh sách</button></div>
+</aside>
+
+<script src="browser-ui.js"></script>
+</body>
+</html>

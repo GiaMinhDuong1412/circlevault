@@ -15,6 +15,7 @@ IS_APP = bool(os.environ.get("CIRCLEVAULT_APP"))       # chạy bên trong app d
 CONFIG_PATH = DATA / "config.json"
 ARCHIVE_PATH = DATA / "archive.txt"   # ID các video đã tải, để không tải trùng
 DB_PATH = DATA / "circlevault.db"
+YT_COOKIES = DATA / "youtube-cookies.txt"  # app desktop ghi sau khi đăng nhập YouTube trong cửa sổ YouTube
 
 KINDS = ("youtube", "film", "comic", "novel", "other")
 QUALITIES = ("best", "2160", "1440", "1080", "720", "480", "audio")
@@ -60,6 +61,7 @@ def defaults() -> dict:
         "embed_subs": True,
         "cookies_from_browser": "",   # vd "chrome" / "edge" / "firefox" cho video giới hạn tuổi
         "music_folders": [],          # thư mục nhạc có sẵn trên máy, quét vào trang Nghe Nhạc
+        "use_youtube_account": True,  # đã đăng nhập YouTube trong app thì tải bằng tài khoản đó (Premium, giới hạn tuổi…)
     }
 
 
@@ -109,6 +111,8 @@ def validate(new: dict) -> dict:
         if isinstance(langs, str):
             langs = langs.split(",")
         cfg["subtitle_langs"] = [s.strip() for s in langs if s.strip()][:6]
+    if "use_youtube_account" in new:
+        cfg["use_youtube_account"] = bool(new["use_youtube_account"])
     if "embed_subs" in new:
         cfg["embed_subs"] = bool(new["embed_subs"])
     if "cookies_from_browser" in new:

@@ -18,6 +18,7 @@ const http = require('http');
 const net = require('net');
 const { spawn, execFileSync } = require('child_process');
 const { createUpdater } = require('./updater');
+const browser = require('./browser');
 
 const APP_ID = 'vn.circlevault.app';
 const APP_NAME = 'CircleVault';
@@ -253,6 +254,10 @@ async function init() {
     return r.canceled ? null : r.filePaths[0];
   });
   ipcMain.handle('restart-server', () => restartServer().catch((e) => { log('Lỗi khởi động lại:', e.message); return false; }));
+  browser.setup({ dataDir: DATA, userData: HOME, port: () => port, icon: ICON, log, notifyMain: send });
+  ipcMain.on('open-browser', (_e, mode, url) => browser.openBrowser(mode, url));
+  ipcMain.on('open-party', (_e, url) => { if (isLocal(url) || /^http:\/\/127\.0\.0\.1:\d+\/r\//.test(url)) browser.openParty(url); });
+  ipcMain.handle('youtube-logout', () => browser.youtubeLogout());
   createWindow();
   if (SMOKE) return smoke();
   updater = createUpdater({ send, notify, beforeInstall: () => { quitting = true; stopServer(); } });
@@ -269,13 +274,15 @@ function smoke() {
   wc.once('did-finish-load', async () => {
     try {
       await new Promise((r) => setTimeout(r, 1500));
-      const r = await wc.executeJavaScript(`({desk: !!window.cvDesktop, cv: !!(window.CV && window.CV.eq && window.CV.music),
+      const r = await wc.executeJavaScript(`({desk: !!(window.cvDesktop && window.cvDesktop.openBrowser), cv: !!(window.CV && window.CV.eq && window.CV.music && window.CV.views.party),
         tabs: document.querySelectorAll('.tab').length, audio: typeof AudioContext === 'function'})`);
       const st = await getJson('/api/status');
-      if (!r.desk || !r.cv || r.tabs < 5 || !r.audio) return fail('giao diện thiếu thành phần: ' + JSON.stringify(r));
+      const party = await getJson('/api/party');
+      if (!r.desk || !r.cv || r.tabs < 7 || !r.audio) return fail('giao diện thiếu thành phần: ' + JSON.stringify(r));
+      if (!party.port) return fail('máy chủ phòng xem chung không chạy');
       if (app.isPackaged && (!st.tools.ffmpeg || !st.tools.deno)) return fail('thiếu công cụ: ' + JSON.stringify(st.tools));
       clearTimeout(timer);
-      const ok = JSON.stringify({ ...r, tools: st.tools, version: st.app.version });
+      const ok = JSON.stringify({ ...r, tools: st.tools, version: st.app.version, party: party.port });
       console.log('SMOKE OK', ok);
       log('SMOKE OK', ok);
       quitting = true;

@@ -1,12 +1,15 @@
 """Bọc yt-dlp: phân tích link và tải một tác vụ."""
 from __future__ import annotations
 
+import contextlib
+import json
 import os
 import re
 import shutil
 import time
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlparse
 
 import yt_dlp
 from yt_dlp.postprocessor import PostProcessor
@@ -69,12 +72,37 @@ def _base_opts(cfg: dict) -> dict:
     return opts
 
 
+def youtube_logged_in() -> bool:
+    try:
+        text = config.YT_COOKIES.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    return any(k in text for k in ("\tSAPISID\t", "\t__Secure-3PAPISID\t", "\tLOGIN_INFO\t"))
+
+
+@contextlib.contextmanager
+def _account(cfg: dict, url: str, tag: str):
+    """Link YouTube + đã đăng nhập trong app → dùng bản sao file cookie (yt-dlp ghi đè cookie khi xong việc,
+    dùng bản sao để không đụng file app đang ghi). Không thì dùng cookie trình duyệt nếu người dùng chọn."""
+    is_yt = re.search(r"(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$", urlparse(url).netloc.split(":")[0].lower())
+    if is_yt and cfg.get("use_youtube_account", True) and youtube_logged_in():
+        tmp = config.DATA / "tmp" / f"cookies-{tag}.txt"
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(config.YT_COOKIES, tmp)
+        try:
+            yield {"cookiefile": str(tmp), "cookiesfrombrowser": None}
+        finally:
+            tmp.unlink(missing_ok=True)
+    else:
+        yield {}
+
+
 # ---------------------------------------------------------------- analyze
 def analyze(url: str, cfg: dict, playlist: bool) -> dict:
     log = _Logger()
     opts = {**_base_opts(cfg), "logger": log, "skip_download": True,
             "extract_flat": "in_playlist", "noplaylist": not playlist}
-    with yt_dlp.YoutubeDL(opts) as ydl:
+    with _account(cfg, url, f"an-{time.time_ns()}") as acc, yt_dlp.YoutubeDL({**opts, **acc}) as ydl:
         info = ydl.extract_info(url, download=False)
         info = ydl.sanitize_info(info) if info else None
     if not info:
@@ -208,6 +236,11 @@ def run_task(task: dict, disk: dict, cfg: dict, live: dict, should_stop: Callabl
     }
     if not task["force"]:
         opts["download_archive"] = str(config.ARCHIVE_PATH)
+    if task.get("headers"):        # link phim bắt từ trình duyệt trong app: cần đúng Referer/Origin/User-Agent
+        try:
+            opts["http_headers"] = {k: v for k, v in json.loads(task["headers"]).items() if isinstance(v, str)}
+        except ValueError:
+            pass
 
     pps = list(opts.pop("postprocessors", []))
     if HAS_FFMPEG:
@@ -221,7 +254,7 @@ def run_task(task: dict, disk: dict, cfg: dict, live: dict, should_stop: Callabl
 
     stopped = None
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        with _account(cfg, task["url"], f"t{tid}") as acc, yt_dlp.YoutubeDL({**opts, **acc}) as ydl:
             ydl.add_post_processor(_RecordItem(task, disk, item_done), when="after_move")
             ydl.download([task["url"]])
     except DownloadCancelled as e:

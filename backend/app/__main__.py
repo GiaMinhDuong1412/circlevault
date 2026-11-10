@@ -3,6 +3,7 @@
 App desktop (desktop/src/main.js) gọi lệnh này bằng Python nhúng, kèm --port và --no-browser.
 """
 import argparse
+import os
 import threading
 import webbrowser
 
@@ -21,6 +22,7 @@ def main() -> None:
     cfg = config.load()
     host = a.host or cfg["host"]
     port = a.port or cfg["port"]
+    os.environ["CIRCLEVAULT_PORT"] = str(port)   # máy chủ phòng xem chung dùng cổng kế tiếp
     url = f"http://127.0.0.1:{port}"
     print(f"\n  CircleVault {config.VERSION} đang chạy tại {url}", flush=True)
     if host == "0.0.0.0":

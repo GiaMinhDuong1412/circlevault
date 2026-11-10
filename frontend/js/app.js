@@ -459,11 +459,11 @@ function refreshView() {
   if (S.view === 'queue') loadTasks();
   if (S.view === 'library') loadLibrary();
   if (S.view === 'storage') loadStorage();
-  if (S.view === 'music' && window.CV.views.music) window.CV.views.music();
+  if (window.CV.views[S.view]) window.CV.views[S.view]();
 }
 function route() {
   const v = (location.hash || '#home').slice(1);
-  S.view = ['home', 'queue', 'library', 'music', 'storage'].includes(v) ? v : 'home';
+  S.view = ['home', 'queue', 'library', 'music', 'online', 'party', 'storage'].includes(v) ? v : 'home';
   $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.view === S.view));
   document.body.classList.toggle('view-music', S.view === 'music');
   $$('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== S.view);

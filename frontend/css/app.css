@@ -194,6 +194,19 @@ dialog[open]{display:flex;flex-direction:column;gap:14px}
 .toast.ok{border-left-color:var(--green)} .toast.err{border-left-color:var(--red)}
 @keyframes pop{from{transform:translateY(8px);opacity:0}}
 
+/* xem online / xem chung */
+.tick,.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:14.5px}
+.ui-k{display:inline-block;font:800 12.5px/1.2 var(--f-body);padding:2px 7px;border:2px solid var(--ink);border-radius:4px;background:var(--surface);white-space:nowrap}
+.ui-k.g{background:var(--green);color:var(--on-accent)}
+.site-list{display:flex;flex-wrap:wrap;gap:8px}
+.site-list .chip{cursor:default}
+.src-tabs{display:flex;flex-wrap:wrap;gap:8px 20px}
+.linkbox{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--surface-2);border:2px solid var(--ink);border-radius:4px;padding:8px 10px}
+.linkbox code{flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px}
+.room-card h3{font-size:21px}
+details.pcard summary{cursor:pointer}
+.btn:disabled{cursor:not-allowed}
+
 /* cập nhật app */
 .upd{display:flex;align-items:center;gap:10px;font-size:13.5px;background:var(--surface-2);border:2px solid var(--ink);border-radius:4px;padding:5px 6px 5px 10px}
 

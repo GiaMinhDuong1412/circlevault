@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Xem chung · CircleVault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/p/css/app.css">
+<link rel="stylesheet" href="/p/css/party.css">
+<script>try{const t=localStorage.getItem('cv-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="party">
+<header class="pt-top">
+  <span class="logo-mark" aria-hidden="true"></span>
+  <div class="pt-title"><span class="sec-title">Xem chung</span><b id="roomTitle">Đang vào phòng…</b></div>
+  <div class="pt-who" id="whoBox"></div>
+</header>
+
+<main class="pt-body">
+  <section class="pt-stage">
+    <div class="stage box" id="stage">
+      <div id="player" class="player"></div>
+      <div class="react-layer" id="reactLayer" aria-hidden="true"></div>
+      <div class="stage-msg" id="stageMsg" hidden></div>
+    </div>
+    <div class="pctl box" id="ctl">
+      <button class="pbtn main" type="button" id="cPlay" aria-label="Phát"></button>
+      <span class="mono t" id="cCur">0:00</span>
+      <input type="range" id="cSeek" min="0" max="1" step="0.1" value="0" aria-label="Tua phim">
+      <span class="mono t" id="cDur">0:00</span>
+      <input type="range" id="cVol" min="0" max="1" step="0.01" value="1" aria-label="Âm lượng" title="Âm lượng (chỉ máy bạn)">
+      <button class="btn sm plain" type="button" id="cSync" title="Tua về đúng chỗ mọi người đang xem">Đồng bộ lại</button>
+      <button class="btn sm plain" type="button" id="cFull" aria-label="Toàn màn hình">⛶</button>
+    </div>
+    <div class="reacts" id="reacts" aria-label="Thả cảm xúc"></div>
+    <p class="hint" id="ctlNote"></p>
+  </section>
+
+  <aside class="pt-side box">
+    <div class="members">
+      <div class="sec-title">Trong phòng <span class="mono" id="mCount"></span></div>
+      <ul id="mList"></ul>
+    </div>
+    <div class="chat">
+      <div class="chat-log" id="chatLog" aria-live="polite"></div>
+      <form class="chat-form" id="chatForm">
+        <input type="text" id="chatInput" maxlength="500" placeholder="Nhắn cho cả phòng…" aria-label="Tin nhắn" autocomplete="off">
+        <button class="btn sm green" type="submit">Gửi</button>
+      </form>
+    </div>
+  </aside>
+</main>
+
+<dialog id="joinDlg" class="box">
+  <form id="joinForm" class="join">
+    <h2>Vào phòng xem chung</h2>
+    <p class="hint">Mọi người trong phòng xem cùng một lúc: ai bấm phát, tạm dừng hay tua thì cả phòng cùng theo.</p>
+    <label class="field">Tên của bạn<input type="text" id="joinName" maxlength="30" required placeholder="Ví dụ: Lan" autocomplete="nickname"></label>
+    <button class="btn green" type="submit">VÀO PHÒNG</button>
+  </form>
+</dialog>
+
+<div id="toasts" aria-live="polite"></div>
+<script src="/p/js/party.js"></script>
+</body>
+</html>

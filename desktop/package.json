@@ -2,7 +2,7 @@
   "name": "circlevault",
   "productName": "CircleVault",
   "version": "0.0.0",
-  "description": "CircleVault – tải video, phim, nhạc về ổ cứng cá nhân và nghe nhạc có bộ chỉnh âm",
+  "description": "CircleVault – tải video, phim, nhạc về ổ cứng cá nhân, xem YouTube bằng tài khoản, xem chung với bạn bè",
   "main": "src/main.js",
   "author": "GiaMinhDuong1412",
   "license": "UNLICENSED",
@@ -12,7 +12,8 @@
     "dist": "electron-builder --win --x64 --publish never"
   },
   "dependencies": {
-    "electron-updater": "^6.6.2"
+    "electron-updater": "^6.6.2",
+    "@ghostery/adblocker-electron": "^2.11.0"
   },
   "devDependencies": {
     "electron": "38.2.0",
@@ -29,20 +30,42 @@
       "package.json"
     ],
     "extraResources": [
-      { "from": "res/app", "to": "app" },
-      { "from": "res/python", "to": "python" },
-      { "from": "res/bin", "to": "bin" }
+      {
+        "from": "res/app",
+        "to": "app"
+      },
+      {
+        "from": "res/python",
+        "to": "python"
+      },
+      {
+        "from": "res/bin",
+        "to": "bin"
+      }
     ],
     "directories": {
       "output": "dist",
       "buildResources": "build"
     },
-    "electronLanguages": ["en-US", "vi"],
+    "electronLanguages": [
+      "en-US",
+      "vi"
+    ],
     "win": {
       "icon": "build/icon.ico",
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {

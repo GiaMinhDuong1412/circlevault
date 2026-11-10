@@ -15,7 +15,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, db, detect, downloader, music, storage, ytdlp_update
+import json
+
+from . import config, db, detect, downloader, music, party, storage, ytdlp_update
 from .manager import manager
 
 WEB = config.WEB
@@ -25,12 +27,20 @@ WEB = config.WEB
 async def lifespan(app: FastAPI):
     db.conn()
     loop_task = asyncio.create_task(manager.loop())
+    cfg = config.load()
+    main_port = int(os.environ.get("CIRCLEVAULT_PORT") or cfg["port"])
+    party_task = party.start_background(main_port, "0.0.0.0" if cfg["host"] == "0.0.0.0" else "127.0.0.1")
     yield
     loop_task.cancel()
+    if party.PARTY.get("server"):
+        party.PARTY["server"].should_exit = True
+    party.tunnel.stop()
+    party_task.cancel()
 
 
 app = FastAPI(title="CircleVault", lifespan=lifespan)
 app.include_router(music.router)
+app.include_router(party.router)
 
 
 # ------------------------------------------------------------------ status / config
@@ -101,6 +111,11 @@ class TaskIn(BaseModel):
     force: bool = False
     title: str | None = None
     thumbnail: str | None = None
+    kind: str | None = None                    # trình duyệt bắt link gửi "film"
+    headers: dict[str, str] | None = None      # Referer/Origin/User-Agent/Cookie của trang phim
+
+
+ALLOWED_HEADERS = {"referer": "Referer", "origin": "Origin", "user-agent": "User-Agent", "cookie": "Cookie"}
 
 
 @app.post("/api/tasks")
@@ -112,8 +127,11 @@ def add_task(body: TaskIn):
         raise HTTPException(400, kind["note"])
     cfg = config.load()
     quality = body.quality if body.quality in config.QUALITIES else cfg["default_quality"]
-    tid = db.create_task(body.url.strip(), kind["kind"], quality, body.playlist, body.force,
-                         body.title, body.thumbnail)
+    k = body.kind if body.kind in ("film", "youtube", "other") else kind["kind"]
+    headers = {ALLOWED_HEADERS[h.lower()]: v[:4000] for h, v in (body.headers or {}).items() if h.lower() in ALLOWED_HEADERS}
+    tid = db.create_task(body.url.strip(), k, quality, body.playlist, body.force,
+                         (body.title or "").strip()[:200] or None, body.thumbnail,
+                         json.dumps(headers) if headers else None)
     manager.wake()
     return db.one("SELECT * FROM tasks WHERE id=?", (tid,))
 
@@ -150,6 +168,21 @@ def delete_task(tid: int):
 def clear_finished():
     db.execute("DELETE FROM tasks WHERE status IN ('done','canceled')")
     return {"ok": True}
+
+
+# ------------------------------------------------------------------ tài khoản YouTube (đăng nhập trong cửa sổ YouTube của app)
+@app.get("/api/youtube")
+def youtube_status():
+    cfg = config.load()
+    logged = downloader.youtube_logged_in()
+    updated = config.YT_COOKIES.stat().st_mtime if logged else None
+    return {"logged_in": logged, "updated_at": updated, "use_account": cfg.get("use_youtube_account", True)}
+
+
+@app.delete("/api/youtube")
+def youtube_logout():
+    config.YT_COOKIES.unlink(missing_ok=True)
+    return youtube_status()
 
 
 # ------------------------------------------------------------------ library
