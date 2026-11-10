@@ -91,6 +91,8 @@ def conn() -> sqlite3.Connection:
             cols = {r[1] for r in _conn.execute("PRAGMA table_info(tasks)")}
             if "headers" not in cols:     # bản 2026.11.1 chưa có: header trình duyệt cho link phim bắt được
                 _conn.execute("ALTER TABLE tasks ADD COLUMN headers TEXT")
+            if "music_playlist" not in cols:   # bản 2026.11.11: tải MP3 xong tự thêm vào playlist đang chọn
+                _conn.execute("ALTER TABLE tasks ADD COLUMN music_playlist INTEGER")
         return _conn
 
 
@@ -119,12 +121,13 @@ def update_task(task_id: int, **fields: Any) -> None:
 
 
 def create_task(url: str, kind: str, quality: str, playlist: bool, force: bool,
-                title: str | None, thumbnail: str | None, headers: str | None = None) -> int:
+                title: str | None, thumbnail: str | None, headers: str | None = None,
+                music_playlist: int | None = None) -> int:
     now = time.time()
     return execute(
-        "INSERT INTO tasks (url, kind, quality, playlist, force, title, thumbnail, headers, status, created_at, updated_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
-        (url, kind, quality, int(playlist), int(force), title, thumbnail, headers, now, now),
+        "INSERT INTO tasks (url, kind, quality, playlist, force, title, thumbnail, headers, music_playlist, status,"
+        " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
+        (url, kind, quality, int(playlist), int(force), title, thumbnail, headers, music_playlist, now, now),
     )
 
 

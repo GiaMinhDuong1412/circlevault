@@ -13,6 +13,8 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   - `downloader.py`: mẫu tên file `TEMPLATES` (an toàn Windows), `_RecordItem` (postprocessor after_move) ghi bảng `items`,
     file âm thanh đồng thời vào bảng `tracks` (trang Nghe Nhạc).
   - `music.py`: router `/api/music/*` – tracks, scan thư mục (`music_folders` trong config), cover (mutagen), playlist, settings EQ.
+    Tải MP3 khi đang mở playlist: tác vụ có `music_playlist` (hoặc `music_playlist_name` → `playlist_by_name`, so sánh casefold);
+    `downloader` ghi id bài (match_filter + dòng log "has already been recorded" cho bài bỏ qua) → `music.link_downloaded`.
   - `party.py`: phòng xem chung. `router` /api/party (chỉ app chính dùng) + `party_app` chạy cổng app+1 (chỉ có /r/<mã>,
     /r/<mã>/ws, /r/<mã>/media, tĩnh /p = frontend). Bạn bè/đường hầm chỉ chạm party_app, không thấy API chính.
     Đồng bộ: máy chủ giữ {playing,pos,rate,at}, client tự tính theo đồng hồ máy chủ (ping/pong).

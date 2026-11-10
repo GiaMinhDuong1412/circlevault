@@ -285,3 +285,31 @@ def put_settings(body: dict):
     tmp.write_text(raw, encoding="utf-8")
     tmp.replace(SETTINGS_PATH)
     return {"ok": True}
+
+
+# ---- tải MP3 xong tự vào playlist
+def playlist_by_name(name: str) -> int:
+    """Tìm playlist theo tên (không phân biệt hoa thường), chưa có thì tạo."""
+    name = name.strip()[:80]
+    key = name.casefold()          # so sánh có dấu tiếng Việt (COLLATE NOCASE của SQLite chỉ hiểu chữ không dấu)
+    for row in db.query("SELECT id, name FROM playlists"):
+        if (row["name"] or "").strip().casefold() == key:
+            return row["id"]
+    now = time.time()
+    return db.execute("INSERT INTO playlists (name, track_ids, created_at, updated_at) VALUES (?, '[]', ?, ?)", (name, now, now))
+
+
+def link_downloaded(pid: int, media_ids: list[str]) -> int:
+    """Thêm vào playlist các bài có [id] trong tên file – cả bài vừa tải lẫn bài đã có từ trước (được bỏ qua không tải lại).
+    Giữ đúng thứ tự trong danh sách gốc. Trả về số bài thêm mới."""
+    if not media_ids or not db.one("SELECT id FROM playlists WHERE id=?", (pid,)):
+        return 0
+    by_id: dict[str, int] = {}
+    for r in db.query("SELECT id, path FROM tracks"):
+        m = re.search(r"\[([\w-]{3,40})\]\.\w+$", r["path"] or "")
+        if m:
+            by_id.setdefault(m.group(1), r["id"])
+    found = [by_id[i] for i in dict.fromkeys(media_ids) if i in by_id]
+    before = len(json.loads((db.one("SELECT track_ids FROM playlists WHERE id=?", (pid,)) or {}).get("track_ids") or "[]"))
+    res = _set_ids(pid, lambda ids: ids + [i for i in found if i not in ids])
+    return res["count"] - before

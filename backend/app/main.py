@@ -129,6 +129,8 @@ class TaskIn(BaseModel):
     thumbnail: str | None = None
     kind: str | None = None                    # trình duyệt bắt link gửi "film"
     headers: dict[str, str] | None = None      # Referer/Origin/User-Agent/Cookie của trang phim
+    music_playlist: int | None = None          # tải MP3 xong thêm vào playlist này (playlist đang mở ở Nghe Nhạc)
+    music_playlist_name: str | None = None     # hoặc: tìm/tạo playlist theo tên (tải cả playlist online)
 
 
 ALLOWED_HEADERS = {"referer": "Referer", "origin": "Origin", "user-agent": "User-Agent", "cookie": "Cookie"}
@@ -145,9 +147,15 @@ def add_task(body: TaskIn):
     quality = body.quality if body.quality in config.QUALITIES else cfg["default_quality"]
     k = body.kind if body.kind in ("film", "youtube", "other") else kind["kind"]
     headers = {ALLOWED_HEADERS[h.lower()]: v[:4000] for h, v in (body.headers or {}).items() if h.lower() in ALLOWED_HEADERS}
+    mpl = None
+    if quality == "audio":
+        if body.music_playlist and db.one("SELECT id FROM playlists WHERE id=?", (body.music_playlist,)):
+            mpl = body.music_playlist
+        elif (body.music_playlist_name or "").strip():
+            mpl = music.playlist_by_name(body.music_playlist_name)
     tid = db.create_task(body.url.strip(), k, quality, body.playlist, body.force,
                          (body.title or "").strip()[:200] or None, body.thumbnail,
-                         json.dumps(headers) if headers else None)
+                         json.dumps(headers) if headers else None, mpl)
     manager.wake()
     return db.one("SELECT * FROM tasks WHERE id=?", (tid,))
 

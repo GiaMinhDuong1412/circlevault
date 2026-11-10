@@ -248,7 +248,9 @@ body:is(.view-music,.view-wide) .app-body > .side{display:none}
 .chip-x{border:2px solid var(--ink);border-left:0;background:var(--surface);color:var(--text);font-weight:800;cursor:pointer;border-radius:0 4px 4px 0;padding:0 8px;box-shadow:2px 2px 0 var(--ink)}
 .folders .chip-x{border-left:2px solid var(--ink);border-radius:4px;padding:1px 7px;box-shadow:none}
 #mSearch{width:220px;max-width:100%}
-.tracklist{padding:0;overflow-x:auto}
+/* danh sách bài: hiện khoảng 10 bài, còn lại cuộn trong khung (tiêu đề cột đứng yên) */
+.tracklist{padding:0;overflow:auto;max-height:calc(10 * 57px + 40px);overscroll-behavior:contain}
+.tracks thead th{position:sticky;top:0;z-index:1;background:var(--surface)}
 .tracks{width:100%;border-collapse:collapse;font-size:14px}
 .tracks th{text-align:left;font:800 11.5px var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:10px 12px;border-bottom:var(--bw) solid var(--ink)}
 .tracks td{padding:7px 12px;border-bottom:1px solid var(--grid);vertical-align:middle}
@@ -486,3 +488,8 @@ dialog.pl-add{max-width:720px}
 .cut-row input{font-family:var(--f-mono)}
 .cut-prog{display:flex;align-items:center;gap:10px}
 .cut-prog .bar{flex:1}
+
+.mside .fold{display:flex;align-items:center;gap:6px;flex:1;background:none;border:0;padding:0;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer;text-align:left}
+.mside .fold .n{margin-left:auto;font:600 11.5px var(--f-mono);color:var(--muted)}
+.mside .fold-body{display:flex;flex-direction:column;gap:8px}
+.dl-pl{margin-top:6px;padding:6px 10px;border-left:6px solid var(--green);background:var(--surface-2);border-radius:4px}

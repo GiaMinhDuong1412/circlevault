@@ -42,10 +42,15 @@ class _Logger:
         self.errors: list[str] = []
         self.warnings: list[str] = []
         self.skipped = 0
+        self.archived_ids: list[str] = []
 
     def debug(self, msg: str) -> None:
         if "has already been recorded in the archive" in msg:
             self.skipped += 1
+            # "[download] <id>: <tên> has already been recorded…" (bài bỏ qua vì đã tải): lấy id để vẫn thêm vào playlist
+            m = re.search(r"(?:^|\] )([\w-]{3,40}): .*has already been recorded", ANSI.sub("", msg))
+            if m:
+                self.archived_ids.append(m.group(1))
 
     def info(self, msg: str) -> None:
         self.debug(msg)
@@ -237,6 +242,14 @@ def run_task(task: dict, disk: dict, cfg: dict, live: dict, should_stop: Callabl
     }
     if not task["force"]:
         opts["download_archive"] = str(config.ARCHIVE_PATH)
+    seen_ids: list[str] = []
+    if task.get("music_playlist"):
+        # match_filter chạy TRƯỚC bước kiểm tra "đã tải rồi" → biết cả bài được bỏ qua, để vẫn thêm được vào playlist
+        def _seen(info, *, incomplete=False):
+            if not incomplete and info.get("id") and info.get("_type", "video") == "video":
+                seen_ids.append(str(info["id"]))
+            return None
+        opts["match_filter"] = _seen
     if task.get("headers"):        # link phim bắt từ trình duyệt trong app: cần đúng Referer/Origin/User-Agent
         try:
             opts["http_headers"] = {k: v for k, v in json.loads(task["headers"]).items() if isinstance(v, str)}
@@ -265,6 +278,13 @@ def run_task(task: dict, disk: dict, cfg: dict, live: dict, should_stop: Callabl
         stopped = str(e) or "canceled"
     except Exception as e:  # lỗi không lường trước: báo lên giao diện
         log.error(str(e))
+
+    if task.get("music_playlist") and (seen_ids or log.archived_ids) and not stopped:
+        try:
+            result_added = music.link_downloaded(task["music_playlist"], seen_ids + log.archived_ids)
+            live["playlist_added"] = result_added
+        except Exception as e:  # noqa: BLE001 – không làm hỏng tác vụ tải
+            log.warning(f"Không thêm được vào playlist: {e}")
 
     result = {"done_count": state["done"], "skipped_count": log.skipped,
               "error_count": len(log.errors), "speed": None, "eta": None}

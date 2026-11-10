@@ -98,10 +98,12 @@ async function searchOnline(q, site) {
   }
   renderTracks();
 }
-async function addTask(url, playlist, label) {
+const curPl = () => typeof M.list === 'number' ? M.playlists.find(p => p.id === M.list) : null;
+async function addTask(url, playlist, label, extra = {}) {
   try {
-    await api('/api/tasks', {method: 'POST', body: {url, quality: 'audio', playlist}});
-    toast(`Đã thêm ${label} vào hàng đợi tải. Tải xong bài sẽ có trong Tất cả bài hát và phát từ máy.`);
+    await api('/api/tasks', {method: 'POST', body: {url, quality: 'audio', playlist, ...extra}});
+    const into = extra.music_playlist_name || (extra.music_playlist && curPl()?.name);
+    toast(`Đã thêm ${label} vào hàng đợi tải. Tải xong bài sẽ ${into ? `tự vào playlist "${into}"` : 'có trong Tất cả bài hát'} và phát từ máy.`);
     window.CV.refreshStatus && window.CV.refreshStatus();
   } catch (e) { toast(e.message, 'err'); }
 }
@@ -141,6 +143,10 @@ function ytSide(item) {
     ${y.error ? `<p class="hint err">${esc(y.error)}</p>` : ''}
     ${y.items.length <= 2 && !y.error ? '<p class="hint">Chưa thấy playlist nào. Bấm ⟳ để tải lại.</p>' : ''}`;
   const saved = (y.saved || []).filter(s => !y.items.some(p => p.id === s.id));
+  let open = false;
+  try { open = localStorage.getItem('cv-yt-open') === '1'; } catch (e) { /* bỏ qua */ }
+  if (isYt(M.list) && M.list !== 'yt:@search') open = true;        // đang mở một playlist online thì luôn hiện
+  const count = (y.logged_in ? y.items.length : 0) + saved.length;
   return `<div class="yt-side"><h4>Tìm nhạc online</h4>
     <form class="ol-search" id="olSearch">
       <input type="search" id="olQ" placeholder="Tên bài, ca sĩ…" aria-label="Tìm nhạc online" value="${esc(M.olq || '')}">
@@ -149,10 +155,13 @@ function ytSide(item) {
       </select><button class="btn sm green" type="submit">Tìm</button></div>
     </form>
     ${M.list === 'yt:@search' ? `<ul>${item('yt:@search', '🔎 Kết quả tìm vừa rồi')}</ul>` : ''}
-    <h4 class="row-h">YouTube của tôi${y.logged_in ? `<button type="button" class="chip-x" id="ytRefresh" title="Tải lại danh sách playlist" aria-label="Tải lại">${y.loading ? '…' : '⟳'}</button>` : ''}</h4>
+    <h4 class="row-h"><button type="button" class="fold" id="ytFold" aria-expanded="${open}">${open ? '▾' : '▸'} Playlist online${count ? ` <span class="n">${count}</span>` : ''}</button>${y.logged_in && open ? `<button type="button" class="chip-x" id="ytRefresh" title="Tải lại danh sách playlist" aria-label="Tải lại">${y.loading ? '…' : '⟳'}</button>` : ''}</h4>
+    <div class="fold-body" ${open ? '' : 'hidden'}>
+    <h4>YouTube của tôi</h4>
     ${body}
     ${saved.length ? `<h4>Đã mở bằng link</h4><ul class="folders">${saved.map(s => `<li><a href="#music" data-list="yt:${esc(s.id)}" class="${M.list === 'yt:' + s.id ? 'on' : ''}" title="${esc(s.title)}">${esc(s.title)}</a><button type="button" class="chip-x" data-forget="${esc(s.id)}" aria-label="Bỏ khỏi danh sách">×</button></li>`).join('')}</ul>` : ''}
     <form class="mini-form" id="ytOpen"><input type="text" id="ytLink" placeholder="Link YouTube / SoundCloud / Bandcamp" aria-label="Link playlist online"><button class="btn sm cyan" type="submit">Mở</button></form>
+    </div>
   </div>`;
 }
 async function setFolders(folders) {
@@ -196,10 +205,11 @@ document.addEventListener('submit', async e => {
     e.preventDefault();
     const url = $('#musicUrl').value.trim(); if (!url) return;
     let playlist = $('#musicList').checked;
+    const pl = curPl();
     try {
-      await api('/api/tasks', {method: 'POST', body: {url, quality: 'audio', playlist}});
+      await api('/api/tasks', {method: 'POST', body: {url, quality: 'audio', playlist, music_playlist: pl ? pl.id : undefined}});
       $('#musicUrl').value = '';
-      toast('Đã thêm vào hàng đợi. Bài hát tự hiện ở đây khi tải xong.');
+      toast(pl ? `Đã thêm vào hàng đợi. Tải xong bài tự vào playlist "${pl.name}".` : 'Đã thêm vào hàng đợi. Bài hát tự hiện ở đây khi tải xong.');
       window.CV.refreshStatus && window.CV.refreshStatus();
     } catch (err) { toast(err.message, 'err'); }
   }
@@ -208,13 +218,19 @@ document.addEventListener('click', async e => {
   const a = e.target.closest('[data-list]');
   if (a) { const v = a.dataset.list; M.list = /^\d+$/.test(v) ? +v : v; renderSide(); loadTracks(); return; }
   if (e.target.id === 'ytRefresh') return loadYt(true);
+  if (e.target.closest('#ytFold')) {
+    const open = e.target.closest('#ytFold').getAttribute('aria-expanded') !== 'true';
+    try { localStorage.setItem('cv-yt-open', open ? '1' : '0'); } catch (err) { /* bỏ qua */ }
+    if (!open && isYt(M.list) && M.list !== 'yt:@search') { M.list = 'all'; loadTracks(); }
+    return renderSide();
+  }
   if (e.target.id === 'ytLogin') return window.CV.ytLogin ? window.CV.ytLogin() : window.cvDesktop?.openBrowser('youtube');
   const fg = e.target.closest('[data-forget]');
   if (fg) { try { M.yt.saved = (await api('/api/music/yt/saved/' + encodeURIComponent(fg.dataset.forget), {method: 'DELETE'})).saved; } catch (err) { toast(err.message, 'err'); } renderSide(); return; }
   const yb = e.target.closest('[data-yta]');
   if (yb && M.online) {
     const o = M.online, act = yb.dataset.yta;
-    if (act === 'dlall') return addTask(o.url, true, `${o.entries.length - o.local_count} bài của "${o.title}"`);
+    if (act === 'dlall') return addTask(o.url, true, `${o.entries.length - o.local_count} bài của "${o.title}"`, {music_playlist_name: o.title});
     if (act === 'reload') return loadOnline(true);
   }
   const rm = e.target.closest('[data-rmf]');
@@ -242,7 +258,7 @@ function renderOnline() {
   tools.hidden = !!o.error;
   const missing = o.entries.length - (o.local_count || 0);
   tools.innerHTML = `<span class="hint">${o.entries.length} bài · ${o.local_count || 0} bài đã có trên máy${o.owner ? ' · ' + esc(o.owner) : ''}</span>
-    ${missing > 0 && !o.search ? `<button class="btn sm yellow" type="button" data-yta="dlall">Tải ${missing} bài về máy (MP3)</button>` : ''}
+    ${!o.search && o.url ? `<button class="btn sm yellow" type="button" data-yta="dlall" title="Tạo playlist &quot;${esc(o.title)}&quot; trên máy, bài nào đã có thì chỉ thêm vào">${missing > 0 ? `Tải ${missing} bài về máy (MP3)` : 'Tạo playlist trên máy'}</button>` : ''}
     ${o.search ? '' : '<button class="btn sm plain" type="button" data-yta="reload">Tải lại danh sách</button>'}`;
   if (o.error) {
     box.innerHTML = `<div class="empty"><h3>${o.search ? 'Không tìm được' : 'Không mở được playlist'}</h3><p>${esc(o.error)}</p></div>`; return;
@@ -259,7 +275,14 @@ function renderOnline() {
         : `<button type="button" class="btn sm plain" data-dl="${i}" title="Tải bài này về máy (MP3) – tải xong thì thêm vào playlist được" aria-label="Tải về máy">⬇</button>`}</td>
     </tr>`; }).join('')}</tbody></table>`;
 }
+function paintDlHint() {
+  const pl = curPl(), el = $('#dlPlHint');
+  if (!el) return;
+  el.hidden = !pl;
+  if (pl) el.innerHTML = `Tải xong tự thêm vào playlist <b>${esc(pl.name)}</b> (đang mở).`;
+}
 function renderTracks() {
+  paintDlHint();
   if (isYt(M.list)) return renderOnline();
   $('#ytTools').hidden = true; $('#mSort').hidden = false;
   const box = $('#trackList');
@@ -341,6 +364,7 @@ async function playAt(i) {
   engine.resume();
   const localId = t.ou ? t.local : t.id;
   renderBar(); renderTracks(); mediaSession(t);
+  requestAnimationFrame(() => $('#trackList tr.playing')?.scrollIntoView({block: 'nearest'}));
   if (localId) {
     audio.src = `/api/music/${localId}/file`;
     api(`/api/music/${localId}/played`, {method: 'POST'}).catch(() => {});
