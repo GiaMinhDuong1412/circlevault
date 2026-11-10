@@ -65,7 +65,8 @@ jobs:
           }
           "Chạy thử: OK"
       - uses: actions/upload-artifact@v4
+        continue-on-error: true   # hết dung lượng lưu artifact thì bỏ qua – bản build thử chỉ để tải về xem
         with:
           name: CircleVault-Setup-thu
           path: desktop/dist/CircleVault-Setup-*.exe
-          retention-days: 7
+          retention-days: 2
