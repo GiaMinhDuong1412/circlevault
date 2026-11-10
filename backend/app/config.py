@@ -24,14 +24,19 @@ _lock = threading.Lock()
 
 
 def _default_disks() -> list[dict]:
-    """Trên Windows dùng ổ D: và E: nếu có; nơi khác dùng 2 thư mục trong dự án."""
+    """Windows: dùng tối đa 2 ổ không phải ổ hệ thống (D:, E:, F:…); máy chỉ có ổ C: thì lưu vào Videos.
+    Nơi khác: 2 thư mục trong DATA (chạy thử)."""
     if os.name == "nt":
-        disks = []
-        for letter in ("D", "E"):
-            if Path(f"{letter}:\\").exists():
-                disks.append({"id": letter, "label": f"Ổ {letter}:", "root": f"{letter}:\\CircleVault"})
-        if disks:
-            return disks
+        from . import storage
+        try:
+            drives = [d for d in storage.list_drives() if d["type"] in ("fixed", "removable")]
+        except Exception:  # noqa: BLE001 – không dò được ổ thì dùng mặc định bên dưới
+            drives = []
+        picked = [d for d in drives if not d["system"] and d["type"] == "fixed"][:2] \
+            or [d for d in drives if not d["system"]][:2] or [d for d in drives if d["system"]][:1]
+        if picked:
+            return [{"id": d["letter"], "label": f"Ổ {d['letter']}:" + (f" {d['name']}" if d["name"] else ""),
+                     "root": storage.suggest_root(d)} for d in picked]
     return [
         {"id": "A", "label": "Ổ 1", "root": str(DATA / "downloads" / "disk1")},
         {"id": "B", "label": "Ổ 2", "root": str(DATA / "downloads" / "disk2")},
@@ -86,12 +91,24 @@ def validate(new: dict) -> dict:
     if not isinstance(disks, list) or not disks:
         raise ValueError("Cần ít nhất 1 ổ lưu trữ.")
     seen = set()
+    roots: set[str] = set()
     clean_disks = []
     for d in disks:
         did = str(d.get("id", "")).strip()[:8]
-        root = str(d.get("root", "")).strip()
-        if not did or not root:
-            raise ValueError("Mỗi ổ cần có mã và đường dẫn thư mục.")
+        root = str(d.get("root", "")).strip().strip('"')
+        name = str(d.get("label") or did or "?")
+        if not did:
+            raise ValueError(f"{name} – thiếu mã ổ.")
+        if not root:
+            raise ValueError(f"{name} – chưa có thư mục lưu. Bấm \"Chọn thư mục…\" hoặc bỏ ổ này.")
+        if os.name == "nt" and len(root) == 2 and root[1] == ":":
+            root += "\\CircleVault"                     # chỉ gõ "F:" → F:\CircleVault
+        if not Path(root).is_absolute():
+            raise ValueError(f"{name} – thư mục lưu phải là đường dẫn đầy đủ, ví dụ F:\\CircleVault.")
+        key = os.path.normcase(os.path.normpath(root))
+        if key in roots:
+            raise ValueError(f"Thư mục {root} bị khai báo 2 lần. Bỏ bớt một ổ.")
+        roots.add(key)
         if did in seen:
             raise ValueError(f"Mã ổ '{did}' bị trùng.")
         seen.add(did)

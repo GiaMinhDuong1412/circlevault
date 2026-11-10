@@ -340,8 +340,38 @@ $('#player').addEventListener('click', e => { if (e.target === e.currentTarget) 
 /* ------------------------------------------------------------ storage / settings */
 async function loadStorage() {
   try { S.config = await api('/api/config'); } catch (e) { toast(e.message, 'err'); return; }
-  await loadStatus();
+  await Promise.all([loadStatus(), loadDrives()]);
   renderConfig(); renderTools();
+}
+async function loadDrives() {
+  try { S.drives = await api('/api/drives'); } catch (e) { S.drives = []; }
+}
+const DRIVE_TYPE = {fixed: 'Ổ trong máy', removable: 'Ổ rời / USB', network: 'Ổ mạng', ram: 'Ổ RAM'};
+function drivesBox() {
+  const c = S.config, st = S.status;
+  const used = new Set(c.disks.map(d => (d.root || '').slice(0, 3).toUpperCase()));
+  const allOff = st && st.disks.length && st.disks.every(d => !d.online);
+  const rows = (S.drives || []).map(d => {
+    const inUse = used.has(d.root.slice(0, 3).toUpperCase()) || d.used;
+    const pct = d.total ? Math.round((1 - d.free / d.total) * 100) : 0;
+    return `<div class="drive">
+      <div class="drive-name"><b>${esc(d.letter.length === 1 ? d.letter + ':' : d.root)}</b> ${esc(d.name || '')}
+        <span class="hint">${DRIVE_TYPE[d.type] || ''}${d.system ? ' · ổ Windows' : ''}</span></div>
+      <div class="bar"><i style="width:${pct}%;background:${pct > 90 ? 'var(--red)' : pct > 75 ? 'var(--yellow)' : 'var(--green)'}"></i></div>
+      <span class="hint mono">Trống ${fmtBytes(d.free)} / ${fmtBytes(d.total)}</span>
+      ${inUse ? '<span class="badge on-use">Đang dùng</span>' : `<button class="btn sm green" type="button" data-usedrive="${esc(d.letter)}">Dùng ổ này</button>`}
+    </div>`;
+  }).join('');
+  return `<div class="box pcard drives">
+    <div class="row-between"><h3>Ổ trên máy này</h3><button class="btn sm plain" type="button" id="rescanDrives">Tìm lại ổ</button></div>
+    ${allOff ? '<p class="no">Không thấy ổ nào trong cài đặt bên dưới trên máy này (có thể bạn vừa chuyển máy hoặc ổ rời chưa cắm). Bấm "Dùng ổ này" ở một ổ bên dưới.</p>' : ''}
+    ${rows || '<p class="hint">Không dò được ổ nào. Gõ thư mục lưu ở ô bên dưới.</p>'}
+    <p class="hint">Vừa cắm ổ rời / USB thì bấm "Tìm lại ổ". Ổ Windows (C:) chỉ nên dùng khi máy không có ổ nào khác.</p>
+  </div>`;
+}
+async function saveConfig(msg, collect = true) {   // collect=false: S.config đã cập nhật sẵn (vừa thêm ổ)
+  try { S.config = await api('/api/config', {method: 'PUT', body: collect ? collectConfig() : S.config}); toast(msg || 'Đã lưu cài đặt.'); loadStorage(); }
+  catch (err) { toast(err.message, 'err'); }
 }
 function renderConfig() {
   const c = S.config, st = S.status;
@@ -351,12 +381,16 @@ function renderConfig() {
     return `<div class="box pcard" data-disk="${n}">
       <div class="row-between"><h3>${esc(d.label)}</h3>${c.disks.length > 1 ? `<button class="btn sm plain" type="button" data-rm="${n}">Bỏ ổ này</button>` : ''}</div>
       ${s ? diskBar(s) : ''}
-      ${s?.online ? `<p class="hint mono">Còn trống ${fmtBytes(s.usage.free)}${s.full ? ' · ĐÃ QUÁ NGƯỠNG' : ''}</p>` : '<p class="no">Không tìm thấy ổ hoặc thư mục cha.</p>'}
+      ${!d.root ? '<p class="no">Chưa có thư mục lưu: bấm "Chọn thư mục…" hoặc gõ vào ô bên dưới.</p>'
+        : s?.online ? `<p class="hint mono">Còn trống ${fmtBytes(s.usage.free)}${s.full ? ' · ĐÃ QUÁ NGƯỠNG' : ''}</p>`
+        : s ? '<p class="no">Không thấy ổ này trên máy (ổ rời chưa cắm hoặc ký tự ổ đã đổi). Chọn ổ khác ở "Ổ trên máy này" rồi bỏ ổ này.</p>'
+        : '<p class="hint">Chưa lưu: bấm LƯU CÀI ĐẶT.</p>'}
       <div class="field-row">
         <label class="field">Mã<input type="text" id="disk-id-${n}" name="id" value="${esc(d.id)}" maxlength="8"></label>
         <label class="field">Tên hiển thị<input type="text" id="disk-label-${n}" name="label" value="${esc(d.label)}" maxlength="40"></label>
       </div>
       <label class="field">Thư mục lưu<input type="text" id="disk-root-${n}" name="root" value="${esc(d.root)}" placeholder="E:\\CircleVault"><small>App tự tạo thư mục nếu chưa có.</small></label>
+      ${window.cvDesktop?.pickFolder ? `<div><button class="btn sm cyan" type="button" data-pick="${n}">Chọn thư mục…</button></div>` : ''}
     </div>`;
   }).join('');
   const rules = ['youtube', 'film', 'other'].map(k => {
@@ -368,8 +402,9 @@ function renderConfig() {
   const browsers = ['', 'chrome', 'edge', 'firefox', 'brave', 'opera', 'vivaldi', 'chromium'];
   const bOpts = browsers.map(b => `<option value="${b}" ${c.cookies_from_browser === b ? 'selected' : ''}>${b ? b[0].toUpperCase() + b.slice(1) : 'Không dùng'}</option>`).join('');
   $('#cfgForm').innerHTML = `
+    ${drivesBox()}
     <div class="cols2">${disks}</div>
-    <div><button class="btn plain" type="button" id="addDisk">+ Thêm ổ</button></div>
+    <div><button class="btn plain" type="button" id="addDisk">+ Thêm thư mục khác</button></div>
     <div class="tablebox box"><table class="rules"><thead><tr><th>Loại</th><th>Ổ ưu tiên</th><th>Ghi chú</th></tr></thead><tbody>${rules}</tbody></table></div>
     <div class="box pcard">
       <h3>Tùy chọn tải</h3>
@@ -384,12 +419,35 @@ function renderConfig() {
       <label class="check"><input type="checkbox" id="embedSubs" ${c.embed_subs ? 'checked' : ''}> Tải và nhúng phụ đề vào video</label>
     </div>
     <div class="btn-row"><button class="btn green" type="submit">LƯU CÀI ĐẶT</button></div>`;
-  $('#addDisk').addEventListener('click', () => {
-    collectConfig();
+  const freeId = pref => {
     const used = new Set(S.config.disks.map(d => d.id));
-    const id = 'FGHIJKLMNOP'.split('').find(x => !used.has(x)) || String(Date.now() % 1000);
-    S.config.disks.push({id, label: `Ổ ${id}:`, root: ''}); renderConfig();
+    return [pref, ...'DEFGHIJKLMNOPQRSTUVWXYZ'].find(x => x && !used.has(x)) || String(Date.now() % 1000);
+  };
+  const letterOf = r => (/^[A-Za-z]:/.test(r) ? r[0].toUpperCase() : '');
+  $('#addDisk').addEventListener('click', async () => {
+    collectConfig();
+    let root = '';
+    if (window.cvDesktop?.pickFolder) { root = await window.cvDesktop.pickFolder('Chọn thư mục để lưu video / truyện'); if (!root) return; }
+    const id = freeId(letterOf(root));
+    S.config.disks.push({id, label: letterOf(root) ? `Ổ ${letterOf(root)}:` : `Ổ ${id}`, root});
+    if (root) return saveConfig(`Đã thêm ${root}.`, false);
+    renderConfig();
+    $(`#disk-root-${S.config.disks.length - 1}`)?.focus();
   });
+  $$('[data-usedrive]').forEach(b => b.addEventListener('click', () => {
+    const d = S.drives.find(x => x.letter === b.dataset.usedrive); if (!d) return;
+    collectConfig();
+    const one = d.letter.length === 1;
+    S.config.disks.push({id: freeId(one ? d.letter : ''), label: (one ? `Ổ ${d.letter}:` : 'Ổ') + (d.name ? ' ' + d.name : ''), root: d.suggest});
+    saveConfig(`Đã thêm ổ ${one ? d.letter + ':' : d.root}. Video sẽ lưu vào ${d.suggest}`, false);
+  }));
+  $('#rescanDrives').addEventListener('click', async () => {
+    collectConfig(); await Promise.all([loadDrives(), loadStatus()]); renderConfig(); toast(`Tìm thấy ${S.drives.length} ổ.`);
+  });
+  $$('[data-pick]').forEach(b => b.addEventListener('click', async () => {
+    const f = await window.cvDesktop.pickFolder('Chọn thư mục lưu'); if (!f) return;
+    $(`#disk-root-${b.dataset.pick}`).value = f;
+  }));
   $$('[data-rm]').forEach(b => b.addEventListener('click', () => { collectConfig(); S.config.disks.splice(+b.dataset.rm, 1); renderConfig(); }));
 }
 function collectConfig() {
@@ -416,13 +474,7 @@ function collectConfig() {
   }
   return c;
 }
-$('#cfgForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  try {
-    S.config = await api('/api/config', {method: 'PUT', body: collectConfig()});
-    toast('Đã lưu cài đặt.'); loadStorage();
-  } catch (err) { toast(err.message, 'err'); }
-});
+$('#cfgForm').addEventListener('submit', e => { e.preventDefault(); saveConfig(); });
 function renderTools() {
   const t = S.status?.tools || {};
   const app = S.status?.app || {};

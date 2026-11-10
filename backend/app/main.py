@@ -66,6 +66,18 @@ def status():
     }
 
 
+@app.get("/api/drives")
+def drives():
+    """Các ổ đang có trên máy, kèm thư mục lưu đề xuất (để thêm ổ bằng 1 nút)."""
+    used = {Path(d["root"]).anchor.upper() for d in config.load()["disks"]}
+    out = []
+    for d in storage.list_drives():
+        d["suggest"] = storage.suggest_root(d)
+        d["used"] = Path(d["suggest"]).anchor.upper() in used or d["root"].upper() in used
+        out.append(d)
+    return out
+
+
 @app.get("/api/config")
 def get_config():
     return config.load()

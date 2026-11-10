@@ -425,3 +425,12 @@ textarea:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
 .yt-dlg .hint.err{color:var(--red);font-weight:600;overflow-wrap:anywhere}
 .yt-dlg .file-btn{align-self:flex-start;cursor:pointer}
 .yt-dlg .yt-way > .btn{align-self:flex-start}
+
+/* Lưu Trữ: ổ trên máy */
+.drives{gap:10px}
+.drive{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(80px,1fr) auto auto;align-items:center;gap:12px;padding:8px 0;border-top:1.5px solid var(--grid)}
+.drive-name{min-width:0;overflow-wrap:anywhere}
+.drive-name .hint{display:block;font-size:12px}
+.drive .bar{height:10px}
+.drive .badge.on-use{background:var(--surface-2);color:var(--text)}
+@media (max-width:640px){.drive{grid-template-columns:1fr auto}.drive .bar{grid-column:1 / -1;grid-row:2}}
