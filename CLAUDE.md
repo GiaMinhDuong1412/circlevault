@@ -25,7 +25,7 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
 
 ## Quy trình
 - Trước khi commit: `python tools/kiem_tra.py`.
-- **Merge vào `main` = phát hành** bản mới (`.github/workflows/release.yml`, cần secret `RELEASES_TOKEN`). Làm việc trên nhánh
+- **Merge vào `main` = phát hành** bản mới (`.github/workflows/release.yml`, cần secret `RELEASES_TOKEN_CIRCLEVAULT`). Làm việc trên nhánh
   khác, nhánh/PR chạy `kiem-tra.yml` (build thử + `--smoke`).
 - Thêm thư viện Python: ghi vào `backend/requirements.txt` (phải có wheel cho Windows x64 / Python 3.12).
 

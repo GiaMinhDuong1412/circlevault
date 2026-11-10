@@ -2,7 +2,7 @@
 # → chạy thử --smoke → tạo Release "v<năm>.<tháng>.<số lần chạy>"
 #   - ở repo này (private), và
 #   - ở repo public GiaMinhDuong1412/circlevault-releases: app trên máy người dùng kiểm tra và tải bản mới ở đó, KHÔNG cần token
-#     (cần secret RELEASES_TOKEN của repo này: token có quyền Contents: Read and write trên repo public đó) – giống AQ Auto Test.
+#     (cần secret RELEASES_TOKEN_CIRCLEVAULT của repo này: token có quyền Contents: Read and write trên repo public đó) – giống AQ Auto Test.
 name: Phát hành app CircleVault
 
 on:
@@ -23,7 +23,7 @@ env:
   PYTHONUTF8: "1"                 # Windows runner: in chữ tiếng Việt không lỗi cp1252
   PYTHONIOENCODING: "utf-8"
   PUBLIC_REPO: GiaMinhDuong1412/circlevault-releases
-  HAS_RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN != '' }}
+  HAS_RELEASES_TOKEN_CIRCLEVAULT: ${{ secrets.RELEASES_TOKEN_CIRCLEVAULT != '' }}
 
 jobs:
   release:
@@ -107,14 +107,14 @@ jobs:
             --title "CircleVault $V" --notes-file notes.md --target "$GITHUB_SHA"
 
       - name: Phát hành sang repo public (để app tự cập nhật)
-        if: env.HAS_RELEASES_TOKEN == 'true'
+        if: env.HAS_RELEASES_TOKEN_CIRCLEVAULT == 'true'
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN_CIRCLEVAULT }}
         run: |
           V="${{ steps.ver.outputs.ver }}"
           gh release create "v$V" desktop/dist/*.exe desktop/dist/*.blockmap desktop/dist/latest.yml \
             -R "$PUBLIC_REPO" --title "CircleVault $V" --notes-file pub-notes.md --latest
 
       - name: Nhắc cấu hình repo public
-        if: env.HAS_RELEASES_TOKEN != 'true'
-        run: echo "::warning::Chưa có secret RELEASES_TOKEN nên không phát hành sang $PUBLIC_REPO – app trên máy người dùng sẽ không thấy bản mới."
+        if: env.HAS_RELEASES_TOKEN_CIRCLEVAULT != 'true'
+        run: echo "::warning::Chưa có secret RELEASES_TOKEN_CIRCLEVAULT nên không phát hành sang $PUBLIC_REPO – app trên máy người dùng sẽ không thấy bản mới."

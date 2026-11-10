@@ -70,7 +70,7 @@ kiểm tra → tải Python nhúng, thư viện, ffmpeg, Deno → build `Setup.e
 → tạo Release `v<năm>.<tháng>.<số lần chạy>` ở repo này và ở repo public `circlevault-releases`.
 App trên máy người dùng đọc repo public nên không cần token.
 
-**Cấu hình một lần:** repo này cần secret `RELEASES_TOKEN`: một token GitHub (fine-grained) có quyền
+**Cấu hình một lần:** repo này cần secret `RELEASES_TOKEN_CIRCLEVAULT`: một token GitHub (fine-grained) có quyền
 **Contents: Read and write** trên repo `circlevault-releases`. Có thể dùng chung token của `aq-autotest` nếu thêm repo này vào token đó.
 
 ## Lưu ý
