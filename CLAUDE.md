@@ -19,18 +19,27 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   - `tunnel.py`: cloudflared quick tunnel → party_app (tải cloudflared vào DATA/bin lần đầu).
   - Tác vụ có cột `headers` (JSON Referer/Origin/User-Agent/Cookie) cho link phim bắt từ trình duyệt → `http_headers` yt-dlp.
   - Tài khoản YouTube: app desktop ghi `DATA/youtube-cookies.txt`; `downloader._account` dùng bản sao cho link YouTube.
+  - `translate.py` + `ocr.py`: tab Dịch, router `/api/translate/*` (chỉ nhận từ 127.0.0.1 vì có API key). `ocr.py` = RapidOCR
+    (onnxruntime, offline) đọc chữ, cắt ảnh webtoon dài thành đoạn, gom dòng thành khung thoại, lấy màu nền. Bộ dịch: `google`
+    (web miễn phí, từng câu) hoặc `claude` (SDK anthropic, API key người dùng trong `DATA/translate.json`, dịch cả trang một lần,
+    structured output JSON, gửi kèm ảnh tùy chọn, `fallbacks="default"`). Bảng `translations` nhớ câu đã dịch.
+    Truyện: `DATA/translate/books/<id>/{book.json,pages/}`, `Worker` dịch nền từng trang; xuất CBZ (Pillow vẽ chữ) vào
+    `<ổ truyện>/Truyen dich/<tên> [VI].cbz`. Sửa tay (`edited`) được giữ khi dịch tiếp.
   - `ytdlp_update.py`: tải wheel yt-dlp (+ yt-dlp-ejs đúng phiên bản) từ PyPI vào `DATA/pylib`; `app/__init__.py` ưu tiên thư mục này.
 - `frontend/` – JS thuần, không build. `js/app.js` định nghĩa `window.CV` (api, esc, toast, fmt…, `views`) dùng chung cho
   `js/eq.js` (Engine Web Audio + giao diện EQ 10 dải, preset `PRESETS`) và `js/music.js` (thư viện nhạc, thanh phát nhạc).
   `js/watch.js`: tab Xem Online + Xem Chung. `party.html` + `js/party.js`: trang phòng (không dùng app.js).
-  Định tuyến bằng hash: `#home #queue #library #music #online #party #storage`.
+  `js/translate.js`: tab Dịch (truyện/game/dịch nhanh/cài đặt).
+  Định tuyến bằng hash: `#home #queue #library #music #online #party #translate #storage`.
 - `desktop/` – Electron theo mẫu repo `aq-autotest` (`desktop/`): `main.js` chạy `pythonw -m app` bằng Python nhúng
   (`resources/python`, ._pth có `..\app\backend`), mã ở `resources/app/{backend,frontend}`, ffmpeg + Deno ở `resources/bin`
   (thêm vào PATH backend). Cầu nối trang ↔ app: `window.cvDesktop` (onUpdate/getUpdate/updateAct/pickFolder/restartServer).
   `browser.js`: cửa sổ trình duyệt = thanh công cụ (`browser.html`) + WebContentsView trang web; partition `persist:youtube`
   (UA Chrome, xuất cookie Netscape khi đăng nhập) và `persist:web` (chặn quảng cáo @ghostery/adblocker-electron, bắt luồng qua
   webRequest.onBeforeSendHeaders + onResponseStarted – không dùng onBeforeRequest/onHeadersReceived vì adblocker đã giữ).
-  `--smoke` cho CI. Cập nhật: `updater.js` đọc repo public `GiaMinhDuong1412/circlevault-releases`.
+  `screen.js`: khung dịch màn hình game (screen.html luôn trên cùng, `setContentProtection` để không tự chụp mình; region.html
+  chọn vùng; desktopCapturer chụp → POST /api/translate/image?mode=game; tự động = so ảnh thu nhỏ; phím Ctrl+Alt+T/R/A/H).
+  `--smoke` cho CI (kiểm cả bộ nhận diện chữ qua /api/translate/warmup). Cập nhật: `updater.js` đọc repo public `GiaMinhDuong1412/circlevault-releases`.
 - `tools/dong_goi_app.py` chuẩn bị `desktop/res/`; `tools/kiem_tra.py` kiểm tra cú pháp + liên kết file.
 
 ## Quy trình

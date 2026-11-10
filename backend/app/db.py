@@ -69,6 +69,11 @@ CREATE TABLE IF NOT EXISTS playlists (
   created_at REAL NOT NULL,
   updated_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS translations (
+  key TEXT PRIMARY KEY,
+  out TEXT NOT NULL,
+  at REAL NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_items_kind ON items(kind);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 """

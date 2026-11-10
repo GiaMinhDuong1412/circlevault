@@ -45,7 +45,7 @@ img{max-width:100%}
 .row-between{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .btn-row{display:flex;flex-wrap:wrap;gap:10px}
 .hint{color:var(--muted);font-size:13.5px}
-input[type=text],input[type=url],input[type=number],input[type=search],select{font:500 14.5px var(--f-body);padding:9px 11px;border:var(--bw) solid var(--ink);border-radius:4px;background:var(--surface);color:var(--text);min-width:0}
+input[type=text],input[type=url],input[type=number],input[type=search],input[type=password],select{font:500 14.5px var(--f-body);padding:9px 11px;border:var(--bw) solid var(--ink);border-radius:4px;background:var(--surface);color:var(--text);min-width:0}
 
 /* header */
 .shell{max-width:1320px;margin:0 auto;padding:18px max(16px,env(safe-area-inset-right,0px)) 40px max(16px,env(safe-area-inset-left,0px))}
@@ -190,7 +190,7 @@ dialog[open]{display:flex;flex-direction:column;gap:14px}
 
 /* toasts */
 #toasts{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:10px;z-index:50;max-width:min(420px,calc(100vw - 32px))}
-.toast{padding:12px 14px;font-weight:600;font-size:14px;background:var(--surface);border-left-width:10px;animation:pop .2s ease-out}
+.toast{padding:12px 14px;font-weight:600;font-size:14px;background:var(--surface);border-left-width:10px;animation:pop .2s ease-out;overflow-wrap:anywhere}
 .toast.ok{border-left-color:var(--green)} .toast.err{border-left-color:var(--red)}
 @keyframes pop{from{transform:translateY(8px);opacity:0}}
 
@@ -211,8 +211,8 @@ details.pcard summary{cursor:pointer}
 .upd{display:flex;align-items:center;gap:10px;font-size:13.5px;background:var(--surface-2);border:2px solid var(--ink);border-radius:4px;padding:5px 6px 5px 10px}
 
 /* ===== Nghe nhạc ===== */
-body.view-music .app-body{grid-template-columns:1fr}
-body.view-music .app-body > .side{display:none}
+body:is(.view-music,.view-wide) .app-body{grid-template-columns:1fr}
+body:is(.view-music,.view-wide) .app-body > .side{display:none}
 .music-layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:20px;align-items:start}
 .mside{padding:16px 14px;display:flex;flex-direction:column;gap:18px}
 .mside h4{margin:0 0 8px;font:800 12.5px/1.2 var(--f-body);letter-spacing:.06em;text-transform:uppercase}
@@ -343,3 +343,52 @@ body.has-player{padding-bottom:96px}
 }
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 body.has-player #toasts{bottom:calc(110px + env(safe-area-inset-bottom,0px))}
+
+/* ------------------------------------------------------------ tab Dịch */
+.tr-head{align-items:center}
+.tr-subs{display:flex;flex-wrap:wrap;gap:8px}
+.tr-subs .chip.on,.tr-seg .chip.on{background:var(--yellow);color:var(--on-accent)}
+.tr-warn,.tr-err{color:var(--red);font-weight:700}
+.tr-err{font-size:13.5px}
+textarea{font:500 14.5px/1.5 var(--f-body);padding:9px 11px;border:var(--bw) solid var(--ink);border-radius:4px;background:var(--surface);color:var(--text);width:100%;resize:vertical;min-width:0}
+textarea:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
+.tr-drop{border-style:dashed}
+.tr-drop.over{background:var(--accent-fill);border-color:var(--accent-line)}
+.tr-book{padding:12px 14px;display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.tr-book-main{display:flex;flex-direction:column;gap:6px;flex:1 1 300px;min-width:0}
+.tr-book .prog{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tr-book .prog .bar{flex:1 1 160px;max-width:320px}
+.tr-name{font-weight:800;font-size:15.5px;overflow-wrap:anywhere}
+.tr-path{overflow-wrap:anywhere;font-size:12px}
+.tr-bar{position:sticky;top:8px;z-index:5;padding:10px 12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.tr-bar .tr-name{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+.tr-seg{display:flex;gap:6px;margin-left:auto}
+.tr-pages{display:flex;flex-direction:column;gap:18px;align-items:center}
+.tr-page{margin:0;padding:0;overflow:visible;width:min(100%,900px)}
+.tr-imgwrap{position:relative;line-height:0}
+.tr-imgwrap img{display:block;width:100%;height:auto;border-radius:4px 4px 0 0}
+.tr-layer{position:absolute;inset:0}
+.tr-pages.src .tr-layer{display:none}
+.tr-blk{position:absolute;display:flex;align-items:center;justify-content:center;text-align:center;overflow:hidden;
+  background:var(--bg);color:var(--fg);border-radius:22%/30%;font:700 var(--fs)/1.15 "Comic Sans MS","Be Vietnam Pro",system-ui,sans-serif;
+  padding:1px 2px;cursor:pointer;overflow-wrap:anywhere;hyphens:auto;line-height:1.15}
+.tr-blk:hover,.tr-blk:focus-visible{outline:2px dashed var(--cyan);outline-offset:1px}
+.tr-blk.hide{background:transparent;color:transparent;outline:1px dashed rgba(25,189,232,.6)}
+.tr-blk.empty{background:transparent;color:transparent}
+.tr-page figcaption{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:var(--bw) solid var(--ink);font-weight:700;font-size:13.5px;flex-wrap:wrap}
+.tr-pst{color:var(--muted);font-weight:600;margin-right:auto}
+.tr-pst.error{color:var(--red)}
+.tr-pop{position:absolute;z-index:6;width:min(330px,100%);padding:12px;display:flex;flex-direction:column;gap:8px;line-height:1.45}
+.tr-src{font-size:13.5px;background:var(--surface-2);border:2px solid var(--ink);border-radius:4px;padding:6px 8px;max-height:7em;overflow:auto}
+.tr-keys{display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.tr-shot{display:flex;flex-direction:column;gap:10px}
+.tr-line{display:flex;flex-direction:column;gap:2px;border-left:4px solid var(--cyan);padding-left:10px}
+.tr-line b{font-size:16px}
+.tr-out{min-height:12em;white-space:pre-wrap;background:var(--surface-2);border:2px solid var(--ink);border-radius:4px;padding:10px 12px;font-size:15.5px}
+.tr-engine{cursor:pointer}
+.tr-engine.on{background:var(--accent-fill);border-color:var(--accent-line)}
+.tr-engine input{width:20px;height:20px;accent-color:var(--cyan)}
+.tr-engine .badge{align-self:flex-start}
+.tr-help summary{cursor:pointer;font-weight:700}
+.tr-help[open] summary{margin-bottom:8px}
+@media (max-width:640px){.tr-seg{margin-left:0}.tr-bar{position:static}}

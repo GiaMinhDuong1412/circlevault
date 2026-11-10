@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>Dịch màn hình · CircleVault</title>
+<style>
+:root{--ink:#121212;--cyan:#19bde8;--yellow:#fcc419;--green:#3be08c;--red:#ff5a5f;--bg:#1d1f25;--text:#f2f0ea;--muted:#a9a69c;
+  --f:"Be Vietnam Pro","Segoe UI",system-ui,sans-serif;--fs:20px}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font:14px/1.4 var(--f)}
+body{display:flex;flex-direction:column;border:2.5px solid var(--ink)}
+.bar{display:flex;align-items:center;gap:6px;padding:5px 6px;background:var(--cyan);border-bottom:2.5px solid var(--ink);-webkit-app-region:drag;flex:none}
+.bar b{font:900 12px var(--f);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);margin-right:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{-webkit-app-region:no-drag;height:28px;display:inline-flex;align-items:center;gap:5px;padding:0 9px;border:2px solid var(--ink);border-radius:4px;
+  background:#fff;color:var(--ink);font:800 12px var(--f);cursor:pointer;white-space:nowrap;box-shadow:2px 2px 0 var(--ink)}
+.btn:active{transform:translate(1px,1px);box-shadow:1px 1px 0 var(--ink)}
+.btn.g{background:var(--green)} .btn.y{background:var(--yellow)} .btn.on{background:var(--yellow)}
+.btn.x{width:28px;padding:0;justify-content:center}
+.btn:disabled{opacity:.5;cursor:wait}
+.btn:focus-visible{outline:3px solid var(--yellow);outline-offset:1px}
+main{flex:1;overflow:auto;padding:10px 14px}
+.line{margin:0 0 8px}
+.vi{font-size:var(--fs);font-weight:700;line-height:1.35;text-wrap:pretty}
+.src{font-size:calc(var(--fs) * .62);color:var(--muted);margin-top:2px}
+.src[hidden]{display:none}
+.st{flex:none;font-size:12px;color:var(--muted);padding:3px 10px 5px;min-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st.err{color:var(--red)} .st.warn{color:var(--yellow)}
+.empty{color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>Dịch màn hình</b>
+  <button class="btn y" type="button" id="bSel" title="Ctrl+Alt+R">Chọn vùng</button>
+  <button class="btn g" type="button" id="bGo" title="Ctrl+Alt+T">Dịch</button>
+  <button class="btn" type="button" id="bAuto" title="Ctrl+Alt+A" aria-pressed="false">Tự động</button>
+  <button class="btn" type="button" id="bSrc" title="Hiện chữ gốc" aria-pressed="false">Gốc</button>
+  <button class="btn x" type="button" id="bMinus" aria-label="Chữ nhỏ hơn">A−</button>
+  <button class="btn x" type="button" id="bPlus" aria-label="Chữ to hơn">A+</button>
+  <button class="btn x" type="button" id="bClose" aria-label="Đóng khung dịch">✕</button>
+</div>
+<main id="out" aria-live="polite"><p class="empty">Bản dịch hiện ở đây. Kéo thanh màu xanh để di chuyển khung, kéo mép để đổi cỡ.</p></main>
+<div class="st" id="st"></div>
+<script src="screen-ui.js"></script>
+</body>
+</html>

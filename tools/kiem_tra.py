@@ -52,10 +52,11 @@ def kiem_html():
     for ref in re.findall(r'(?:src|href)="/p/([^"]+)"', party):
         if not (ROOT / "frontend" / ref).exists():
             loi.append(f"party.html trỏ tới /p/{ref} nhưng không có frontend/{ref}")
-    shell = (ROOT / "desktop" / "src" / "browser.html").read_text(encoding="utf-8")
-    for ref in re.findall(r'src="([\w.-]+\.js)"', shell):
-        if not (ROOT / "desktop" / "src" / ref).exists():
-            loi.append(f"desktop/src/browser.html trỏ tới {ref} nhưng không có file")
+    for page in ("browser.html", "screen.html", "region.html"):     # cửa sổ riêng của app desktop
+        shell = (ROOT / "desktop" / "src" / page).read_text(encoding="utf-8")
+        for ref in re.findall(r'src="([\w.-]+\.js)"', shell):
+            if not (ROOT / "desktop" / "src" / ref).exists():
+                loi.append(f"desktop/src/{page} trỏ tới {ref} nhưng không có file")
     ids = re.findall(r'id="([^"]+)"', html)
     trung = {i for i in ids if ids.count(i) > 1}
     if trung:
