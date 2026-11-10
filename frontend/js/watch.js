@@ -10,10 +10,11 @@ const desk = window.cvDesktop;
  * có sẵn trong trình duyệt của bạn, hoặc nhập file cookies.txt. Cookie chỉ lưu trên máy này. */
 async function ytDone(res) {
   if (desk && desk.youtubeImport) { try { await desk.youtubeImport(); } catch (e) { /* bỏ qua */ } }
-  toast(`Đã đăng nhập YouTube (${res.count} cookie). Playlist của bạn sẽ hiện ở tab Nghe Nhạc.`);
+  toast('Đã đăng nhập YouTube. Playlist của bạn sẽ hiện ở tab Nghe Nhạc.');
   $('#ytDlg')?.close();
   window.dispatchEvent(new Event('cv-youtube'));
 }
+let ytPoll = 0;
 function ytLogin() {
   let dlg = $('#ytDlg');
   if (!dlg) {
@@ -22,29 +23,37 @@ function ytLogin() {
     document.body.appendChild(dlg);
   }
   dlg.innerHTML = `<div class="dlg-head"><h3>Đăng nhập YouTube</h3><button class="btn plain iconbtn" type="button" data-ytx aria-label="Đóng">✕</button></div>
-    <p class="hint">Google thường chặn đăng nhập ngay trong app (báo "Couldn't sign you in"). Dùng cách 1 hoặc 2: app dùng lại đăng nhập YouTube bạn đã có. Mật khẩu không đi qua app, cookie chỉ lưu trên máy này.</p>
+    <p class="hint">Google chặn đăng nhập ngay trong app ("Couldn't sign you in"). Cách dưới đây dùng lại đăng nhập YouTube trong Chrome/Edge của bạn: bạn đăng nhập trên chính Chrome nên Google không chặn. Mật khẩu không đi qua app, đăng nhập chỉ lưu trên máy này.</p>
+    <section class="yt-way best">
+      <h4>1. Tiện ích CircleVault cho Chrome / Edge <span class="badge" style="background:var(--green)">Khuyên dùng</span></h4>
+      <ol class="steps">
+        <li>Bấm <b>Mở thư mục tiện ích</b> dưới đây (thư mục <code>tien-ich-trinh-duyet</code> mở ra, cứ để đó).</li>
+        <li>Trên Chrome, gõ <code>chrome://extensions</code> vào thanh địa chỉ (Edge: <code>edge://extensions</code>), bật <b>Chế độ dành cho nhà phát triển</b> (Developer mode).</li>
+        <li>Bấm <b>Tải tiện ích đã giải nén</b> (Load unpacked) → chọn thư mục vừa mở ở bước 1.</li>
+        <li>Mở youtube.com trên Chrome và đăng nhập như bình thường (đã đăng nhập sẵn thì thôi). Vài giây sau app tự báo đã đăng nhập.</li>
+      </ol>
+      <div class="btn-row"><button class="btn green" type="button" id="ytExt">MỞ THƯ MỤC TIỆN ÍCH</button><span class="hint mono" id="ytExtPath"></span></div>
+      <p class="hint">Tiện ích chỉ gửi tới app trên chính máy này (127.0.0.1) và tự gửi lại khi Google làm mới phiên, nên app không bị đăng xuất. Chrome để mở là được, không cần tắt.</p>
+    </section>
+    <details class="yt-more"><summary>Cách khác (Firefox, file cookies.txt, đăng nhập trong app)</summary>
     <section class="yt-way">
-      <h4>1. Lấy từ trình duyệt bạn đang dùng</h4>
-      <p>Mở youtube.com trên trình duyệt đó và đăng nhập trước. Chrome, Edge… thì <b>tắt hẳn trình duyệt</b> rồi mới bấm.</p>
+      <h4>2. Lấy từ Firefox</h4>
+      <p>Đăng nhập youtube.com trên Firefox rồi bấm. Chrome/Edge bản mới mã hóa đăng nhập nên cách này thường không đọc được, dùng cách 1.</p>
       <div class="btn-row"><select id="ytBrowser" aria-label="Trình duyệt">
         ${[['firefox', 'Firefox'], ['chrome', 'Chrome'], ['edge', 'Edge'], ['brave', 'Brave'], ['opera', 'Opera'], ['vivaldi', 'Vivaldi'], ['chromium', 'Chromium']].map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
-      </select><button class="btn green" type="button" id="ytFromBrowser">LẤY ĐĂNG NHẬP</button></div>
-      <p class="hint">Firefox đọc được chắc chắn. Chrome/Edge bản mới mã hóa cookie nên có thể không đọc được, khi đó dùng cách 2.</p>
+      </select><button class="btn plain" type="button" id="ytFromBrowser">LẤY ĐĂNG NHẬP</button></div>
     </section>
     <section class="yt-way">
-      <h4>2. Nhập file cookies.txt</h4>
-      <ol class="steps">
-        <li>Trên Chrome/Edge, cài tiện ích <b>Get cookies.txt LOCALLY</b> (Chrome Web Store / Edge Add-ons).</li>
-        <li>Mở youtube.com (đã đăng nhập), bấm biểu tượng tiện ích → <b>Export</b> → được file <code>youtube.com_cookies.txt</code>.</li>
-        <li>Chọn file đó ở đây. Xong thì xóa file trong thư mục Tải về cho an toàn.</li>
-      </ol>
-      <label class="btn yellow file-btn">CHỌN FILE COOKIES.TXT<input type="file" id="ytFile" accept=".txt,text/plain" hidden></label>
+      <h4>3. Nhập file cookies.txt</h4>
+      <p>Xuất bằng tiện ích <b>Get cookies.txt LOCALLY</b> trên youtube.com, rồi chọn file ở đây. Đăng nhập kiểu này có thể hết hạn sau vài ngày.</p>
+      <label class="btn plain file-btn">CHỌN FILE COOKIES.TXT<input type="file" id="ytFile" accept=".txt,text/plain" hidden></label>
     </section>
     <section class="yt-way">
-      <h4>3. Đăng nhập trong cửa sổ YouTube của app</h4>
-      <p class="hint">Có thể bị Google từ chối như trên. Nếu vào được thì app tự nhận.</p>
+      <h4>4. Đăng nhập trong cửa sổ YouTube của app</h4>
+      <p class="hint">Thường bị Google từ chối. Nếu vào được thì app tự nhận.</p>
       <button class="btn plain" type="button" id="ytInApp" ${desk ? '' : 'disabled'}>Mở trang đăng nhập</button>
     </section>
+    </details>
     <p class="hint err" id="ytErr" role="alert"></p>`;
   const err = m => { $('#ytErr').textContent = m || ''; };
   dlg.querySelector('[data-ytx]').onclick = () => dlg.close();
@@ -59,12 +68,29 @@ function ytLogin() {
     if (!f) return;
     if (f.size > 4 * 1024 * 1024) return err('File quá lớn, không phải file cookies.txt.');
     try {
-      const r = await fetch('/api/youtube/import-file', {method: 'POST', headers: {'content-type': 'text/plain'}, body: await f.text()});
+      const r = await fetch('/api/youtube/import-file', {method: 'POST', headers: {'content-type': 'text/plain', 'X-CircleVault': '1'}, body: await f.text()});
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'Lỗi ' + r.status);
       await ytDone(d);
     } catch (x) { err(x.message); }
   };
+  $('#ytExt').onclick = async e => {
+    const b = e.currentTarget; err(''); b.disabled = true;
+    try { const r = await api('/api/youtube/extension', {method: 'POST'}); $('#ytExtPath').textContent = r.path; }
+    catch (x) { err(x.message); }
+    finally { b.disabled = false; }
+  };
+  // tiện ích gửi đăng nhập sang thì backend ghi file: hỏi lại mỗi 3 giây, có thì báo xong
+  clearInterval(ytPoll);
+  let before = null;
+  api('/api/youtube').then(y => { if (before === null) before = y.logged_in ? y.updated_at : 0; }).catch(() => {});
+  ytPoll = setInterval(async () => {
+    if (!dlg.open) return clearInterval(ytPoll);
+    let y; try { y = await api('/api/youtube'); } catch (x) { return; }
+    const key = y.logged_in ? y.updated_at : 0;
+    if (before === null) before = key;
+    else if (y.logged_in && key !== before) { clearInterval(ytPoll); ytDone({count: 0}); }
+  }, 3000);
   $('#ytInApp').onclick = () => { dlg.close(); desk.openBrowser('youtube', 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2F'); };
   dlg.showModal();
 }

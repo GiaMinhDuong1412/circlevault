@@ -546,12 +546,43 @@ $('#pasteBtn').addEventListener('click', async () => {
     $('#urlInput').value = t; S.quality = null; analyze(null);
   } catch (e) { toast('Trình duyệt không cho đọc bộ nhớ tạm. Hãy bấm vào ô rồi nhấn Ctrl+V.', 'err'); $('#urlInput').focus(); }
 });
-$('#themeBtn').addEventListener('click', () => {
+/* ------------------------------------------------------------ theme màu (lưu ở localStorage 'cv-theme'; bảng màu trong app.css) */
+const THEMES = [
+  ['light', 'Sáng', ['#fbf9f4', '#19bde8', '#fcc419', '#3be08c', '#f7a8ec']],
+  ['dark', 'Tối', ['#131418', '#19bde8', '#fcc419', '#3be08c', '#f7a8ec']],
+  ['hong', 'Kẹo hồng', ['#fff5fa', '#ff9acb', '#ffe27a', '#8ff0c4', '#cdb0ff']],
+  ['bien', 'Biển', ['#f1f7fc', '#5cb8ff', '#8ae9fb', '#62e3bb', '#a9bfff']],
+  ['hoang-hon', 'Hoàng hôn', ['#fff4ea', '#ff8a5c', '#ffd25e', '#b9e68f', '#f79bbd']],
+  ['ca-phe', 'Cà phê sữa', ['#f5ede3', '#d2ab82', '#f2cb7d', '#b0cf86', '#e8b7a3']],
+  ['rung', 'Rừng đêm', ['#0f1a14', '#7fd893', '#e8d26e', '#55d98f', '#c6e67f']],
+  ['neon', 'Neon đêm', ['#0d0b1a', '#22e4ff', '#f7f56b', '#3dff8e', '#ff5ad9']],
+];
+function setTheme(t) {
   const r = document.documentElement;
-  const cur = r.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  r.dataset.theme = cur === 'dark' ? 'light' : 'dark';
-  try { localStorage.setItem('cv-theme', r.dataset.theme); } catch (e) {}
+  if (t) r.dataset.theme = t; else delete r.dataset.theme;
+  try { if (t) localStorage.setItem('cv-theme', t); else localStorage.removeItem('cv-theme'); } catch (e) { /* bỏ qua */ }
+}
+function renderThemePop() {
+  const cur = document.documentElement.dataset.theme || '';
+  $('#themePop').innerHTML = `<h4>Theme màu</h4>
+    ${THEMES.map(([id, name, sw]) => `<button type="button" class="theme-opt ${cur === id ? 'on' : ''}" data-theme-id="${id}" role="menuitemradio" aria-checked="${cur === id}">
+      <span>${name}</span><span class="sw">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</span></button>`).join('')}
+    <button type="button" class="theme-opt sys ${cur ? '' : 'on'}" data-theme-id="" role="menuitemradio" aria-checked="${!cur}"><span>Theo Windows (sáng / tối)</span><span class="hint">${cur ? '' : 'đang dùng'}</span></button>`;
+}
+$('#themeBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  const pop = $('#themePop'), open = pop.hidden;
+  if (open) renderThemePop();
+  pop.hidden = !open;
+  $('#themeBtn').setAttribute('aria-expanded', String(open));
 });
+$('#themePop').addEventListener('click', e => {
+  const b = e.target.closest('[data-theme-id]'); if (!b) return;
+  setTheme(b.dataset.themeId); renderThemePop();
+  window.dispatchEvent(new Event('cv-theme'));   // đồ thị EQ vẽ lại theo màu mới
+});
+document.addEventListener('click', e => { if (!e.target.closest('.theme-wrap')) { $('#themePop').hidden = true; $('#themeBtn').setAttribute('aria-expanded', 'false'); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#themePop').hidden) { $('#themePop').hidden = true; $('#themeBtn').focus(); } });
 
 /* ------------------------------------------------------------ cập nhật app (chỉ có trong app desktop) */
 function renderUpdate(u) {

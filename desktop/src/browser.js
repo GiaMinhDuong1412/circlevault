@@ -30,24 +30,31 @@ let sniffing = false;
 let lastLogin = null;
 let exportTimer = 0;
 let importing = false;
+let fileSeen = 0;            // thời điểm sửa file cookie mà cửa sổ YouTube đã đồng bộ (tự ghi hoặc đã nạp)
+
+const cookieFile = () => path.join(ctx.dataDir, 'youtube-cookies.txt');
+const fileTime = () => { try { return fs.statSync(cookieFile()).mtimeMs; } catch { return 0; } };
+// File mới hơn lần đồng bộ gần nhất = tiện ích trình duyệt / hộp Đăng nhập YouTube vừa gửi đăng nhập mới.
+const fileNewer = () => fileTime() > fileSeen + 1;
 
 function setup(options) {
   ctx = options;
   for (const p of ['persist:youtube', 'persist:web']) session.fromPartition(p).setUserAgent(CHROME_UA);
   const yt = session.fromPartition('persist:youtube');
   yt.cookies.on('changed', () => { if (importing) return; clearTimeout(exportTimer); exportTimer = setTimeout(exportYoutubeCookies, 1500); });
-  exportYoutubeCookies();
+  exportYoutubeCookies({ write: false });   // chỉ xem trạng thái: không ghi đè file bằng đăng nhập cũ trong cửa sổ YouTube
   ipcMain.on('bshell', onShellMessage);
 }
 
 // ---------------------------------------------------------------- cookie YouTube → yt-dlp
-async function exportYoutubeCookies() {
-  const file = path.join(ctx.dataDir, 'youtube-cookies.txt');
+async function exportYoutubeCookies({ write = true } = {}) {
+  const file = cookieFile();
+  if (write && !importing && fileNewer()) return importYoutubeCookies();   // có đăng nhập mới hơn từ trình duyệt: nạp vào trước
   try {
     const all = (await session.fromPartition('persist:youtube').cookies.get({}))
       .filter((c) => /(^|\.)(youtube\.com|google\.com)$/.test(c.domain.replace(/^\./, '')));
     const logged = all.some((c) => LOGIN_COOKIES.includes(c.name) && /youtube\.com$/.test(c.domain));
-    if (logged) {
+    if (logged && write) {
       const lines = ['# Netscape HTTP Cookie File', '# CircleVault: cookie đăng nhập YouTube trong app, dùng cho yt-dlp', ''];
       for (const c of all) {
         const dom = c.hostOnly ? c.domain.replace(/^\./, '') : (c.domain.startsWith('.') ? c.domain : '.' + c.domain);
@@ -57,7 +64,8 @@ async function exportYoutubeCookies() {
       fs.mkdirSync(ctx.dataDir, { recursive: true });
       fs.writeFileSync(file + '.tmp', lines.join('\n') + '\n', { mode: 0o600 });
       fs.renameSync(file + '.tmp', file);
-    } else if (lastLogin === true && fs.existsSync(file)) {   // vừa đăng xuất trong cửa sổ YouTube (file có thể lấy từ trình duyệt khác)
+      fileSeen = fileTime();
+    } else if (!logged && write && lastLogin === true && fs.existsSync(file)) {   // vừa đăng xuất trong cửa sổ YouTube (file có thể lấy từ trình duyệt khác)
       fs.unlinkSync(file);
     }
     if (lastLogin !== logged) {
@@ -71,9 +79,10 @@ async function exportYoutubeCookies() {
 
 /** Nạp file cookie (backend lấy từ trình duyệt của người dùng / file cookies.txt) vào cửa sổ YouTube của app. */
 async function importYoutubeCookies() {
-  const file = path.join(ctx.dataDir, 'youtube-cookies.txt');
+  const file = cookieFile();
   let text = '';
   try { text = fs.readFileSync(file, 'utf8'); } catch { return { ok: false, count: 0 }; }
+  fileSeen = fileTime();
   const ses = session.fromPartition('persist:youtube');
   importing = true;
   let n = 0;
@@ -271,6 +280,10 @@ function normalizeUrl(input, mode) {
 
 function openBrowser(mode, url) {
   mode = mode === 'youtube' ? 'youtube' : 'web';
+  if (mode === 'youtube' && fileNewer()) {   // đăng nhập mới từ tiện ích trình duyệt: nạp vào cửa sổ YouTube trước
+    importYoutubeCookies().catch((e) => ctx.log('Lỗi nạp cookie YouTube:', e.message)).finally(() => openBrowser(mode, url));
+    return;
+  }
   const existing = wins[mode];
   if (existing && !existing.win.isDestroyed()) {
     if (url) existing.view.webContents.loadURL(normalizeUrl(url, mode));

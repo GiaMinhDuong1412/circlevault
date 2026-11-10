@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "CircleVault – đăng nhập YouTube",
+  "version": "1.0.0",
+  "description": "Gửi đăng nhập YouTube của trình duyệt này sang app CircleVault trên cùng máy (chỉ gửi tới 127.0.0.1).",
+  "permissions": ["cookies", "alarms", "storage"],
+  "host_permissions": ["https://*.youtube.com/*", "https://*.google.com/*", "http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "CircleVault", "default_popup": "popup.html" }
+}

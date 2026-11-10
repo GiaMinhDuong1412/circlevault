@@ -258,6 +258,7 @@ function createEQ({mount, engine, initial, onChange}) {
   engine.audio.addEventListener('play', kick);
   engine.audio.addEventListener('pause', () => setTimeout(drawCurve, 50));
   new ResizeObserver(() => drawCurve()).observe(canvas);
+  window.addEventListener('cv-theme', () => drawCurve());   // đổi theme màu → vẽ lại đồ thị bằng màu mới
 
   /* ---- sự kiện */
   $('#eqPresets').addEventListener('click', e => {

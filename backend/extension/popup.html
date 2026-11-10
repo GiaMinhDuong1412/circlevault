@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>CircleVault</title>
+<style>
+body{margin:0;width:300px;font:14px/1.45 "Be Vietnam Pro","Segoe UI",system-ui,sans-serif;color:#121212;background:#fbf9f4}
+header{background:#19bde8;border-bottom:2.5px solid #121212;padding:9px 12px;font-weight:900;letter-spacing:.04em}
+main{padding:12px;display:flex;flex-direction:column;gap:10px}
+#st{border:2.5px solid #121212;border-left-width:8px;border-radius:5px;padding:8px 10px;background:#fff}
+#st.ok{border-left-color:#3be08c} #st.err{border-left-color:#ff5a5f}
+small{color:#5d5b55}
+button{font:800 14px inherit;padding:8px 12px;border:2.5px solid #121212;border-radius:5px;background:#3be08c;box-shadow:3px 3px 0 #121212;cursor:pointer}
+button:active{transform:translate(1px,1px);box-shadow:2px 2px 0 #121212}
+button:disabled{opacity:.6;cursor:wait}
+</style>
+</head>
+<body>
+<header>CIRCLEVAULT</header>
+<main>
+  <div id="st">Đang kiểm tra…</div>
+  <button id="go" type="button">Gửi ngay</button>
+  <small>Tiện ích chỉ gửi đăng nhập YouTube tới app CircleVault trên chính máy này (127.0.0.1), tự gửi lại khi Google làm mới phiên.</small>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>

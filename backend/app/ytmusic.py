@@ -7,6 +7,7 @@ Chỉ nhận yêu cầu từ chính máy này: các lệnh ở đây dùng cooki
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -327,8 +328,19 @@ _KEEP = re.compile(r"(^|\.)(youtube\.com|google\.com)$")
 _LOGIN = {"SAPISID", "__Secure-3PAPISID", "LOGIN_INFO"}
 
 
+def _account_key(text: str) -> str:
+    """Giá trị SAPISID / LOGIN_INFO: đổi khi đổi tài khoản (để biết có cần lấy lại danh sách playlist không)."""
+    keys = [ln.split("\t")[6] for ln in text.splitlines()
+            if ln.count("\t") >= 6 and ln.split("\t")[5] in ("SAPISID", "LOGIN_INFO")]
+    return "|".join(sorted(keys))
+
+
 def _save_jar(jar, source: str) -> dict:
     from yt_dlp.cookies import YoutubeDLCookieJar
+    try:
+        before = _account_key(config.YT_COOKIES.read_text(encoding="utf-8", errors="ignore"))
+    except OSError:
+        before = ""
     out = YoutubeDLCookieJar()
     n = 0
     for c in jar:
@@ -341,14 +353,16 @@ def _save_jar(jar, source: str) -> dict:
     tmp.parent.mkdir(parents=True, exist_ok=True)
     out.save(str(tmp))
     tmp.replace(config.YT_COOKIES)
-    try:
-        c = _read_cache()
-        c.pop("items", None)
-        c["at"] = 0
-        _write_cache(c)
-    except OSError:
-        pass
-    return {"ok": True, "count": n, "logged_in": downloader.youtube_logged_in()}
+    changed = _account_key(config.YT_COOKIES.read_text(encoding="utf-8", errors="ignore")) != before
+    if changed:                                   # tài khoản khác → lấy lại playlist
+        try:
+            c = _read_cache()
+            c.pop("items", None)
+            c["at"] = 0
+            _write_cache(c)
+        except OSError:
+            pass
+    return {"ok": True, "count": n, "logged_in": downloader.youtube_logged_in(), "account_changed": changed}
 
 
 @acct.post("/import")
@@ -379,11 +393,40 @@ def import_browser(body: dict):
         raise
 
 
+@acct.get("/hello")
+def hello():
+    """Tiện ích trình duyệt dùng để tìm cổng của app."""
+    return {"app": "CircleVault", "version": config.VERSION}
+
+
+EXT_SRC = config.Path(__file__).resolve().parent.parent / "extension"
+EXT_DIR = config.DATA / "tien-ich-trinh-duyet"
+
+
+@acct.post("/extension")
+def extension_folder(open_folder: bool = True):
+    """Chép tiện ích ra thư mục cố định trong DATA (cập nhật app không đổi đường dẫn) rồi mở thư mục đó."""
+    import shutil
+    if not EXT_SRC.is_dir():
+        raise HTTPException(500, "Bản cài thiếu thư mục tiện ích. Cài lại app.")
+    EXT_DIR.mkdir(parents=True, exist_ok=True)
+    for f in EXT_SRC.iterdir():
+        if f.is_file():
+            shutil.copy2(f, EXT_DIR / f.name)
+    if open_folder and os.name == "nt":
+        os.startfile(str(EXT_DIR))  # noqa: S606 – mở File Explorer cho người dùng
+    return {"path": str(EXT_DIR)}
+
+
 @acct.post("/import-file")
 async def import_file(request: Request):
     import http.cookiejar
     import io
     from yt_dlp.cookies import YoutubeDLCookieJar
+    # Bắt buộc header riêng: trang web lạ không gửi được header này tới 127.0.0.1 (trình duyệt chặn vì CORS),
+    # nên không thể âm thầm thay tài khoản YouTube của app.
+    if request.headers.get("x-circlevault") != "1":
+        raise HTTPException(403, "Thiếu header X-CircleVault.")
     raw = (await request.body())[: 4 * 1024 * 1024].decode("utf-8", "replace")
     if not re.match(r"#( Netscape)? HTTP Cookie File", raw.lstrip("\ufeff")):
         raw = "# Netscape HTTP Cookie File\n" + raw.lstrip("\ufeff")
@@ -392,4 +435,5 @@ async def import_file(request: Request):
         jar.load(io.StringIO(raw))
     except (http.cookiejar.LoadError, ValueError) as e:
         raise HTTPException(400, "File không đúng định dạng cookies.txt (Netscape).") from e
-    return _save_jar(jar, "file cookies.txt")
+    src = "trình duyệt (tiện ích CircleVault)" if request.query_params.get("source") == "extension" else "file cookies.txt"
+    return _save_jar(jar, src)

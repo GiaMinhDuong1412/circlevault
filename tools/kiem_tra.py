@@ -33,7 +33,7 @@ def kiem_python():
 
 def kiem_js():
     node = shutil.which("node")
-    files = sorted((ROOT / "frontend" / "js").glob("*.js")) + sorted((ROOT / "desktop" / "src").glob("*.js"))
+    files = sorted((ROOT / "frontend" / "js").glob("*.js")) + sorted((ROOT / "desktop" / "src").glob("*.js")) + sorted((ROOT / "backend" / "extension").glob("*.js"))
     if not node:
         print("(bỏ qua kiểm tra JS: không có node)")
         return

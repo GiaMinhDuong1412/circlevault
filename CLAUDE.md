@@ -22,6 +22,10 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     Google hay chặn đăng nhập trong cửa sổ nhúng → hộp "Đăng nhập YouTube" (`CV.ytLogin`, watch.js): lấy cookie từ trình duyệt
     của người dùng (`POST /api/youtube/import`, yt-dlp đọc) hoặc file cookies.txt (`/api/youtube/import-file`), rồi
     `cvDesktop.youtubeImport` nạp vào partition `persist:youtube`. Không giả danh trình duyệt để lách kiểm tra của Google.
+    Cách chính: tiện ích Chrome/Edge `backend/extension/` (MV3, cài "Load unpacked" từ `DATA/tien-ich-trinh-duyet`, do
+    `POST /api/youtube/extension` chép ra) đọc cookie youtube/google của trình duyệt, dò cổng 8686–8705 qua `/api/youtube/hello`,
+    gửi `import-file?source=extension` (bắt buộc header `X-CircleVault: 1` chống trang lạ gửi), gửi lại khi cookie *SID đổi
+    và mỗi 30 phút. `browser.js`: file mới hơn lần đồng bộ (`fileSeen`) thì nạp vào cửa sổ YouTube trước, không ghi đè.
   - `translate.py` + `ocr.py`: tab Dịch, router `/api/translate/*` (chỉ nhận từ 127.0.0.1 vì có API key). `ocr.py` = RapidOCR
     (onnxruntime, offline) đọc chữ, cắt ảnh webtoon dài thành đoạn, gom dòng thành khung thoại, lấy màu nền. Bộ dịch: `google`
     (web miễn phí, từng câu) hoặc `claude` (SDK anthropic, API key người dùng trong `DATA/translate.json`, dịch cả trang một lần,
@@ -39,7 +43,7 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     đánh dấu bài đã có trên máy theo `[id]` trong tên file; nghe trực tiếp = `prepare` (yt-dlp lấy link bestaudio) + `stream`
     (chuyển tiếp googlevideo theo Range, mỗi lần 4 MB, link hết hạn thì lấy lại).
   - `ytdlp_update.py`: tải wheel yt-dlp (+ yt-dlp-ejs đúng phiên bản) từ PyPI vào `DATA/pylib`; `app/__init__.py` ưu tiên thư mục này.
-- `frontend/` – JS thuần, không build. `js/app.js` định nghĩa `window.CV` (api, esc, toast, fmt…, `views`) dùng chung cho
+- `frontend/` – JS thuần, không build. Theme màu: `THEMES` trong app.js + khối `:root[data-theme=…]` trong app.css (localStorage `cv-theme`, không có = theo Windows). `js/app.js` định nghĩa `window.CV` (api, esc, toast, fmt…, `views`) dùng chung cho
   `js/eq.js` (Engine Web Audio + giao diện EQ 10 dải, preset `PRESETS`) và `js/music.js` (thư viện nhạc, thanh phát nhạc).
   `js/watch.js`: tab Xem Online + Xem Chung. `party.html` + `js/party.js`: trang phòng (không dùng app.js).
   `js/translate.js`: tab Dịch (truyện/game/dịch nhanh/cài đặt).

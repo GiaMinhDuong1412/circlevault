@@ -9,7 +9,7 @@
   --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
   --bw:2.5px; --sh:4px 4px 0 var(--ink); --sh-sm:3px 3px 0 var(--ink);
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+@media (prefers-color-scheme: dark){:root:not([data-theme]){
   --bg:#131418; --surface:#1d1f25; --surface-2:#262830; --ink:#e8e5da; --text:#f2f0ea; --muted:#a9a69c; --dot:#4a3540; color-scheme:dark;
   --grid:rgba(232,229,218,.12); --spec:rgba(25,189,232,.35); --accent-line:#4fd3f7; --accent-fill:rgba(79,211,247,.14);
 }}
@@ -17,6 +17,14 @@
   --bg:#131418; --surface:#1d1f25; --surface-2:#262830; --ink:#e8e5da; --text:#f2f0ea; --muted:#a9a69c; --dot:#4a3540; color-scheme:dark;
   --grid:rgba(232,229,218,.12); --spec:rgba(25,189,232,.35); --accent-line:#4fd3f7; --accent-fill:rgba(79,211,247,.14);
 }
+
+/* Theme màu: chọn ở nút bảng màu góc trên (app.js THEMES). Giữ kiểu neo-brutalist, chỉ đổi bảng màu. */
+:root[data-theme="hong"]{--bg:#fff5fa; --surface:#ffffff; --surface-2:#fde6f2; --ink:#2a1230; --text:#2a1230; --muted:#7a5a78; --dot:#f6c3df;--cyan:#ff9acb; --yellow:#ffe27a; --green:#8ff0c4; --pink:#cdb0ff; --red:#ff5a7a; --violet:#b48cff;--grid:rgba(42,18,48,.10); --spec:rgba(255,120,190,.30); --accent-line:#c2367f; --accent-fill:rgba(255,154,203,.18); color-scheme:light;}
+:root[data-theme="bien"]{--bg:#f1f7fc; --surface:#ffffff; --surface-2:#e1eef8; --ink:#0b2233; --text:#0b2233; --muted:#4f6b7d; --dot:#b9daf0;--cyan:#5cb8ff; --yellow:#8ae9fb; --green:#62e3bb; --pink:#a9bfff; --red:#ff6b6b; --violet:#96a1ff;--grid:rgba(11,34,51,.10); --spec:rgba(92,184,255,.30); --accent-line:#0b6fbf; --accent-fill:rgba(92,184,255,.16); color-scheme:light;}
+:root[data-theme="hoang-hon"]{--bg:#fff4ea; --surface:#fffaf5; --surface-2:#fde3cf; --ink:#2b1608; --text:#2b1608; --muted:#80604c; --dot:#f6c6a2;--cyan:#ff8a5c; --yellow:#ffd25e; --green:#b9e68f; --pink:#f79bbd; --red:#e63946; --violet:#c39bff;--grid:rgba(43,22,8,.10); --spec:rgba(255,138,92,.30); --accent-line:#c2410c; --accent-fill:rgba(255,138,92,.16); color-scheme:light;}
+:root[data-theme="ca-phe"]{--bg:#f5ede3; --surface:#fffaf3; --surface-2:#eadcc8; --ink:#2e1d12; --text:#2e1d12; --muted:#76604f; --dot:#dbc4a8;--cyan:#d2ab82; --yellow:#f2cb7d; --green:#b0cf86; --pink:#e8b7a3; --red:#d9534f; --violet:#bba2cf;--grid:rgba(46,29,18,.10); --spec:rgba(160,110,60,.28); --accent-line:#8a5a35; --accent-fill:rgba(210,171,130,.20); color-scheme:light;}
+:root[data-theme="rung"]{--bg:#0f1a14; --surface:#16241c; --surface-2:#1f3127; --ink:#d6e8d6; --text:#ecf5ec; --muted:#9db5a2; --dot:#284634;--cyan:#7fd893; --yellow:#e8d26e; --green:#55d98f; --pink:#c6e67f; --red:#ff7a6b; --violet:#a7cdb0;--grid:rgba(214,232,214,.12); --spec:rgba(127,216,147,.30); --accent-line:#8fe3a3; --accent-fill:rgba(127,216,147,.14); color-scheme:dark;}
+:root[data-theme="neon"]{--bg:#0d0b1a; --surface:#161329; --surface-2:#221c3e; --ink:#e4ddff; --text:#f4f1ff; --muted:#a79ed2; --dot:#2e2654;--cyan:#22e4ff; --yellow:#f7f56b; --green:#3dff8e; --pink:#ff5ad9; --red:#ff4d6d; --violet:#b68cff;--grid:rgba(228,221,255,.12); --spec:rgba(34,228,255,.35); --accent-line:#22e4ff; --accent-fill:rgba(34,228,255,.14); color-scheme:dark;}
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--text);font-family:var(--f-body);font-size:15px;line-height:1.55;
@@ -425,6 +433,10 @@ textarea:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
 .yt-dlg .hint.err{color:var(--red);font-weight:600;overflow-wrap:anywhere}
 .yt-dlg .file-btn{align-self:flex-start;cursor:pointer}
 .yt-dlg .yt-way > .btn{align-self:flex-start}
+.yt-dlg .yt-way.best{background:var(--surface);border-width:var(--bw);box-shadow:var(--sh)}
+.yt-dlg .yt-way .badge{vertical-align:2px;margin-left:6px;font-size:10.5px}
+.yt-dlg .yt-more summary{cursor:pointer;font-weight:700;padding:4px 0}
+.yt-dlg #ytExtPath{overflow-wrap:anywhere}
 
 /* Lưu Trữ: ổ trên máy */
 .drives{gap:10px}
@@ -434,3 +446,16 @@ textarea:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
 .drive .bar{height:10px}
 .drive .badge.on-use{background:var(--surface-2);color:var(--text)}
 @media (max-width:640px){.drive{grid-template-columns:1fr auto}.drive .bar{grid-column:1 / -1;grid-row:2}}
+
+/* bảng chọn theme */
+.theme-wrap{position:relative}
+.theme-pop{position:absolute;right:0;top:calc(100% + 10px);z-index:60;width:300px;max-width:calc(100vw - 32px);background:var(--surface);
+  border:var(--bw) solid var(--ink);border-radius:6px;box-shadow:var(--sh);padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.theme-pop h4{grid-column:1 / -1;margin:0 0 2px;font:800 12.5px var(--f-body);letter-spacing:.06em;text-transform:uppercase}
+.theme-opt{display:flex;flex-direction:column;gap:6px;align-items:stretch;text-align:left;padding:8px;border:2px solid var(--ink);border-radius:5px;
+  background:var(--surface-2);color:var(--text);font:700 13px var(--f-body);cursor:pointer}
+.theme-opt:hover{transform:translate(-1px,-1px);box-shadow:var(--sh-sm)}
+.theme-opt.on{outline:3px solid var(--accent-line);outline-offset:1px}
+.theme-opt .sw{display:flex;height:18px;border:2px solid #121212;border-radius:3px;overflow:hidden}
+.theme-opt .sw i{flex:1}
+.theme-opt.sys{grid-column:1 / -1;flex-direction:row;align-items:center;justify-content:space-between}

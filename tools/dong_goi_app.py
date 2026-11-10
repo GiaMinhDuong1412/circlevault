@@ -43,6 +43,11 @@ def chep_ma(app: Path) -> int:
         shutil.copy2(p, f)
         n += 1
     shutil.copy2(ROOT / "backend" / "requirements.txt", app / "backend" / "requirements.txt")
+    for p in sorted((ROOT / "backend" / "extension").glob("*")):          # tiện ích Chrome/Edge (đăng nhập YouTube)
+        f = app / "backend" / "extension" / p.name
+        f.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(p, f)
+        n += 1
     for p in sorted((ROOT / "frontend").rglob("*")):
         if p.is_file():
             f = app / "frontend" / p.relative_to(ROOT / "frontend")
