@@ -47,6 +47,26 @@ let server = null;
 let port = 0;
 let quitting = false;
 let updater = null;
+let splash = null;
+
+/**
+ * Màn hình chờ (splash.html): hiện ngay khi mở app (backend Python cần vài giây mới chạy) và khi bấm
+ * "Khởi động lại để cập nhật" – để người dùng biết app đang làm việc, không phải đã tắt.
+ */
+function showSplash(query) {
+  closeSplash();
+  splash = new BrowserWindow({
+    width: 480, height: 290, frame: false, transparent: true, resizable: false, maximizable: false, fullscreenable: false,
+    show: false, center: true, title: APP_NAME, icon: ICON, backgroundColor: '#00000000', alwaysOnTop: query.mode === 'install',
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  splash.setMenu(null);
+  splash.loadFile(path.join(__dirname, 'splash.html'), { query: { ver: app.getVersion(), ...query } });
+  splash.once('ready-to-show', () => { if (splash) splash.show(); });
+  splash.on('closed', () => { splash = null; });
+  return new Promise((r) => { splash.webContents.once('did-finish-load', () => setTimeout(r, 150)); setTimeout(r, 1500); });
+}
+function closeSplash() { if (splash && !splash.isDestroyed()) splash.destroy(); splash = null; }
 
 function log(...a) {
   try { fs.appendFileSync(LOG, new Date().toISOString().replace('T', ' ').slice(0, 19) + ' ' + a.join(' ') + '\n'); } catch { /* bỏ qua */ }
@@ -160,7 +180,7 @@ function createWindow() {
   if (cfg.maximized) win.maximize();
   miniPlayer.attach(win);
   win.on('page-title-updated', (e, title) => { e.preventDefault(); win.setTitle(title.includes('CircleVault') ? title : APP_NAME); });
-  win.once('ready-to-show', () => { if (!SMOKE) win.show(); });
+  win.once('ready-to-show', () => { if (!SMOKE) win.show(); closeSplash(); });
   const keep = () => { if (!win.isMaximized() && !win.isMinimized()) cfg.bounds = win.getBounds(); cfg.maximized = win.isMaximized(); };
   win.on('resize', keep);
   win.on('move', keep);
@@ -244,6 +264,10 @@ async function init() {
   fs.mkdirSync(DATA, { recursive: true });
   try { if (fs.statSync(LOG).size > 4 * 1024 * 1024) fs.writeFileSync(LOG, ''); } catch { /* chưa có */ }
   loadCfg();
+  if (!SMOKE) {
+    const updated = cfg.uiVersion && cfg.uiVersion !== app.getVersion();
+    showSplash(updated ? { msg: `Đã cập nhật lên bản ${app.getVersion()}`, sub: 'Đang mở lại CircleVault…' } : { msg: 'Đang khởi động…' });
+  }
   try {
     port = await choosePort();
     startServer();
@@ -251,6 +275,7 @@ async function init() {
   } catch (e) {
     log('Lỗi khởi động:', e.message);
     if (SMOKE) { console.error('SMOKE FAIL', e.message); app.exit(1); return; }
+    closeSplash();
     dialog.showErrorBox(APP_NAME, 'Không khởi động được CircleVault.\n' + e.message + '\n\nNhật ký: ' + LOG);
     app.exit(1);
     return;
@@ -274,7 +299,16 @@ async function init() {
   miniPlayer.setup({ userData: HOME, icon: ICON, log });
   createWindow();
   if (SMOKE) return smoke();
-  updater = createUpdater({ send, notify, beforeInstall: () => { quitting = true; stopServer(); } });
+  updater = createUpdater({
+    send, notify,
+    beforeInstall: async (version) => {
+      quitting = true;
+      await showSplash({ mode: 'install', msg: `Đang cài bản mới${version ? ' ' + version : ''}…`,
+        sub: 'App sẽ tự mở lại sau vài giây. Đừng tắt máy.' });
+      if (win && !win.isDestroyed()) win.hide();
+      stopServer();
+    },
+  });
   setTimeout(() => updater.check(false), 8 * 1000);
   setInterval(() => updater.check(false), UPDATE_CHECK_MS);
 }

@@ -214,7 +214,8 @@ def run_task(task: dict, disk: dict, cfg: dict, live: dict, should_stop: Callabl
 
     def pp_hook(d):
         if d["status"] == "started" and d.get("postprocessor") in (
-                "Merger", "FFmpegExtractAudio", "FFmpegEmbedSubtitle", "EmbedThumbnail", "FFmpegMetadata"):
+                "Merger", "FFmpegExtractAudio", "FFmpegEmbedSubtitle", "EmbedThumbnail", "FFmpegMetadata",
+                "FFmpegVideoRemuxer"):
             push(status="processing", stage=d["postprocessor"])
 
     def item_done():
@@ -243,6 +244,9 @@ def run_task(task: dict, disk: dict, cfg: dict, live: dict, should_stop: Callabl
             pass
 
     pps = list(opts.pop("postprocessors", []))
+    if HAS_FFMPEG and task["quality"] != "audio" and cfg.get("video_format", "mp4") == "mp4":
+        # luôn ra .mp4 (webm/mkv/flv/ts → mp4, chỉ đổi vỏ file, giữ nguyên chất lượng), trước khi nhúng phụ đề/ảnh bìa
+        pps.insert(0, {"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"})
     if HAS_FFMPEG:
         if cfg.get("embed_subs") and task["quality"] != "audio" and cfg.get("subtitle_langs"):
             opts.update(writesubtitles=True, subtitleslangs=cfg["subtitle_langs"])

@@ -44,6 +44,10 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     (chuyển tiếp googlevideo theo Range, mỗi lần 4 MB, link hết hạn thì lấy lại). Nguồn online chung (`ONLINE_HOSTS`: YouTube,
     SoundCloud, Bandcamp): bài có `ou` (link), `GET /search?q=&site=yt|sc`, `POST /prepare?u=` + `GET /stream?u=`; chỉ có HLS thì
     tải tạm vào `DATA/cache/nghe-online` (tối đa 600 MB) rồi phát file; bỏ định dạng mã hóa (`NO_DRM`) – Spotify/Apple Music có DRM, không làm.
+  - `edit.py`: router `/api/edit/*` – cắt đoạn (`POST /{item|track}/{id}/cut` {start,end,accurate}) và chuyển MP4 (`/mp4`) bằng ffmpeg
+    trong thread, tiến độ `GET /jobs/{id}`. Luôn ghi FILE MỚI cạnh file gốc (không ghi đè/xóa gốc) rồi thêm vào thư viện/Nghe Nhạc.
+    Cắt nhanh = `-c copy` (lệch theo keyframe), chính xác = H.264/AAC. Giao diện: `openCutter` trong app.js (hộp #player).
+  - Video tải về luôn ra .mp4 (`FFmpegVideoRemuxer`, cấu hình `video_format`: mp4 | original).
   - `ytdlp_update.py`: tải wheel yt-dlp (+ yt-dlp-ejs đúng phiên bản) từ PyPI vào `DATA/pylib`; `app/__init__.py` ưu tiên thư mục này.
 - `frontend/` – JS thuần, không build. Theme màu: `THEMES` trong app.js + khối `:root[data-theme=…]` trong app.css (localStorage `cv-theme`, không có = theo Windows). `js/app.js` định nghĩa `window.CV` (api, esc, toast, fmt…, `views`) dùng chung cho
   `js/eq.js` (Engine Web Audio + giao diện EQ 10 dải, preset `PRESETS`) và `js/music.js` (thư viện nhạc, thanh phát nhạc).
@@ -60,6 +64,8 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   chọn vùng; desktopCapturer chụp → POST /api/translate/image?mode=game; tự động = so ảnh thu nhỏ; phím Ctrl+Alt+T/R/A/H).
   `mini.js`: trình phát mini – thu nhỏ cửa sổ chính khi có bài → khung `mini.html` luôn trên cùng (đĩa xoay, tua, nút);
   music.js gửi trạng thái qua `cvDesktop.musicState`, nhận lệnh qua `onMusicCmd` (cửa sổ chính `backgroundThrottling: false`).
+  `splash.html`: màn hình chờ khi mở app (đợi backend) và khi bấm "Khởi động lại để cập nhật" (`beforeInstall` → splash,
+  ẩn cửa sổ, `quitAndInstall(false, true)` = bộ cài hiện tiến trình rồi tự mở lại app).
   `--smoke` cho CI (kiểm cả bộ nhận diện chữ qua /api/translate/warmup). Cập nhật: `updater.js` đọc repo public `GiaMinhDuong1412/circlevault-releases`.
 - `tools/dong_goi_app.py` chuẩn bị `desktop/res/`; `tools/kiem_tra.py` kiểm tra cú pháp + liên kết file.
 

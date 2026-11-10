@@ -66,6 +66,7 @@ def defaults() -> dict:
         "embed_subs": True,
         "cookies_from_browser": "",   # vd "chrome" / "edge" / "firefox" cho video giới hạn tuổi
         "music_folders": [],          # thư mục nhạc có sẵn trên máy, quét vào trang Nghe Nhạc
+        "video_format": "mp4",        # "mp4": video luôn đổi sang .mp4; "original": giữ định dạng gốc (webm/mkv…)
         "use_youtube_account": True,  # đã đăng nhập YouTube trong app thì tải bằng tài khoản đó (Premium, giới hạn tuổi…)
     }
 
@@ -130,6 +131,8 @@ def validate(new: dict) -> dict:
         cfg["subtitle_langs"] = [s.strip() for s in langs if s.strip()][:6]
     if "use_youtube_account" in new:
         cfg["use_youtube_account"] = bool(new["use_youtube_account"])
+    if new.get("video_format") in ("mp4", "original"):
+        cfg["video_format"] = new["video_format"]
     if "embed_subs" in new:
         cfg["embed_subs"] = bool(new["embed_subs"])
     if "cookies_from_browser" in new:

@@ -4,7 +4,7 @@
  * Mỗi lần merge vào main, GitHub Actions của repo code build bộ cài và đẩy Setup.exe + latest.yml sang repo đó.
  *
  * Trạng thái gửi cho trang (kênh 'update'):
- *   idle | checking | latest | available | downloading | downloaded | error | unsupported
+ *   idle | checking | latest | available | downloading | downloaded | installing | error | unsupported
  */
 const { app, shell } = require('electron');
 
@@ -70,8 +70,10 @@ function createUpdater({ send, notify, beforeInstall }) {
       set({ status: 'downloading', percent: 0, error: null });
       try { await autoUpdater.downloadUpdate(); } catch (e) { set({ status: 'error', error: shortError(e) }); }
     } else if (state.status === 'downloaded') {
-      if (beforeInstall) beforeInstall();
-      setImmediate(() => autoUpdater.quitAndInstall(true, true)); // cài im lặng rồi mở lại app
+      set({ status: 'installing' });
+      try { if (beforeInstall) await beforeInstall(state.version); } catch { /* vẫn cài */ }
+      // isSilent=false: bộ cài hiện cửa sổ "Đang cài đặt" có thanh tiến trình, xong tự mở lại app (isForceRunAfter=true)
+      setTimeout(() => autoUpdater.quitAndInstall(false, true), 300);
     } else if (state.status !== 'downloading' && state.status !== 'checking') {
       await check(true);
     }

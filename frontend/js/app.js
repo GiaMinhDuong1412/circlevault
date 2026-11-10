@@ -316,7 +316,10 @@ function openPlayer(it) {
     <dt>File</dt><dd>${esc(it.filepath)}</dd>
     <dt>Dung lượng</dt><dd>${fmtBytes(it.filesize)}${it.height ? ' · ' + it.height + 'p' : ''}${it.duration ? ' · ' + fmtDur(it.duration) : ''}</dd>
     ${it.source_url ? `<dt>Nguồn</dt><dd><a href="${esc(it.source_url)}" target="_blank" rel="noopener">${esc(it.source_url)}</a></dd>` : ''}`;
+  const canMp4 = it.exists && !isAudio(it.filepath) && !/\.mp4$/i.test(it.filepath);
   $('#plActions').innerHTML = `
+    ${it.exists ? `<button class="btn green" type="button" data-pa="cut">✂ Cắt đoạn</button>` : ''}
+    ${canMp4 ? `<button class="btn cyan" type="button" data-pa="mp4">Chuyển sang MP4</button>` : ''}
     ${it.exists ? `<button class="btn yellow" type="button" data-pa="open">Mở thư mục</button><a class="btn plain" href="${src}" download>Lưu bản sao</a>` : ''}
     <button class="btn plain" type="button" data-pa="remove">Xóa khỏi thư viện</button>
     ${it.exists ? `<button class="btn red" type="button" data-pa="delete">Xóa cả file</button>` : ''}`;
@@ -325,6 +328,12 @@ function openPlayer(it) {
     const act = b.dataset.pa;
     try {
       if (act === 'open') { await api(`/api/library/${it.id}/open`, {method: 'POST'}); return; }
+      if (act === 'cut') return openCutter({kind: 'item', id: it.id, title: it.title, src, audio: isAudio(it.filepath), duration: it.duration});
+      if (act === 'mp4') {
+        const j = await api(`/api/edit/item/${it.id}/mp4`, {method: 'POST'});
+        b.disabled = true;
+        return watchJob(j, b, 'Đã chuyển sang MP4 (file gốc vẫn còn).');
+      }
       if (act === 'delete' && b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = 'Bấm lần nữa để xóa vĩnh viễn'; return; }
       await api(`/api/library/${it.id}?delete_file=${act === 'delete'}`, {method: 'DELETE'});
       toast(act === 'delete' ? 'Đã xóa file khỏi ổ.' : 'Đã xóa khỏi thư viện (file vẫn còn trên ổ).');
@@ -333,6 +342,113 @@ function openPlayer(it) {
   };
   dlg.showModal();
 }
+/* ------------------------------------------------------------ cắt video / nhạc (ffmpeg, backend edit.py) */
+function parseTime(v) {
+  v = String(v || '').trim().replace(',', '.');
+  if (!v) return NaN;
+  const parts = v.split(':').map(Number);
+  if (parts.some(n => isNaN(n) || n < 0)) return NaN;
+  return parts.reduce((a, n) => a * 60 + n, 0);
+}
+function fmtTime(t) {
+  t = Math.max(0, t || 0);
+  const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = (t % 60).toFixed(1).padStart(4, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+function watchJob(job, btn, doneMsg, onDone) {
+  const tick = async () => {
+    let j; try { j = await api(`/api/edit/jobs/${job.id}`); } catch (e) { toast(e.message, 'err'); return; }
+    if (btn) btn.textContent = j.status === 'done' ? 'Xong' : `Đang xử lý ${Math.round(j.progress || 0)}%`;
+    if (onDone && onDone.progress) onDone.progress(j);
+    if (j.status === 'done') {
+      toast(`${doneMsg} ${j.output ? '→ ' + j.output.split(/[\\/]/).pop() : ''}`);
+      if (onDone && onDone.done) onDone.done(j);
+      refreshView(); window.CV.music && window.CV.music.reload();
+      return;
+    }
+    if (j.status === 'error') { toast(j.error || 'Lỗi', 'err'); if (btn) { btn.disabled = false; btn.textContent = 'Thử lại'; } if (onDone && onDone.fail) onDone.fail(j); return; }
+    setTimeout(tick, 700);
+  };
+  tick();
+}
+/** Mở công cụ cắt trong hộp #player. o = {kind: 'item'|'track', id, title, src, audio, duration} */
+function openCutter(o) {
+  const dlg = $('#player');
+  $('#plTitle').textContent = '✂ Cắt: ' + o.title;
+  $('#plMedia').innerHTML = o.audio ? `<audio controls src="${o.src}" id="cutMedia"></audio>` : `<video controls playsinline src="${o.src}" id="cutMedia"></video>`;
+  $('#plMeta').innerHTML = '';
+  $('#plActions').innerHTML = `<div class="cutter">
+    <div class="cut-track" id="cutTrack" title="Bấm để tua"><div class="cut-sel" id="cutSel"></div><div class="cut-head" id="cutHead"></div></div>
+    <div class="cut-row">
+      <label class="field">Điểm đầu<input type="text" id="cutA" value="0:00.0" inputmode="decimal"></label>
+      <button class="btn sm plain" type="button" data-cut="a" title="Phím [">⇤ Lấy vị trí đang xem</button>
+      <label class="field">Điểm cuối<input type="text" id="cutB" value="" inputmode="decimal"></label>
+      <button class="btn sm plain" type="button" data-cut="b" title="Phím ]">Lấy vị trí đang xem ⇥</button>
+    </div>
+    <p class="hint" id="cutInfo"></p>
+    <label class="check"><input type="checkbox" id="cutAcc"> Cắt chính xác từng khung hình${o.audio ? '' : ' (mã hóa lại sang MP4, chậm hơn)'}</label>
+    <p class="hint">${o.audio ? 'Nhạc cắt nhanh vẫn đúng tới phần trăm giây.' : 'Cắt nhanh: giữ nguyên chất lượng, xong trong vài giây, nhưng điểm đầu có thể lệch 1–2 giây (video chỉ cắt được ở khung hình khóa).'} Bản cắt lưu thành file mới cạnh file gốc; file gốc giữ nguyên.</p>
+    <div class="btn-row">
+      <button class="btn plain" type="button" data-cut="preview">▶ Xem thử đoạn</button>
+      <button class="btn green" type="button" data-cut="go">CẮT &amp; LƯU BẢN MỚI</button>
+      <button class="btn plain" type="button" data-cut="back">Quay lại</button>
+    </div>
+    <div class="cut-prog" id="cutProg" hidden><div class="bar"><i id="cutBar" style="width:0"></i></div><span class="mono" id="cutPct">0%</span><button class="btn sm red" type="button" data-cut="cancel">Hủy</button></div>
+  </div>`;
+  const m = $('#cutMedia');
+  let a = 0, b = 0, dur = o.duration || 0, previewEnd = null, job = null;
+  const clamp = () => { a = Math.max(0, Math.min(a, dur || a)); b = Math.max(0, Math.min(b || dur, dur || b)); };
+  const paint = () => {
+    clamp();
+    $('#cutA').value = fmtTime(a); $('#cutB').value = fmtTime(b);
+    const ok = b - a >= 0.5;
+    $('#cutInfo').innerHTML = dur ? `Đoạn đã chọn: <b>${fmtTime(a)} → ${fmtTime(b)}</b> · dài <b>${fmtTime(Math.max(0, b - a))}</b> / cả bài ${fmtTime(dur)}${ok ? '' : ' · <span class="no">điểm cuối phải sau điểm đầu</span>'}` : 'Đang đọc độ dài…';
+    $('#cutSel').style.left = dur ? (a / dur * 100) + '%' : '0'; $('#cutSel').style.width = dur ? (Math.max(0, b - a) / dur * 100) + '%' : '0';
+    $('[data-cut="go"]').disabled = !ok || !!job;
+  };
+  m.addEventListener('loadedmetadata', () => { if (isFinite(m.duration)) { dur = m.duration; if (!b) b = dur; paint(); } });
+  m.addEventListener('timeupdate', () => {
+    if (dur) $('#cutHead').style.left = (m.currentTime / dur * 100) + '%';
+    if (previewEnd != null && m.currentTime >= previewEnd) { m.pause(); previewEnd = null; }
+  });
+  $('#cutTrack').addEventListener('click', e => {
+    if (!dur) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    m.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * dur;
+  });
+  $('#cutA').addEventListener('change', e => { const t = parseTime(e.target.value); if (!isNaN(t)) a = t; paint(); });
+  $('#cutB').addEventListener('change', e => { const t = parseTime(e.target.value); if (!isNaN(t)) b = t; paint(); });
+  const keys = e => {
+    if (!dlg.open || e.target.closest('input')) return;
+    if (e.key === '[') { a = m.currentTime; paint(); } else if (e.key === ']') { b = m.currentTime; paint(); }
+  };
+  document.addEventListener('keydown', keys);
+  dlg.addEventListener('close', () => { document.removeEventListener('keydown', keys); }, {once: true});
+  $('#plActions').onclick = async e => {
+    const btn = e.target.closest('[data-cut]'); if (!btn) return;
+    const act = btn.dataset.cut;
+    if (act === 'a') { a = m.currentTime; return paint(); }
+    if (act === 'b') { b = m.currentTime; return paint(); }
+    if (act === 'preview') { m.currentTime = a; previewEnd = b; m.play().catch(() => {}); return; }
+    if (act === 'back') { dlg.close(); return; }
+    if (act === 'cancel' && job) { api(`/api/edit/jobs/${job.id}/cancel`, {method: 'POST'}).catch(() => {}); return; }
+    if (act === 'go') {
+      m.pause();
+      try {
+        job = await api(`/api/edit/${o.kind}/${o.id}/cut`, {method: 'POST', body: {start: a, end: b, accurate: $('#cutAcc').checked}});
+      } catch (err) { return toast(err.message, 'err'); }
+      $('#cutProg').hidden = false; paint();
+      watchJob(job, null, 'Đã lưu bản cắt.', {
+        progress: j => { $('#cutBar').style.width = (j.progress || 0) + '%'; $('#cutPct').textContent = Math.round(j.progress || 0) + '%'; },
+        done: () => { job = null; $('#cutProg').hidden = true; paint(); },
+        fail: () => { job = null; $('#cutProg').hidden = true; paint(); },
+      });
+    }
+  };
+  paint();
+  if (!dlg.open) dlg.showModal();
+}
+window.CV.openCutter = openCutter;
 $('#plClose').addEventListener('click', () => $('#player').close());
 $('#player').addEventListener('close', () => { $('#plMedia').innerHTML = ''; });
 $('#player').addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.close(); });
@@ -410,6 +526,7 @@ function renderConfig() {
       <h3>Tùy chọn tải</h3>
       <div class="cols3">
         <label class="field">Chất lượng mặc định<select id="defQuality">${qOpts}</select></label>
+        <label class="field">Định dạng video<select id="vidFmt"><option value="mp4" ${c.video_format !== 'original' ? 'selected' : ''}>MP4 (mở được ở mọi nơi)</option><option value="original" ${c.video_format === 'original' ? 'selected' : ''}>Giữ nguyên (WebM, MKV…)</option></select><small>MP4: chỉ đổi vỏ file, không giảm chất lượng.</small></label>
         <label class="field">Ngưỡng đầy ổ (%)<input type="number" id="maxFull" min="50" max="99" value="${c.max_full_percent}"></label>
         <label class="field">Số luồng tải mỗi ổ<input type="number" id="maxConc" min="1" max="8" value="${c.max_concurrent_per_disk}"><small>HDD nên để 2–3.</small></label>
         <label class="field">Ngôn ngữ phụ đề<input type="text" id="subLangs" value="${esc(c.subtitle_langs.join(', '))}"><small>Mã ngôn ngữ, cách nhau dấu phẩy.</small></label>
@@ -465,6 +582,7 @@ function collectConfig() {
   c.rules.comic = comicOrder; c.rules.novel = comicOrder;
   if ($('#defQuality')) {
     c.default_quality = $('#defQuality').value;
+    c.video_format = $('#vidFmt').value;
     c.max_full_percent = +$('#maxFull').value;
     c.max_concurrent_per_disk = +$('#maxConc').value;
     c.subtitle_langs = $('#subLangs').value.split(',').map(s => s.trim()).filter(Boolean);
@@ -594,6 +712,7 @@ function renderUpdate(u) {
     case 'available': html = `<span>Có bản mới <b>${esc(u.version)}</b></span>` + btn(u.portable ? 'Tải bản mới' : 'Cập nhật'); break;
     case 'downloading': html = `<span>Đang tải bản mới… <b>${u.percent || 0}%</b></span>`; break;
     case 'downloaded': html = `<span>Bản <b>${esc(u.version)}</b> đã sẵn sàng</span>` + btn('Khởi động lại để cập nhật', 'yellow'); break;
+    case 'installing': html = `<span>Đang cài bản <b>${esc(u.version)}</b>…</span>`; break;
     case 'checking': html = '<span>Đang kiểm tra bản mới…</span>'; break;
     case 'latest': html = `<span>Đang dùng bản mới nhất (${esc(u.current)})</span>`; setTimeout(() => { $('#updBox').hidden = true; }, 5000); break;
     case 'error': html = `<span class="no">${esc(u.error || 'Lỗi cập nhật')}</span>` + btn('Thử lại', 'plain'); break;

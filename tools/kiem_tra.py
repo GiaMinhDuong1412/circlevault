@@ -52,7 +52,7 @@ def kiem_html():
     for ref in re.findall(r'(?:src|href)="/p/([^"]+)"', party):
         if not (ROOT / "frontend" / ref).exists():
             loi.append(f"party.html trỏ tới /p/{ref} nhưng không có frontend/{ref}")
-    for page in ("browser.html", "screen.html", "region.html", "mini.html"):     # cửa sổ riêng của app desktop
+    for page in ("browser.html", "screen.html", "region.html", "mini.html", "splash.html"):     # cửa sổ riêng của app desktop
         shell = (ROOT / "desktop" / "src" / page).read_text(encoding="utf-8")
         for ref in re.findall(r'src="([\w.-]+\.js)"', shell):
             if not (ROOT / "desktop" / "src" / ref).exists():

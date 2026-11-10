@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>CircleVault</title>
+<style>
+:root{--ink:#121212;--cyan:#19bde8;--yellow:#fcc419;--green:#3be08c;--pink:#f7a8ec;--red:#ff5a5f;--bg:#fbf9f4;
+  --f:"Be Vietnam Pro","Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:transparent;font:14px/1.4 var(--f);color:var(--ink);user-select:none;-webkit-app-region:drag}
+.card{position:absolute;inset:8px 14px 14px 8px;background:var(--bg);border:3px solid var(--ink);border-radius:10px;box-shadow:6px 6px 0 var(--ink);
+  display:flex;flex-direction:column;overflow:hidden;
+  background-image:radial-gradient(#f2b8c6 1.2px,transparent 1.4px);background-size:34px 34px}
+.top{background:var(--cyan);border-bottom:3px solid var(--ink);height:12px}
+.body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:18px}
+.logo{display:flex;align-items:center;gap:12px}
+.mark{width:46px;height:46px;border:3px solid var(--ink);border-radius:8px;background:conic-gradient(from 210deg,var(--red),var(--yellow),var(--cyan),var(--red));position:relative;animation:spin 2.4s linear infinite}
+.mark::after{content:"";position:absolute;inset:10px;border-radius:50%;background:var(--bg);border:2.5px solid var(--ink)}
+.name{font:900 26px/1 var(--f);letter-spacing:.02em}
+.name b{color:var(--cyan);font-weight:900}
+#msg{font-weight:800;font-size:15px;text-align:center}
+#sub{color:#5d5b55;font-size:12.5px;text-align:center;min-height:1.4em}
+.bar{width:78%;height:14px;border:2.5px solid var(--ink);border-radius:4px;background:#fff;overflow:hidden;position:relative}
+.bar i{position:absolute;top:0;bottom:0;width:35%;background:var(--yellow);border-right:2.5px solid var(--ink);border-left:2.5px solid var(--ink);animation:run 1.3s ease-in-out infinite}
+@keyframes run{0%{left:-35%}100%{left:100%}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ver{position:absolute;right:12px;bottom:8px;font:600 11px ui-monospace,Consolas,monospace;color:#5d5b55}
+@media (prefers-reduced-motion:reduce){.mark,.bar i{animation:none}.bar i{left:0;width:100%}}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="top"></div>
+  <div class="body">
+    <div class="logo"><span class="mark" aria-hidden="true"></span><span class="name">CIRCLE<b>VAULT</b></span></div>
+    <div id="msg">Đang khởi động…</div>
+    <div class="bar" role="progressbar" aria-label="Đang tải"><i></i></div>
+    <div id="sub"></div>
+  </div>
+  <span class="ver" id="ver"></span>
+</div>
+<script src="splash-ui.js"></script>
+</body>
+</html>

@@ -279,7 +279,7 @@ function renderTracks() {
       <td class="hide-sm">${esc(t.album || '')}</td>
       <td class="tnum">${fmtDur(t.duration)}</td>
       <td class="tnum hide-sm">${t.play_count || ''}</td>
-      <td class="act"><button type="button" class="btn sm plain" data-add="${i}" title="Thêm vào playlist" aria-label="Thêm vào playlist">+</button>${pl ? `<button type="button" class="btn sm plain" data-rmt="${t.id}" title="Bỏ khỏi playlist" aria-label="Bỏ khỏi playlist">×</button>` : ''}</td>
+      <td class="act"><button type="button" class="btn sm plain" data-cutt="${i}" title="Cắt đoạn bài này" aria-label="Cắt đoạn">✂</button><button type="button" class="btn sm plain" data-add="${i}" title="Thêm vào playlist" aria-label="Thêm vào playlist">+</button>${pl ? `<button type="button" class="btn sm plain" data-rmt="${t.id}" title="Bỏ khỏi playlist" aria-label="Bỏ khỏi playlist">×</button>` : ''}</td>
     </tr>`).join('')}</tbody></table>`;
 }
 $('#trackList').addEventListener('click', async e => {
@@ -287,6 +287,8 @@ $('#trackList').addEventListener('click', async e => {
   if (dl) { e.stopPropagation(); const t = M.tracks[+dl.dataset.dl]; return addTask(t.ou, false, `"${t.title}"`); }
   const addl = e.target.closest('[data-addl]');
   if (addl) { e.stopPropagation(); const t = M.tracks[+addl.dataset.addl]; return pickPlaylist({id: t.local, title: t.title}); }
+  const ct = e.target.closest('[data-cutt]');
+  if (ct) { e.stopPropagation(); const t = M.tracks[+ct.dataset.cutt]; if (!audio.paused) audio.pause(); return window.CV.openCutter({kind: 'track', id: t.id, title: t.title, src: `/api/music/${t.id}/file`, audio: true, duration: t.duration}); }
   const add = e.target.closest('[data-add]');
   if (add) { e.stopPropagation(); return pickPlaylist(M.tracks[+add.dataset.add]); }
   const rmt = e.target.closest('[data-rmt]');
