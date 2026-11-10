@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: http://127.0.0.1:* https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com">
+<title>Đang phát · CircleVault</title>
+<style>
+:root{--ink:#121212;--cyan:#19bde8;--yellow:#fcc419;--green:#3be08c;--card:#fffdf6;--muted:#5d5b55;
+  --f:"Be Vietnam Pro","Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:transparent;font:13px/1.3 var(--f);color:var(--ink);user-select:none}
+.card{position:absolute;left:62px;top:14px;right:10px;height:112px;background:var(--card);border:3px solid var(--ink);border-radius:10px;
+  box-shadow:5px 5px 0 var(--ink);padding:7px 8px 6px 70px;display:flex;flex-direction:column;gap:3px;-webkit-app-region:drag}
+.card::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;background:var(--cyan);border-bottom:2px solid var(--ink);border-radius:6px 6px 0 0}
+.top{display:flex;align-items:center;gap:4px;margin-top:3px;min-width:0}
+.title{flex:1;min-width:0;overflow:hidden;white-space:nowrap;font-weight:900;font-size:14px}
+.title span{display:inline-block;padding-right:40px}
+.title.run span{animation:run var(--t,10s) linear infinite}
+@keyframes run{0%,12%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.artist{color:var(--muted);font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seek{display:flex;align-items:center;gap:6px;font:600 10.5px ui-monospace,Consolas,monospace;color:var(--muted);-webkit-app-region:no-drag}
+.bar{flex:1;height:8px;border:2px solid var(--ink);border-radius:5px;background:#fff;cursor:pointer;position:relative;overflow:hidden}
+.bar i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--yellow);border-right:2px solid var(--ink)}
+.ctrl{display:flex;align-items:center;gap:4px;margin-top:1px}
+button{-webkit-app-region:no-drag;width:28px;height:26px;padding:0;display:inline-flex;align-items:center;justify-content:center;
+  border:2px solid var(--ink);border-radius:5px;background:#fff;color:var(--ink);cursor:pointer;box-shadow:2px 2px 0 var(--ink)}
+button:active{transform:translate(1px,1px);box-shadow:1px 1px 0 var(--ink)}
+button.play{width:34px;height:30px;background:var(--green)}
+button.on{background:var(--yellow)}
+button.sm{width:22px;height:22px;box-shadow:none;font:900 13px var(--f)}
+button svg{display:block}
+#repeat{position:relative}
+#repeat.one::after{content:"1";position:absolute;right:-5px;top:-6px;background:var(--ink);color:#fff;border-radius:6px;font:800 9px var(--f);padding:0 3px}
+.vol{display:flex;align-items:center;gap:3px;margin-left:auto;-webkit-app-region:no-drag}
+.vol button{width:24px;box-shadow:none}
+input[type=range]{width:58px;accent-color:var(--ink);-webkit-app-region:no-drag;margin:0}
+.disc{position:absolute;left:6px;top:8px;width:120px;height:120px;border-radius:50%;border:3px solid var(--ink);cursor:pointer;
+  background:repeating-radial-gradient(circle at 50% 50%,#1b1b1b 0 2px,#2c2c2c 2px 3.5px);box-shadow:4px 4px 0 var(--ink);
+  animation:spin 7s linear infinite;animation-play-state:paused;-webkit-app-region:no-drag}
+.disc.on{animation-play-state:running}
+.disc::after{content:"";position:absolute;inset:10px;border-radius:50%;background:conic-gradient(from 30deg,transparent 0 20%,rgba(255,255,255,.13) 25%,transparent 30% 70%,rgba(255,255,255,.1) 75%,transparent 80%)}
+.label{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;border:3px solid var(--yellow);
+  overflow:hidden;background:linear-gradient(135deg,var(--cyan),var(--yellow));z-index:1}
+.label img{width:100%;height:100%;object-fit:cover;display:block}
+.hole{position:absolute;left:50%;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:var(--card);border:2px solid var(--ink);z-index:2}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.disc{animation:none}.title.run span{animation:none}}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="top">
+    <div class="title" id="title"><span id="titleText">CircleVault</span></div>
+    <button class="sm" type="button" id="open" title="Mở lại CircleVault" aria-label="Mở lại CircleVault">⤢</button>
+    <button class="sm" type="button" id="close" title="Ẩn trình phát mini" aria-label="Ẩn trình phát mini">×</button>
+  </div>
+  <div class="artist" id="artist"></div>
+  <div class="seek"><span id="cur">0:00</span><div class="bar" id="bar" title="Bấm để tua"><i id="fill"></i></div><span id="dur">0:00</span></div>
+  <div class="ctrl">
+    <button type="button" id="shuffle" title="Trộn bài" aria-label="Trộn bài"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M3 7h4l10 10h4M3 17h4l3-3M14 10l3-3h4M18 4l3 3-3 3M18 14l3 3-3 3"/></svg></button>
+    <button type="button" id="prev" title="Bài trước" aria-label="Bài trước"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+    <button type="button" class="play" id="play" title="Phát / tạm dừng" aria-label="Phát"></button>
+    <button type="button" id="next" title="Bài tiếp" aria-label="Bài tiếp"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+    <button type="button" id="repeat" title="Lặp lại" aria-label="Lặp lại"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M4 11V8a2 2 0 0 1 2-2h13l-3-3M20 13v3a2 2 0 0 1-2 2H5l3 3"/></svg></button>
+    <div class="vol">
+      <button type="button" id="mute" title="Tắt / bật tiếng" aria-label="Tắt tiếng"></button>
+      <input type="range" id="vol" min="0" max="1" step="0.02" value="0.9" aria-label="Âm lượng">
+    </div>
+  </div>
+</div>
+<div class="disc" id="disc" title="Mở lại CircleVault"><div class="label" id="label"></div><div class="hole"></div></div>
+<script src="mini-ui.js"></script>
+</body>
+</html>

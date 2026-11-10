@@ -20,6 +20,7 @@ const { spawn, execFileSync } = require('child_process');
 const { createUpdater } = require('./updater');
 const browser = require('./browser');
 const screenTr = require('./screen');
+const miniPlayer = require('./mini');
 
 const APP_ID = 'vn.circlevault.app';
 const APP_NAME = 'CircleVault';
@@ -153,9 +154,11 @@ function createWindow() {
   win = new BrowserWindow({
     width: b.width || 1400, height: b.height || 900, x: b.x, y: b.y, minWidth: 900, minHeight: 600,
     title: APP_NAME, icon: ICON, show: false, autoHideMenuBar: true, backgroundColor: '#fbf9f4',
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: false },
+    // backgroundThrottling: false – thu nhỏ cửa sổ vẫn phát nhạc, chuyển bài và trả lời trình phát mini ngay
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: false, backgroundThrottling: false },
   });
   if (cfg.maximized) win.maximize();
+  miniPlayer.attach(win);
   win.on('page-title-updated', (e, title) => { e.preventDefault(); win.setTitle(title.includes('CircleVault') ? title : APP_NAME); });
   win.once('ready-to-show', () => { if (!SMOKE) win.show(); });
   const keep = () => { if (!win.isMaximized() && !win.isMinimized()) cfg.bounds = win.getBounds(); cfg.maximized = win.isMaximized(); };
@@ -267,6 +270,7 @@ async function init() {
   ipcMain.handle('youtube-logout', () => browser.youtubeLogout());
   screenTr.setup({ userData: HOME, port: () => port, icon: ICON, log });
   ipcMain.on('open-screen-translate', () => screenTr.open());
+  miniPlayer.setup({ userData: HOME, icon: ICON, log });
   createWindow();
   if (SMOKE) return smoke();
   updater = createUpdater({ send, notify, beforeInstall: () => { quitting = true; stopServer(); } });
@@ -283,7 +287,7 @@ function smoke() {
   wc.once('did-finish-load', async () => {
     try {
       await new Promise((r) => setTimeout(r, 1500));
-      const r = await wc.executeJavaScript(`({desk: !!(window.cvDesktop && window.cvDesktop.openBrowser), cv: !!(window.CV && window.CV.eq && window.CV.music && window.CV.views.party && window.CV.views.translate && window.cvDesktop.openScreenTranslate),
+      const r = await wc.executeJavaScript(`({desk: !!(window.cvDesktop && window.cvDesktop.openBrowser), cv: !!(window.CV && window.CV.eq && window.CV.music && window.CV.views.party && window.CV.views.translate && window.cvDesktop.openScreenTranslate && window.cvDesktop.musicState && window.CV.views.music),
         tabs: document.querySelectorAll('.tab').length, audio: typeof AudioContext === 'function'})`);
       const st = await getJson('/api/status');
       const party = await getJson('/api/party');

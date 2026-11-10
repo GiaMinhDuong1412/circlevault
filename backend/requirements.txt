@@ -3,6 +3,7 @@ uvicorn>=0.30
 websockets>=13
 yt-dlp[default]>=2026.10.26
 mutagen>=1.47
+requests>=2.31   # nghe nhạc YouTube online (chuyển tiếp luồng âm thanh)
 rapidocr_onnxruntime>=1.4.4   # nhận diện chữ trên ảnh (tab Dịch)
 anthropic>=0.80   # Claude AI (bộ dịch tùy chọn)
 Pillow>=10

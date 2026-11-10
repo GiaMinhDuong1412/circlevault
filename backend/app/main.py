@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 import json
 
-from . import config, db, detect, downloader, gametr, music, party, storage, translate, ytdlp_update
+from . import config, db, detect, downloader, gametr, music, party, storage, translate, ytdlp_update, ytmusic
 from .manager import manager
 
 WEB = config.WEB
@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="CircleVault", lifespan=lifespan)
+app.include_router(ytmusic.router)
 app.include_router(music.router)
 app.include_router(party.router)
 app.include_router(translate.router)

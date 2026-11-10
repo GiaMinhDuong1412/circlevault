@@ -24,7 +24,7 @@ Video/nhạc tải về nằm ở thư mục ổ đĩa bạn chọn trong tab **
 | Trang Chủ | Dán link → Phân tích → chọn chất lượng (4K…480p, MP3) → Tải ngay. YouTube video/playlist/kênh/shorts, link `.m3u8`, hơn 1.000 trang video. |
 | Hàng Đợi | Tốc độ, thời gian còn lại, tạm dừng / tải tiếp từ chỗ dừng, hủy, thử lại. Tắt app giữa chừng thì lần sau tải tiếp. |
 | Thư Viện | Tìm, lọc, xem video ngay trong app, mở thư mục chứa file. |
-| Nghe Nhạc | Thư viện nhạc (nhạc tải từ YouTube + thư mục nhạc có sẵn trên máy), playlist, trộn bài, lặp, phím media trên bàn phím. **EQ 10 dải** với 14 preset (Tăng Bass, Giọng hát rõ, Bolero, EDM, Loa laptop…), lưu preset riêng, đường cong + phổ âm thanh trực tiếp, tự hạ preamp và chống rè. |
+| Nghe Nhạc | Thư viện nhạc (nhạc tải từ YouTube + thư mục nhạc có sẵn trên máy), playlist, trộn bài, lặp, phím media trên bàn phím. **Playlist YouTube của bạn** (đăng nhập trong app: playlist, video đã thích, xem sau) hoặc dán link playlist YouTube / YT Music: nghe online ngay, bài đã tải thì phát từ máy, tải cả playlist về MP3. **Trình phát mini** khi thu nhỏ app (đĩa nhạc xoay, tua, chuyển bài, âm lượng). **EQ 10 dải** với 14 preset (Tăng Bass, Giọng hát rõ, Bolero, EDM, Loa laptop…), lưu preset riêng, đường cong + phổ âm thanh trực tiếp, tự hạ preamp và chống rè. |
 | Xem Online | Cửa sổ YouTube trong app, đăng nhập tài khoản (Premium = không quảng cáo), nút "Tải video này"; tải bằng tài khoản đó (video giới hạn tuổi, hội viên). Trình duyệt bắt link cho trang phim khác: chặn quảng cáo/popup, tự bắt luồng `.m3u8`/`.mpd`/`.mp4` kèm Referer/Cookie để tải. |
 | Xem Chung | Tạo phòng xem chung (phim trong thư viện hoặc video YouTube), bạn bè mở link bằng trình duyệt, không cần cài. Đồng bộ phát/dừng/tua, chat, thả cảm xúc. Link Internet qua Cloudflare Quick Tunnel (không cần tài khoản). |
 | Dịch | Dịch truyện tranh tiếng Anh (CBZ/ảnh, kể cả webtoon dài) sang tiếng Việt: tự tìm khung thoại, đặt chữ dịch đè lên, sửa tay, xuất CBZ tiếng Việt. Khung dịch màn hình nổi trên game (khoanh vùng chữ, tự dịch khi chữ đổi). Việt hóa game từ file (Ren'Py, RPG Maker MV/MZ): dịch cả kịch bản, xem/sửa, áp dụng vào game, khôi phục bản gốc. Bộ dịch Google (miễn phí) hoặc Claude AI (API key riêng, dịch theo ngữ cảnh). |
@@ -50,7 +50,7 @@ frontend/           Giao diện web (JS thuần, không cần build)
   css/app.css
   js/app.js           trang chủ, hàng đợi, thư viện, lưu trữ, cập nhật app
   js/eq.js            bộ chỉnh âm 10 dải (Web Audio API)
-  js/music.js         trang nghe nhạc + thanh phát nhạc
+  js/music.js         trang nghe nhạc + thanh phát nhạc + playlist YouTube online
   js/watch.js         tab Xem Online + tab Xem Chung
   js/translate.js     tab Dịch (truyện, game, dịch nhanh, cài đặt bộ dịch)
   party.html, js/party.js, css/party.css   trang phòng xem chung (bạn bè mở)
