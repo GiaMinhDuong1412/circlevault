@@ -1,0 +1,71 @@
+# Kiểm tra mỗi nhánh / pull request trước khi merge vào main: cú pháp, backend chạy được, build thử app + chạy --smoke.
+name: Kiểm tra
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
+jobs:
+  kiem-tra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: python tools/kiem_tra.py
+      - name: Backend khởi động được
+        run: |
+          pip install -q -r backend/requirements.txt
+          cd backend
+          CIRCLEVAULT_DATA="$RUNNER_TEMP/cv" python -m app --no-browser --port 8686 &
+          for i in $(seq 1 30); do curl -sf localhost:8686/api/status && break; sleep 1; done
+          curl -sf localhost:8686/ | grep -q CircleVault
+          curl -sf localhost:8686/api/music/tracks
+
+  build-app:                         # build thử bộ cài + chạy thử --smoke trước khi merge
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: python tools/dong_goi_app.py --ra desktop/res
+      - name: Build
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm version "0.0.${GITHUB_RUN_NUMBER}" --no-git-tag-version --allow-same-version
+          npm install --no-audit --no-fund
+          npx electron-builder --win --x64 --publish never
+      - name: Chạy thử (--smoke)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "desktop/dist/win-unpacked/CircleVault.exe" -ArgumentList "--smoke" -PassThru
+          if (-not $p.WaitForExit(150000)) { $p.Kill(); Write-Error "Chạy thử quá 150 giây"; exit 1 }
+          if ($p.ExitCode -ne 0) {
+            Get-ChildItem "$env:TEMP" -Filter "circlevault-smoke-*" -Directory | ForEach-Object { Get-Content (Join-Path $_.FullName "nhat-ky.txt") -ErrorAction SilentlyContinue }
+            Write-Error "Chạy thử thất bại (mã $($p.ExitCode))"; exit 1
+          }
+          "Chạy thử: OK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CircleVault-Setup-thu
+          path: desktop/dist/CircleVault-Setup-*.exe
+          retention-days: 7

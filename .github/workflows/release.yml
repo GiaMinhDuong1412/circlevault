@@ -1,0 +1,120 @@
+# Mỗi lần merge (push) vào main: kiểm tra → build app CircleVault (Electron + Python nhúng + ffmpeg + Deno)
+# → chạy thử --smoke → tạo Release "v<năm>.<tháng>.<số lần chạy>"
+#   - ở repo này (private), và
+#   - ở repo public GiaMinhDuong1412/circlevault-releases: app trên máy người dùng kiểm tra và tải bản mới ở đó, KHÔNG cần token
+#     (cần secret RELEASES_TOKEN của repo này: token có quyền Contents: Read and write trên repo public đó) – giống AQ Auto Test.
+name: Phát hành app CircleVault
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phat-hanh-app
+  cancel-in-progress: false
+
+env:
+  PYTHONUTF8: "1"                 # Windows runner: in chữ tiếng Việt không lỗi cp1252
+  PYTHONIOENCODING: "utf-8"
+  PUBLIC_REPO: GiaMinhDuong1412/circlevault-releases
+  HAS_RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN != '' }}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Giữ nguyên xuống dòng (không đổi LF → CRLF)
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Kiểm tra mã
+        run: python tools/kiem_tra.py
+
+      - name: Số phiên bản (năm.tháng.số lần chạy – luôn tăng, đúng semver cho electron-updater)
+        id: ver
+        run: echo "ver=$(python -c "import datetime as d;t=d.datetime.now(d.timezone.utc)+d.timedelta(hours=7);print('%d.%d' % (t.year, t.month))").${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Chuẩn bị mã + Python nhúng + ffmpeg + Deno
+        run: python tools/dong_goi_app.py --ra desktop/res
+
+      - name: Build bộ cài (Setup + Portable)
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm version "${{ steps.ver.outputs.ver }}" --no-git-tag-version --allow-same-version
+          npm install --no-audit --no-fund
+          npx electron-builder --win --x64 --publish never
+          ls -la dist
+          cat dist/latest.yml
+
+      - name: Chạy thử bản build (--smoke)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "desktop/dist/win-unpacked/CircleVault.exe" -ArgumentList "--smoke" -PassThru
+          if (-not $p.WaitForExit(150000)) { $p.Kill(); Write-Error "Chạy thử quá 150 giây"; exit 1 }
+          if ($p.ExitCode -ne 0) {
+            Get-ChildItem "$env:TEMP" -Filter "circlevault-smoke-*" -Directory | ForEach-Object { Get-Content (Join-Path $_.FullName "nhat-ky.txt") -ErrorAction SilentlyContinue }
+            Write-Error "Chạy thử thất bại (mã $($p.ExitCode))"; exit 1
+          }
+          "Chạy thử: OK"
+
+      - name: Ghi chú phiên bản
+        run: |
+          V="${{ steps.ver.outputs.ver }}"
+          PREV=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          {
+            echo "CircleVault $V – commit ${GITHUB_SHA::7}"
+            echo
+            echo "Thay đổi:"
+            if [ -n "$PREV" ]; then git log --no-merges --pretty='- %s' "$PREV..HEAD" | head -40; else git log --no-merges --pretty='- %s' -20; fi
+          } > notes.md
+          {
+            echo "**Tải về (Windows 10/11, 64-bit):**"
+            echo "- \`CircleVault-Setup-$V.exe\`: bộ cài, khuyên dùng (không cần quyền admin, tự báo và cài bản mới về sau)"
+            echo "- \`CircleVault-Portable-$V.exe\`: bản chạy ngay, không cần cài (không tự cập nhật)"
+            echo
+            echo "Đã kèm sẵn ffmpeg và Deno, không cần cài thêm gì. Đã cài rồi thì app tự báo khi có bản mới: bấm **Cập nhật** ở góc trên."
+          } > pub-notes.md
+          git tag "v$V" 2>/dev/null || true
+
+      - name: Tạo Release (private)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.ver.outputs.ver }}"
+          gh release create "v$V" desktop/dist/*.exe desktop/dist/*.blockmap desktop/dist/latest.yml \
+            --title "CircleVault $V" --notes-file notes.md --target "$GITHUB_SHA"
+
+      - name: Phát hành sang repo public (để app tự cập nhật)
+        if: env.HAS_RELEASES_TOKEN == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          V="${{ steps.ver.outputs.ver }}"
+          gh release create "v$V" desktop/dist/*.exe desktop/dist/*.blockmap desktop/dist/latest.yml \
+            -R "$PUBLIC_REPO" --title "CircleVault $V" --notes-file pub-notes.md --latest
+
+      - name: Nhắc cấu hình repo public
+        if: env.HAS_RELEASES_TOKEN != 'true'
+        run: echo "::warning::Chưa có secret RELEASES_TOKEN nên không phát hành sang $PUBLIC_REPO – app trên máy người dùng sẽ không thấy bản mới."

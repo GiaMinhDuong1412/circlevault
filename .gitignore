@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+backend/data/
+data/
+downloads/
+desktop/node_modules/
+desktop/res/
+desktop/dist/
