@@ -14,7 +14,9 @@ const M = {
   yt: {logged_in: false, items: [], saved: [], loading: false, error: null}, online: null, seq: 0, pseq: 0, errRun: 0, opening: '',
 };
 const isYt = l => typeof l === 'string' && l.startsWith('yt:');
-const keyOf = t => t ? (t.yt ? 'y:' + t.yt : 'l:' + t.id) : '';
+const keyOf = t => t ? (t.ou ? 'o:' + (t.yt || t.ou) : 'l:' + t.id) : '';
+const enc = encodeURIComponent;
+const srcName = t => t.site || (t.yt ? 'YouTube' : 'Online');
 const sameTrack = (a, b) => !!a && !!b && keyOf(a) === keyOf(b);
 
 /* ------------------------------------------------------------ lưu cài đặt (debounce) */
@@ -33,6 +35,7 @@ async function loadPlaylists() {
   renderSide();
 }
 async function loadTracks() {
+  if (M.list === 'yt:@search') { if (M.search) { M.online = M.search; M.tracks = filterQ(M.search.entries); } return renderTracks(); }
   if (isYt(M.list)) return loadOnline(false);
   M.online = null;
   const p = new URLSearchParams();
@@ -61,7 +64,7 @@ function filterQ(list) {
 async function loadOnline(refresh, src) {
   const key = String(M.list).slice(3);
   const my = ++M.seq;
-  $('#trackList').innerHTML = '<div class="empty"><h3>Đang lấy danh sách bài từ YouTube…</h3><p>Playlist dài có thể mất vài chục giây.</p></div>';
+  $('#trackList').innerHTML = '<div class="empty"><h3>Đang lấy danh sách bài…</h3><p>Playlist dài có thể mất vài chục giây.</p></div>';
   $('#plTools').hidden = true; $('#ytTools').hidden = true;
   try {
     const p = new URLSearchParams({src: src || key});
@@ -78,6 +81,22 @@ async function loadOnline(refresh, src) {
     M.online = {key, title: key, entries: [], error: e.message}; M.tracks = [];
   }
   renderSide(); renderTracks();
+}
+async function searchOnline(q, site) {
+  const my = ++M.seq;
+  M.list = 'yt:@search'; M.q = ''; $('#mSearch').value = '';
+  renderSide();
+  $('#trackList').innerHTML = `<div class="empty"><h3>Đang tìm “${esc(q)}”…</h3></div>`;
+  $('#plTools').hidden = true; $('#ytTools').hidden = true;
+  try {
+    const data = await api('/api/music/yt/search?' + new URLSearchParams({q, site}));
+    if (my !== M.seq) return;
+    M.online = M.search = data; M.tracks = data.entries;
+  } catch (e) {
+    if (my !== M.seq) return;
+    M.online = {key: '@search', title: `Tìm “${q}”`, entries: [], error: e.message, search: true}; M.tracks = [];
+  }
+  renderTracks();
 }
 async function addTask(url, playlist, label) {
   try {
@@ -122,10 +141,18 @@ function ytSide(item) {
     ${y.error ? `<p class="hint err">${esc(y.error)}</p>` : ''}
     ${y.items.length <= 2 && !y.error ? '<p class="hint">Chưa thấy playlist nào. Bấm ⟳ để tải lại.</p>' : ''}`;
   const saved = (y.saved || []).filter(s => !y.items.some(p => p.id === s.id));
-  return `<div class="yt-side"><h4 class="row-h">YouTube của tôi${y.logged_in ? `<button type="button" class="chip-x" id="ytRefresh" title="Tải lại danh sách playlist" aria-label="Tải lại">${y.loading ? '…' : '⟳'}</button>` : ''}</h4>
+  return `<div class="yt-side"><h4>Tìm nhạc online</h4>
+    <form class="ol-search" id="olSearch">
+      <input type="search" id="olQ" placeholder="Tên bài, ca sĩ…" aria-label="Tìm nhạc online" value="${esc(M.olq || '')}">
+      <div class="mini-form"><select id="olSite" aria-label="Nguồn">
+        <option value="yt" ${M.olsite !== 'sc' ? 'selected' : ''}>YouTube</option><option value="sc" ${M.olsite === 'sc' ? 'selected' : ''}>SoundCloud</option>
+      </select><button class="btn sm green" type="submit">Tìm</button></div>
+    </form>
+    ${M.list === 'yt:@search' ? `<ul>${item('yt:@search', '🔎 Kết quả tìm vừa rồi')}</ul>` : ''}
+    <h4 class="row-h">YouTube của tôi${y.logged_in ? `<button type="button" class="chip-x" id="ytRefresh" title="Tải lại danh sách playlist" aria-label="Tải lại">${y.loading ? '…' : '⟳'}</button>` : ''}</h4>
     ${body}
     ${saved.length ? `<h4>Đã mở bằng link</h4><ul class="folders">${saved.map(s => `<li><a href="#music" data-list="yt:${esc(s.id)}" class="${M.list === 'yt:' + s.id ? 'on' : ''}" title="${esc(s.title)}">${esc(s.title)}</a><button type="button" class="chip-x" data-forget="${esc(s.id)}" aria-label="Bỏ khỏi danh sách">×</button></li>`).join('')}</ul>` : ''}
-    <form class="mini-form" id="ytOpen"><input type="text" id="ytLink" placeholder="Link playlist YouTube / YT Music" aria-label="Link playlist YouTube"><button class="btn sm cyan" type="submit">Mở</button></form>
+    <form class="mini-form" id="ytOpen"><input type="text" id="ytLink" placeholder="Link YouTube / SoundCloud / Bandcamp" aria-label="Link playlist online"><button class="btn sm cyan" type="submit">Mở</button></form>
   </div>`;
 }
 async function setFolders(folders) {
@@ -151,6 +178,11 @@ document.addEventListener('submit', async e => {
     const name = $('#newPlName').value.trim(); if (!name) return;
     try { const p = await api('/api/music/playlists', {method: 'POST', body: {name}}); M.list = p.id; await loadPlaylists(); loadTracks(); toast(`Đã tạo playlist "${name}".`); }
     catch (err) { toast(err.message, 'err'); }
+  } else if (e.target.id === 'olSearch') {
+    e.preventDefault();
+    const q = $('#olQ').value.trim(); if (!q) return $('#olQ').focus();
+    M.olq = q; M.olsite = $('#olSite').value;
+    searchOnline(q, M.olsite);
   } else if (e.target.id === 'ytOpen') {
     e.preventDefault();
     const src = $('#ytLink').value.trim(); if (!src) return;
@@ -196,7 +228,7 @@ document.addEventListener('click', async e => {
 });
 
 /* ------------------------------------------------------------ danh sách bài */
-const coverUrl = t => t.yt ? (t.thumb || `https://i.ytimg.com/vi/${t.yt}/mqdefault.jpg`) : t.has_cover ? `/api/music/${t.id}/cover` : '';
+const coverUrl = t => t.ou ? (t.thumb || (t.yt ? `https://i.ytimg.com/vi/${t.yt}/mqdefault.jpg` : '')) : t.has_cover ? `/api/music/${t.id}/cover` : '';
 const absUrl = u => u && u.startsWith('/') ? location.origin + u : u;
 function coverEl(t, cls = '') {
   const url = coverUrl(t);
@@ -204,26 +236,27 @@ function coverEl(t, cls = '') {
 }
 function renderOnline() {
   const box = $('#trackList'), o = M.online || {entries: []};
-  $('#mTitle').textContent = 'YouTube: ' + (o.title || '');
+  $('#mTitle').textContent = o.search ? (o.title || 'Tìm nhạc') : 'Online: ' + (o.title || '');
   $('#plTools').hidden = true; $('#mSort').hidden = true;
   const tools = $('#ytTools');
   tools.hidden = !!o.error;
   const missing = o.entries.length - (o.local_count || 0);
   tools.innerHTML = `<span class="hint">${o.entries.length} bài · ${o.local_count || 0} bài đã có trên máy${o.owner ? ' · ' + esc(o.owner) : ''}</span>
-    ${missing > 0 ? `<button class="btn sm yellow" type="button" data-yta="dlall">Tải ${missing} bài về máy (MP3)</button>` : ''}
-    <button class="btn sm plain" type="button" data-yta="reload">Tải lại danh sách</button>`;
+    ${missing > 0 && !o.search ? `<button class="btn sm yellow" type="button" data-yta="dlall">Tải ${missing} bài về máy (MP3)</button>` : ''}
+    ${o.search ? '' : '<button class="btn sm plain" type="button" data-yta="reload">Tải lại danh sách</button>'}`;
   if (o.error) {
-    box.innerHTML = `<div class="empty"><h3>Không mở được playlist</h3><p>${esc(o.error)}</p></div>`; return;
+    box.innerHTML = `<div class="empty"><h3>${o.search ? 'Không tìm được' : 'Không mở được playlist'}</h3><p>${esc(o.error)}</p></div>`; return;
   }
-  if (!M.tracks.length) { box.innerHTML = `<div class="empty"><h3>${o.entries.length ? 'Không có bài nào khớp' : 'Playlist trống'}</h3></div>`; return; }
+  if (!M.tracks.length) { box.innerHTML = `<div class="empty"><h3>${o.entries.length ? 'Không có bài nào khớp' : o.search ? 'Không thấy bài nào' : 'Playlist trống'}</h3></div>`; return; }
   const cur = M.queue[M.qi];
   box.innerHTML = `<table class="tracks"><thead><tr><th class="n">#</th><th>Bài hát</th><th class="hide-sm">Nguồn</th><th class="tnum">Thời lượng</th><th></th></tr></thead><tbody>
     ${M.tracks.map((t, i) => { const on = sameTrack(cur, t); return `<tr data-i="${i}" class="${on ? 'playing' : ''}">
       <td class="n">${on && !audio.paused ? '<span class="eqbars" aria-label="Đang phát"><i></i><i></i><i></i></span>' : i + 1}</td>
       <td><div class="tcell">${coverEl(t)}<div><b>${esc(t.title)}</b><span>${esc(t.artist || '')}</span></div></div></td>
-      <td class="hide-sm">${t.local ? '<span class="tag green">Trên máy</span>' : '<span class="tag">Online</span>'}</td>
+      <td class="hide-sm">${t.local ? '<span class="tag green">Trên máy</span>' : `<span class="tag">${esc(srcName(t))}</span>`}</td>
       <td class="tnum">${fmtDur(t.duration)}</td>
-      <td class="act">${t.local ? '' : `<button type="button" class="btn sm plain" data-dl="${i}" title="Tải bài này về máy (MP3)" aria-label="Tải về máy">⬇</button>`}</td>
+      <td class="act">${t.local ? `<button type="button" class="btn sm plain" data-addl="${i}" title="Thêm vào playlist" aria-label="Thêm vào playlist">+</button>`
+        : `<button type="button" class="btn sm plain" data-dl="${i}" title="Tải bài này về máy (MP3) – tải xong thì thêm vào playlist được" aria-label="Tải về máy">⬇</button>`}</td>
     </tr>`; }).join('')}</tbody></table>`;
 }
 function renderTracks() {
@@ -235,7 +268,7 @@ function renderTracks() {
   $('#plTools').hidden = !pl;
   if (!M.tracks.length) {
     box.innerHTML = `<div class="empty"><h3>${pl ? 'Playlist trống' : 'Chưa có bài hát nào'}</h3>
-      <p>${pl ? 'Bấm nút + ở một bài hát để thêm vào playlist này.' : 'Dán link YouTube ở ô "Tải nhạc" phía trên, hoặc thêm thư mục nhạc có sẵn trên máy ở cột bên trái rồi bấm Quét lại nhạc.'}</p></div>`;
+      <p>${pl ? 'Bấm "+ Thêm bài từ thư viện" ở trên, hoặc nút + ở một bài hát trong Tất cả bài hát.' : 'Dán link YouTube ở ô "Tải nhạc" phía trên, hoặc thêm thư mục nhạc có sẵn trên máy ở cột bên trái rồi bấm Quét lại nhạc.'}</p></div>`;
     return;
   }
   const cur = M.queue[M.qi];
@@ -251,7 +284,9 @@ function renderTracks() {
 }
 $('#trackList').addEventListener('click', async e => {
   const dl = e.target.closest('[data-dl]');
-  if (dl) { e.stopPropagation(); const t = M.tracks[+dl.dataset.dl]; return addTask(`https://www.youtube.com/watch?v=${t.yt}`, false, `"${t.title}"`); }
+  if (dl) { e.stopPropagation(); const t = M.tracks[+dl.dataset.dl]; return addTask(t.ou, false, `"${t.title}"`); }
+  const addl = e.target.closest('[data-addl]');
+  if (addl) { e.stopPropagation(); const t = M.tracks[+addl.dataset.addl]; return pickPlaylist({id: t.local, title: t.title}); }
   const add = e.target.closest('[data-add]');
   if (add) { e.stopPropagation(); return pickPlaylist(M.tracks[+add.dataset.add]); }
   const rmt = e.target.closest('[data-rmt]');
@@ -267,15 +302,21 @@ $('#trackList').addEventListener('click', async e => {
 function pickPlaylist(track) {
   const dlg = $('#plPick');
   $('#plPickTitle').textContent = `Thêm "${track.title}" vào playlist`;
-  $('#plPickList').innerHTML = M.playlists.length
+  $('#plPickList').innerHTML = (M.playlists.length
     ? M.playlists.map(p => `<button type="button" class="btn plain" data-pp="${p.id}">${esc(p.name)} <span class="hint">(${p.count})</span></button>`).join('')
-    : '<p class="hint">Chưa có playlist. Tạo playlist ở cột bên trái trước.</p>';
-  $('#plPickList').onclick = async e => {
-    const b = e.target.closest('[data-pp]'); if (!b) return;
+    : '<p class="hint">Chưa có playlist nào.</p>')
+    + `<form class="mini-form" id="plPickNew"><input type="text" placeholder="Hoặc tạo playlist mới…" maxlength="80" aria-label="Tên playlist mới"><button class="btn sm yellow" type="submit">Tạo &amp; thêm</button></form>`;
+  const addTo = async pid => {
     try {
-      await api(`/api/music/playlists/${b.dataset.pp}/tracks`, {method: 'POST', body: {track_ids: [track.id]}});
+      await api(`/api/music/playlists/${pid}/tracks`, {method: 'POST', body: {track_ids: [track.id]}});
       toast('Đã thêm vào playlist.'); dlg.close(); loadPlaylists();
     } catch (err) { toast(err.message, 'err'); }
+  };
+  $('#plPickList').onclick = e => { const b = e.target.closest('[data-pp]'); if (b) addTo(b.dataset.pp); };
+  $('#plPickNew').onsubmit = async e => {
+    e.preventDefault();
+    const name = e.target.querySelector('input').value.trim(); if (!name) return;
+    try { const p = await api('/api/music/playlists', {method: 'POST', body: {name}}); addTo(p.id); } catch (err) { toast(err.message, 'err'); }
   };
   dlg.showModal();
 }
@@ -296,16 +337,19 @@ async function playAt(i) {
   const t = M.queue[i], my = ++M.pseq;
   M.opening = '';
   engine.resume();
-  const localId = t.yt ? t.local : t.id;
+  const localId = t.ou ? t.local : t.id;
   renderBar(); renderTracks(); mediaSession(t);
   if (localId) {
     audio.src = `/api/music/${localId}/file`;
     api(`/api/music/${localId}/played`, {method: 'POST'}).catch(() => {});
-    if (!t.yt) t.play_count = (t.play_count || 0) + 1;
+    if (!t.ou) t.play_count = (t.play_count || 0) + 1;
   } else {
     M.opening = keyOf(t);
     audio.pause(); renderBar();
-    try { await api(`/api/music/yt/${t.yt}/prepare`, {method: 'POST'}); }
+    try {
+      const r = await api(`/api/music/yt/prepare?u=${enc(t.ou)}`, {method: 'POST'});
+      if (r.preview && my === M.pseq) toast(`"${t.title}" chỉ có đoạn nghe thử (bài dành cho tài khoản trả phí).`);
+    }
     catch (err) {
       if (my !== M.pseq) return;
       M.opening = '';
@@ -315,14 +359,14 @@ async function playAt(i) {
     }
     if (my !== M.pseq) return;
     M.opening = '';
-    audio.src = `/api/music/yt/${t.yt}/stream`;
+    audio.src = `/api/music/yt/stream?u=${enc(t.ou)}`;
   }
   audio.play().catch(err => { if (err.name !== 'AbortError') toast('Không phát được bài này: ' + err.message, 'err'); });
   renderBar();
 }
 function prefetchNext() {   // lấy sẵn link bài online tiếp theo để chuyển bài nhanh
   const n = M.queue[M.qi + 1];
-  if (n && n.yt && !n.local && !n._pre) { n._pre = 1; api(`/api/music/yt/${n.yt}/prepare`, {method: 'POST'}).catch(() => { n._pre = 0; }); }
+  if (n && n.ou && !n.local && !n._pre) { n._pre = 1; api(`/api/music/yt/prepare?u=${enc(n.ou)}`, {method: 'POST'}).catch(() => { n._pre = 0; }); }
 }
 function next(auto) {
   if (!M.queue.length) return;
@@ -347,7 +391,7 @@ audio.addEventListener('playing', () => { M.errRun = 0; prefetchNext(); });
 audio.addEventListener('error', () => {
   if (!audio.src || !audio.getAttribute('src')) return;
   const t = M.queue[M.qi];
-  toast(t && t.yt && !t.local ? 'Bài online bị ngắt hoặc YouTube chặn, chuyển bài tiếp.' : 'File nhạc lỗi hoặc không còn trên ổ, chuyển bài tiếp.', 'err');
+  toast(t && t.ou && !t.local ? `Bài online bị ngắt hoặc ${srcName(t)} chặn, chuyển bài tiếp.` : 'File nhạc lỗi hoặc không còn trên ổ, chuyển bài tiếp.', 'err');
   if (++M.errRun < 5) setTimeout(() => next(true), 800);
 });
 audio.addEventListener('volumechange', () => pushMini());
@@ -383,7 +427,7 @@ function renderBar() {
   bar.hidden = false; document.body.classList.add('has-player');
   $('#pbCover').innerHTML = coverEl(t, 'lg');
   $('#pbTitle').textContent = t.title;
-  $('#pbArtist').textContent = M.opening === keyOf(t) ? 'Đang mở bài từ YouTube…' : (t.artist || (t.yt ? 'YouTube' : 'Không rõ ca sĩ'));
+  $('#pbArtist').textContent = M.opening === keyOf(t) ? `Đang mở bài từ ${srcName(t)}…` : (t.artist || (t.ou ? srcName(t) : 'Không rõ ca sĩ'));
   $('#pbPlay').innerHTML = audio.paused ? ICON.play : ICON.pause;
   $('#pbPlay').setAttribute('aria-label', audio.paused ? 'Phát' : 'Tạm dừng');
   $('#pbShuffle').classList.toggle('on', M.shuffle);
@@ -404,7 +448,7 @@ function pushMini(force) {
   miniAt = now;
   const t = M.queue[M.qi];
   d.musicState(t ? {
-    has: true, title: t.title, artist: M.opening === keyOf(t) ? 'Đang mở bài từ YouTube…' : (t.artist || (t.yt ? 'YouTube' : 'Không rõ ca sĩ')), cover: absUrl(coverUrl(t)) || '',
+    has: true, title: t.title, artist: M.opening === keyOf(t) ? `Đang mở bài từ ${srcName(t)}…` : (t.artist || (t.ou ? srcName(t) : 'Không rõ ca sĩ')), cover: absUrl(coverUrl(t)) || '',
     playing: !audio.paused, cur: audio.currentTime || 0, dur: audio.duration || t.duration || 0,
     shuffle: M.shuffle, repeat: M.repeat, volume: audio.volume, muted: audio.muted, mini: M.settings.mini !== false,
   } : {has: false, mini: M.settings.mini !== false});
@@ -479,6 +523,55 @@ $('#plDelete').addEventListener('click', async e => {
   M.list = 'all'; loadPlaylists(); loadTracks(); toast('Đã xóa playlist (bài hát vẫn còn).');
 });
 $('#plPickClose').addEventListener('click', () => $('#plPick').close());
+
+async function addFromLibrary() {
+  const pl = M.playlists.find(p => p.id === M.list); if (!pl) return;
+  let dlg = $('#plAddDlg');
+  if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'plAddDlg'; dlg.className = 'box pl-add'; document.body.appendChild(dlg); }
+  dlg.innerHTML = `<div class="dlg-head"><h3>Thêm bài vào "${esc(pl.name)}"</h3><button class="btn plain iconbtn" type="button" data-x aria-label="Đóng">✕</button></div>
+    <div class="btn-row"><input type="search" id="paQ" placeholder="Tìm bài, ca sĩ, album" aria-label="Tìm trong thư viện"><button class="btn sm plain" type="button" id="paAll">Chọn hết đang hiện</button></div>
+    <div class="pa-list" id="paList"><p class="hint">Đang tải thư viện…</p></div>
+    <div class="row-between"><span class="hint" id="paCount">Chưa chọn bài nào</span><button class="btn green" type="button" id="paGo" disabled>THÊM VÀO PLAYLIST</button></div>`;
+  dlg.querySelector('[data-x]').onclick = () => dlg.close();
+  dlg.showModal();
+  let all = [], inPl = new Set();
+  try {
+    [all, inPl] = await Promise.all([api('/api/music/tracks?sort=title'), api(`/api/music/tracks?playlist=${pl.id}`).then(r => new Set(r.map(t => t.id)))]);
+  } catch (e) { $('#paList').innerHTML = `<p class="no">${esc(e.message)}</p>`; return; }
+  const picked = new Set();
+  const shown = () => {
+    const q = $('#paQ').value.trim().toLowerCase();
+    return all.filter(t => !q || [t.title, t.artist, t.album].some(x => (x || '').toLowerCase().includes(q))).slice(0, 400);
+  };
+  const paint = () => {
+    const list = shown();
+    $('#paList').innerHTML = list.length ? list.map(t => `<label class="pa-row ${inPl.has(t.id) ? 'had' : ''}">
+        <input type="checkbox" value="${t.id}" ${inPl.has(t.id) || picked.has(t.id) ? 'checked' : ''} ${inPl.has(t.id) ? 'disabled' : ''}>
+        ${coverEl(t)}<span class="pa-t"><b>${esc(t.title)}</b><span>${esc(t.artist || 'Không rõ ca sĩ')}${inPl.has(t.id) ? ' · đã có trong playlist' : ''}</span></span>
+        <span class="tnum hint">${fmtDur(t.duration)}</span></label>`).join('')
+      : `<p class="hint">${all.length ? 'Không có bài nào khớp.' : 'Thư viện chưa có bài nào.'}</p>`;
+    $('#paCount').textContent = picked.size ? `Đã chọn ${picked.size} bài` : 'Chưa chọn bài nào';
+    $('#paGo').disabled = !picked.size;
+    $('#paGo').textContent = picked.size ? `THÊM ${picked.size} BÀI` : 'THÊM VÀO PLAYLIST';
+  };
+  $('#paList').onchange = e => {
+    const c = e.target.closest('input[type=checkbox]'); if (!c) return;
+    c.checked ? picked.add(+c.value) : picked.delete(+c.value);
+    paint();
+  };
+  $('#paQ').oninput = () => paint();
+  $('#paAll').onclick = () => { shown().forEach(t => { if (!inPl.has(t.id)) picked.add(t.id); }); paint(); };
+  $('#paGo').onclick = async () => {
+    const ids = all.filter(t => picked.has(t.id)).map(t => t.id);
+    try {
+      await api(`/api/music/playlists/${pl.id}/tracks`, {method: 'POST', body: {track_ids: ids}});
+      toast(`Đã thêm ${ids.length} bài vào "${pl.name}".`); dlg.close(); await loadPlaylists(); loadTracks();
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  paint();
+  $('#paQ').focus();
+}
+$('#plAddFrom').addEventListener('click', addFromLibrary);
 
 async function initOnce() {
   if (M.loaded) return;

@@ -459,3 +459,19 @@ textarea:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
 .theme-opt .sw{display:flex;height:18px;border:2px solid #121212;border-radius:3px;overflow:hidden}
 .theme-opt .sw i{flex:1}
 .theme-opt.sys{grid-column:1 / -1;flex-direction:row;align-items:center;justify-content:space-between}
+
+/* Nghe Nhạc: tìm online, thêm bài từ thư viện vào playlist */
+.ol-search{display:flex;flex-direction:column;gap:6px}
+.ol-search input[type=search]{padding:6px 8px;font-size:13px;min-width:0}
+.ol-search select{flex:1;min-width:0;padding:5px 6px;font-size:13px}
+.pl-pick .mini-form{margin-top:6px}
+dialog.pl-add{max-width:720px}
+.pa-list{max-height:min(58vh,560px);overflow:auto;border:2px solid var(--ink);border-radius:5px;background:var(--surface)}
+.pa-row{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid var(--grid);cursor:pointer}
+.pa-row:hover{background:var(--surface-2)}
+.pa-row.had{opacity:.6;cursor:default}
+.pa-row input{width:18px;height:18px;accent-color:var(--ink)}
+.pa-t{min-width:0}
+.pa-t b,.pa-t span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pa-t span{font-size:12.5px;color:var(--muted)}
+#paQ{flex:1;min-width:0}

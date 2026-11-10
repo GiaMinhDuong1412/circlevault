@@ -41,7 +41,9 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   - `ytmusic.py`: nhạc YouTube online trong tab Nghe Nhạc, router `/api/music/yt/*` (chỉ 127.0.0.1 vì dùng cookie tài khoản):
     playlist của tôi (feed/playlists, + LL/WL; nhớ ở `DATA/yt-playlists.json` kèm link đã mở), `list?src=` mở playlist/link,
     đánh dấu bài đã có trên máy theo `[id]` trong tên file; nghe trực tiếp = `prepare` (yt-dlp lấy link bestaudio) + `stream`
-    (chuyển tiếp googlevideo theo Range, mỗi lần 4 MB, link hết hạn thì lấy lại).
+    (chuyển tiếp googlevideo theo Range, mỗi lần 4 MB, link hết hạn thì lấy lại). Nguồn online chung (`ONLINE_HOSTS`: YouTube,
+    SoundCloud, Bandcamp): bài có `ou` (link), `GET /search?q=&site=yt|sc`, `POST /prepare?u=` + `GET /stream?u=`; chỉ có HLS thì
+    tải tạm vào `DATA/cache/nghe-online` (tối đa 600 MB) rồi phát file; bỏ định dạng mã hóa (`NO_DRM`) – Spotify/Apple Music có DRM, không làm.
   - `ytdlp_update.py`: tải wheel yt-dlp (+ yt-dlp-ejs đúng phiên bản) từ PyPI vào `DATA/pylib`; `app/__init__.py` ưu tiên thư mục này.
 - `frontend/` – JS thuần, không build. Theme màu: `THEMES` trong app.js + khối `:root[data-theme=…]` trong app.css (localStorage `cv-theme`, không có = theo Windows). `js/app.js` định nghĩa `window.CV` (api, esc, toast, fmt…, `views`) dùng chung cho
   `js/eq.js` (Engine Web Audio + giao diện EQ 10 dải, preset `PRESETS`) và `js/music.js` (thư viện nhạc, thanh phát nhạc).

@@ -1,4 +1,4 @@
-"""Nhạc online từ YouTube cho tab Nghe Nhạc: playlist của tài khoản đã đăng nhập trong app, mở playlist bằng link,
+"""Nhạc online cho tab Nghe Nhạc (YouTube, SoundCloud, Bandcamp – nguồn công khai, nghe như trên trang gốc): playlist của tài khoản đã đăng nhập trong app, mở playlist bằng link,
 nghe trực tiếp không cần tải (backend lấy link luồng âm thanh bằng yt-dlp rồi chuyển tiếp, hỗ trợ tua), bài nào đã tải
 về máy thì phát file trên máy.
 
@@ -25,6 +25,11 @@ LIST_TTL = 10 * 60               # nhớ danh sách bài của playlist 10 phút
 CACHE_PATH = config.DATA / "yt-playlists.json"
 VID = re.compile(r"^[\w-]{11}$")
 LIST = re.compile(r"^[\w-]{2,80}$")
+# Nguồn nghe online được phép (yt-dlp đọc được, phát công khai). Spotify/Apple Music… dùng DRM nên không có ở đây.
+ONLINE_HOSTS = re.compile(r"(^|\.)(youtube\.com|youtu\.be|soundcloud\.com|bandcamp\.com)$")
+SITES = {"yt": ("ytsearch", "YouTube"), "sc": ("scsearch", "SoundCloud")}
+STREAM_CACHE = config.DATA / "cache" / "nghe-online"
+STREAM_CACHE_MAX = 600 * 1024 * 1024     # bài phải tải tạm (SoundCloud HLS…) giữ tối đa 600 MB, cũ thì xóa
 BUILTIN = [{"id": "LL", "title": "Video đã thích", "builtin": True},
            {"id": "WL", "title": "Xem sau", "builtin": True}]
 
@@ -84,10 +89,37 @@ def _local_map() -> dict[str, int]:
     """Bài đã tải về máy: tên file có [id YouTube] → id bài trong thư viện nhạc."""
     out = {}
     for r in db.query("SELECT id, path FROM tracks"):
-        m = re.search(r"\[([\w-]{11})\]\.\w+$", r["path"] or "")
+        m = re.search(r"\[([\w-]{3,40})\]\.\w+$", r["path"] or "")
         if m:
             out.setdefault(m.group(1), r["id"])
     return out
+
+
+def _site(e: dict) -> str:
+    k = (e.get("ie_key") or e.get("extractor_key") or e.get("extractor") or "").lower()
+    if k.startswith("youtube") or VID.match(str(e.get("id") or "")) and "soundcloud" not in k and "bandcamp" not in k:
+        return "YouTube"
+    return "SoundCloud" if "soundcloud" in k else "Bandcamp" if "bandcamp" in k else (k.title() or "Online")
+
+
+def _entry(e: dict) -> dict | None:
+    """Một bài trong danh sách online → {ou: link nghe, yt?: id YouTube, id, title, artist, duration, thumb, site}."""
+    eid = str(e.get("id") or "")
+    title = e.get("title") or ""
+    if title in ("[Private video]", "[Deleted video]"):
+        return None
+    site = _site(e)
+    if site == "YouTube":
+        if not VID.match(eid):
+            return None
+        return {"yt": eid, "id": eid, "ou": f"https://www.youtube.com/watch?v={eid}", "site": site, "title": title or eid,
+                "artist": e.get("channel") or e.get("uploader") or "", "duration": e.get("duration"), "thumb": _thumb(e)}
+    url = e.get("webpage_url") or e.get("original_url") or e.get("url") or ""
+    if not url.startswith("http") or not ONLINE_HOSTS.search((urlparse(url).hostname or "").lower()):
+        return None
+    return {"id": eid, "ou": url, "site": site, "title": title or url.rsplit("/", 1)[-1].replace("-", " "),
+            "artist": e.get("uploader") or e.get("artist") or e.get("channel") or "", "duration": e.get("duration"),
+            "thumb": _thumb(e) if (e.get("thumbnail") or e.get("thumbnails")) else None}
 
 
 def _flatten(info: dict, depth: int = 0) -> list[dict]:
@@ -170,10 +202,15 @@ def _norm(url_or_id: str) -> tuple[str, str]:
         return s, f"https://www.youtube.com/watch?v={s[2:]}"
     if LIST.match(s) and not s.startswith("http"):
         return s, f"https://www.youtube.com/playlist?list={s}"
+    if s.startswith("u:"):
+        s = s[2:]
     u = urlparse(s if "://" in s else "https://" + s)
     host = (u.hostname or "").lower()
+    if host.endswith(("soundcloud.com", "bandcamp.com")):
+        url = f"https://{host}{u.path.rstrip('/')}" + (f"?{u.query}" if "secret_token" in u.query else "")
+        return "u:" + url, url
     if not (host.endswith("youtube.com") or host == "youtu.be"):
-        raise HTTPException(400, "Cần link YouTube hoặc YouTube Music (bài hát hoặc playlist).")
+        raise HTTPException(400, "Cần link YouTube, YouTube Music, SoundCloud hoặc Bandcamp (bài hát hoặc playlist).")
     q = parse_qs(u.query)
     lid = (q.get("list") or [None])[0]
     if lid and LIST.match(lid):
@@ -194,24 +231,18 @@ def open_list(src: str, refresh: bool = False, save: bool = False):
     if hit and not refresh and hit["at"] > time.time() - LIST_TTL:
         data = hit["data"]
     else:
-        info = _ydl_info(url, extract_flat="in_playlist", playlistend=3000, noplaylist=key.startswith("v:"))
+        if key.startswith("u:"):      # SoundCloud / Bandcamp: danh sách dạng phẳng không có tên bài → đọc đủ (tối đa 200 bài)
+            info = _ydl_info(url, playlistend=200, ignoreerrors=True, format="bestaudio/best")
+        else:
+            info = _ydl_info(url, extract_flat="in_playlist", playlistend=3000, noplaylist=key.startswith("v:"))
         items = _flatten(info) if info.get("_type") == "playlist" else [info]
-        entries = []
-        for e in items:
-            vid = str(e.get("id") or "")
-            if not VID.match(vid):
-                continue
-            title = e.get("title") or vid
-            if title in ("[Private video]", "[Deleted video]"):
-                continue
-            entries.append({"yt": vid, "title": title, "artist": e.get("channel") or e.get("uploader") or "",
-                            "duration": e.get("duration"), "thumb": _thumb(e)})
+        entries = [x for x in (_entry(e) for e in items) if x]
         title = {"LL": "Video đã thích", "WL": "Xem sau"}.get(key) or info.get("title") or key
         data = {"key": key, "title": title, "owner": info.get("channel") or info.get("uploader"),
                 "url": url, "entries": entries}
         _lists[key] = {"at": time.time(), "data": data}
     local = _local_map()
-    out = {**data, "entries": [{**e, "local": local.get(e["yt"])} for e in data["entries"]]}
+    out = {**data, "entries": [{**e, "local": local.get(e.get("id") or e.get("yt"))} for e in data["entries"]]}
     out["local_count"] = sum(1 for e in out["entries"] if e["local"])
     if save and not key.startswith("v:"):
         c = _read_cache()
@@ -219,6 +250,20 @@ def open_list(src: str, refresh: bool = False, save: bool = False):
         c["saved"] = [{"id": key, "title": data["title"]}] + saved[:29]
         _write_cache(c)
     return out
+
+
+@router.get("/search")
+def search(q: str, site: str = "yt"):
+    q = (q or "").strip()[:200]
+    if not q:
+        raise HTTPException(400, "Gõ tên bài hát hoặc ca sĩ.")
+    prefix, name = SITES.get(site, SITES["yt"])
+    info = _ydl_info(f"{prefix}30:{q}", extract_flat=True)
+    entries = [x for x in (_entry(e) for e in _flatten(info)) if x]
+    local = _local_map()
+    entries = [{**e, "local": local.get(e.get("id"))} for e in entries]
+    return {"key": "@search", "title": f"Tìm “{q}” trên {name}", "owner": None, "url": None, "search": True,
+            "entries": entries, "local_count": sum(1 for e in entries if e["local"])}
 
 
 @router.delete("/saved/{key}")
@@ -230,33 +275,130 @@ def forget(key: str):
 
 
 # ------------------------------------------------------------------ nghe trực tiếp
-def _resolve(vid: str, force: bool = False) -> dict:
+# Luồng HTTP (YouTube, phần lớn SoundCloud/Bandcamp): chuyển tiếp theo Range, mỗi lần 4 MB.
+# Chỉ có HLS (một số bài SoundCloud): tải tạm bài đó vào DATA/cache/nghe-online rồi phát file (vẫn tua được).
+# Bài mã hóa (HLS-AES, DRM) thì không nghe: không vượt bảo vệ bản quyền.
+NO_DRM = "[format_id!*=aes][format_id!*=ctr][format_id!*=cbc]"
+FMT_HTTP = (f"bestaudio[ext=m4a][protocol^=http]{NO_DRM}/bestaudio[protocol^=http]{NO_DRM}/best[protocol^=http]{NO_DRM}")
+FMT_ANY = f"bestaudio{NO_DRM}/best{NO_DRM}"
+
+
+def _check_url(u: str) -> str:
+    u = (u or "").strip()
+    host = (urlparse(u).hostname or "").lower()
+    if not u.startswith("https://") or not ONLINE_HOSTS.search(host):
+        raise HTTPException(400, "Chỉ nghe online được từ YouTube, SoundCloud, Bandcamp.")
+    return u
+
+
+def _key(u: str) -> str:
+    m = re.search(r"(?:v=|youtu\.be/)([\w-]{11})", u)
+    if m and "youtu" in u:
+        return "yt-" + m.group(1)
+    import hashlib
+    return "u-" + hashlib.sha1(u.encode()).hexdigest()[:20]
+
+
+def _trim_cache() -> None:
+    try:
+        files = sorted((f for f in STREAM_CACHE.iterdir() if f.is_file()), key=lambda f: f.stat().st_mtime, reverse=True)
+    except OSError:
+        return
+    total = 0
+    for f in files:
+        total += f.stat().st_size
+        if total > STREAM_CACHE_MAX:
+            f.unlink(missing_ok=True)
+
+
+def _cache_file(u: str, key: str) -> dict:
+    for f in STREAM_CACHE.glob(key + ".*"):
+        if f.suffix not in (".part", ".ytdl", ".tmp"):
+            f.touch()
+            return {"file": str(f)}
+    STREAM_CACHE.mkdir(parents=True, exist_ok=True)
+    cfg = config.load()
+    log = downloader._Logger()
+    opts = {**downloader._base_opts(cfg), "logger": log, "format": FMT_ANY, "noplaylist": True,
+            "outtmpl": str(STREAM_CACHE / (key + ".%(ext)s")), "overwrites": True, "noprogress": True}
+    with downloader._account(cfg, u, f"nghe-{time.time_ns()}") as acc, yt_dlp.YoutubeDL({**opts, **acc}) as ydl:
+        try:
+            info = ydl.extract_info(u, download=True)
+        except yt_dlp.utils.DownloadError as e:
+            raise HTTPException(502, _nice(log.errors[-1] if log.errors else downloader.clean(str(e)))) from e
+    path = (info.get("requested_downloads") or [{}])[0].get("filepath") or ""
+    if not path:
+        hits = [f for f in STREAM_CACHE.glob(key + ".*") if f.suffix not in (".part", ".ytdl")]
+        path = str(hits[0]) if hits else ""
+    if not path:
+        raise HTTPException(502, "Không mở được bài này.")
+    _trim_cache()
+    return {"file": path, "title": info.get("title"), "artist": info.get("uploader") or info.get("channel"),
+            "duration": info.get("duration"), "preview": "preview" in str(info.get("format_id") or "")}
+
+
+def _resolve(u: str, force: bool = False) -> dict:
+    key = _key(u)
     with _lock:
-        s = _streams.get(vid)
+        s = _streams.get(key)
         if s and not force and s["exp"] > time.time():
             return s
-    info = _ydl_info(f"https://www.youtube.com/watch?v={vid}", noplaylist=True,
-                     format="bestaudio[ext=m4a][protocol^=http]/bestaudio[protocol^=http]/best[protocol^=http]")
-    if not info.get("url") or not str(info.get("protocol", "https")).startswith("http"):
-        raise HTTPException(502, "Bài này không có luồng âm thanh nghe trực tiếp được. Thử tải về máy.")
-    exp = parse_qs(urlparse(info["url"]).query).get("expire", [None])[0]
-    exp = int(exp) - 120 if exp and exp.isdigit() else time.time() + 3 * 3600
-    s = {"url": info["url"], "headers": {k: v for k, v in (info.get("http_headers") or {}).items() if k.lower() != "range"},
-         "exp": min(exp, time.time() + 5 * 3600), "title": info.get("title"), "artist": info.get("channel") or info.get("uploader"),
-         "duration": info.get("duration"), "ext": info.get("ext")}
+    try:
+        info = _ydl_info(u, noplaylist=True, format=FMT_HTTP)
+        direct = bool(info.get("url")) and str(info.get("protocol", "https")).startswith("http")
+    except HTTPException as e:
+        if "format" not in str(e.detail).lower():
+            raise
+        info, direct = {}, False
+    if direct:
+        exp = parse_qs(urlparse(info["url"]).query).get("expire", [None])[0]
+        exp = int(exp) - 120 if exp and exp.isdigit() else time.time() + 3 * 3600
+        s = {"url": info["url"], "headers": {k: v for k, v in (info.get("http_headers") or {}).items() if k.lower() != "range"},
+             "exp": min(exp, time.time() + 5 * 3600), "title": info.get("title"),
+             "artist": info.get("channel") or info.get("uploader"), "duration": info.get("duration"), "ext": info.get("ext"),
+             "preview": "preview" in str(info.get("format_id") or "")}
+    else:
+        try:
+            s = {**_cache_file(u, key), "exp": time.time() + 12 * 3600}
+        except HTTPException as e:
+            if "format" in str(e.detail).lower():
+                raise HTTPException(502, "Bài này được mã hóa bảo vệ bản quyền hoặc không có luồng âm thanh, không nghe được.") from e
+            raise
     with _lock:
-        _streams[vid] = s
+        _streams[key] = s
         for k in [k for k, v in _streams.items() if v["exp"] < time.time()]:
             _streams.pop(k, None)
     return s
+
+
+def _prepare(u: str) -> dict:
+    s = _resolve(_check_url(u))
+    return {"ok": True, "title": s.get("title"), "artist": s.get("artist"), "duration": s.get("duration"),
+            "preview": s.get("preview", False)}
+
+
+@router.post("/prepare")
+def prepare_url(u: str):
+    return _prepare(u)
+
+
+@router.get("/stream")
+def stream_url(u: str, request: Request):
+    return _stream(_check_url(u), request)
 
 
 @router.post("/{vid}/prepare")
 def prepare(vid: str):
     if not VID.match(vid):
         raise HTTPException(400, "Mã video không hợp lệ.")
-    s = _resolve(vid)
-    return {"ok": True, "title": s["title"], "artist": s["artist"], "duration": s["duration"]}
+    return _prepare(f"https://www.youtube.com/watch?v={vid}")
+
+
+@router.get("/{vid}/stream")
+def stream(vid: str, request: Request):
+    if not VID.match(vid):
+        raise HTTPException(400, "Mã video không hợp lệ.")
+    return _stream(f"https://www.youtube.com/watch?v={vid}", request)
 
 
 def _get(s: dict, start: int, end: int | None):
@@ -267,31 +409,40 @@ def _get(s: dict, start: int, end: int | None):
 _RANGE = re.compile(r"bytes=(\d*)-(\d*)")
 
 
-@router.get("/{vid}/stream")
-def stream(vid: str, request: Request):
-    if not VID.match(vid):
-        raise HTTPException(400, "Mã video không hợp lệ.")
+def _stream(u: str, request: Request):
+    from fastapi.responses import FileResponse
+    s = _resolve(u)
+    if s.get("file"):
+        import mimetypes
+        if not os.path.exists(s["file"]):
+            s = _resolve(u, force=True)
+        mime = {".opus": "audio/ogg", ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".mp3": "audio/mpeg"}.get(
+            os.path.splitext(s["file"])[1].lower()) or mimetypes.guess_type(s["file"])[0] or "audio/mpeg"
+        return FileResponse(s["file"], media_type=mime, headers={"Cache-Control": "no-store"})
     m = _RANGE.match(request.headers.get("range", "") or "")
     start = int(m.group(1)) if m and m.group(1) else 0
     want_end = int(m.group(2)) if m and m.group(2) else None
-    s = _resolve(vid)
     r = _get(s, start, start + CHUNK - 1 if want_end is None else min(want_end, start + CHUNK - 1))
     if r.status_code in (403, 410):                         # link hết hạn → lấy lại
         r.close()
-        s = _resolve(vid, force=True)
+        s = _resolve(u, force=True)
+        if s.get("file"):
+            return _stream(u, request)
         r = _get(s, start, start + CHUNK - 1 if want_end is None else min(want_end, start + CHUNK - 1))
     if r.status_code == 416:
         r.close()
         raise HTTPException(416, "Vượt quá cuối bài.")
     if r.status_code not in (200, 206):
         r.close()
-        raise HTTPException(502, f"YouTube từ chối phát bài này (mã {r.status_code}).")
+        raise HTTPException(502, f"Trang nguồn từ chối phát bài này (mã {r.status_code}).")
     cr = re.search(r"/(\d+)", r.headers.get("content-range", ""))
     total = int(cr.group(1)) if cr else int(r.headers.get("content-length") or 0) + (start if r.status_code == 206 else 0)
     if r.status_code == 200:                                 # máy chủ bỏ qua Range: trả cả file từ đầu
         start = 0
     end = total - 1 if want_end is None or want_end >= total else want_end
     mime = r.headers.get("content-type") or ("audio/mp4" if s.get("ext") == "m4a" else "audio/webm")
+    if mime.startswith("video/"):
+        mime = "audio/" + mime.split("/", 1)[1]
 
     def gen(r=r):
         pos = start

@@ -109,9 +109,9 @@
           <aside class="box mside" id="mSide" aria-label="Playlist và thư mục nhạc"></aside>
           <div class="main">
             <form class="paste box" id="dlMusic">
-              <div class="sec-title">Tải nhạc từ YouTube</div>
+              <div class="sec-title">Tải nhạc về máy</div>
               <div class="paste-row">
-                <input id="musicUrl" type="url" required placeholder="Dán link bài hát hoặc playlist YouTube" aria-label="Link bài hát" autocomplete="off">
+                <input id="musicUrl" type="url" required placeholder="Dán link bài hát / playlist YouTube, SoundCloud, Bandcamp" aria-label="Link bài hát" autocomplete="off">
                 <button class="btn yellow" type="submit">TẢI MP3</button>
               </div>
               <label class="check"><input type="checkbox" id="musicList"> Link có danh sách phát: tải cả danh sách</label>
@@ -127,6 +127,7 @@
             </div>
             <div class="btn-row" id="plTools" hidden>
               <input type="text" id="plNewName" hidden maxlength="80" aria-label="Tên mới của playlist">
+              <button class="btn sm green" type="button" id="plAddFrom">+ Thêm bài từ thư viện</button>
               <button class="btn sm plain" type="button" id="plRename">Đổi tên</button>
               <button class="btn sm red" type="button" id="plDelete">Xóa playlist</button>
             </div>
