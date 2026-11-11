@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#19bde8">
+<title>Mang theo · CircleVault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/css/dt.css">
+<script>try{const t=localStorage.getItem('cv-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="dt-body">
+<header class="dt-top">
+  <span class="logo-mark" aria-hidden="true"></span>
+  <div><span class="sec-title">CircleVault</span><b>Mang theo điện thoại</b></div>
+</header>
+
+<main class="dt">
+  <p class="dt-lead">Chọn nhạc hoặc phim, bấm <b>Tải về</b> khi máy tính còn bật. Tải xong thì tắt máy tính, điện thoại vẫn nghe và xem được, không cần mạng.</p>
+
+  <details class="box dt-help" id="helpWhere">
+    <summary><span class="dt-ic">📁</span> Chọn nơi lưu: bộ nhớ máy hay thẻ nhớ</summary>
+    <ol>
+      <li>Mở <b>Chrome</b> → nút <b>⋮</b> (góc trên bên phải) → <b>Cài đặt</b> → <b>Tải xuống</b>.</li>
+      <li><b>Vị trí tải xuống</b>: chọn <b>Bộ nhớ trong</b> hoặc <b>Thẻ SD</b>. Mục này chỉ hiện khi điện thoại có lắp thẻ nhớ.</li>
+      <li>Muốn chọn mỗi lần tải: bật <b>Hỏi vị trí tải xuống</b>.</li>
+    </ol>
+    <p class="hint">Samsung Internet: <b>≡</b> → <b>Cài đặt</b> → <b>Trang web và tải xuống</b> → <b>Lưu tệp đã tải tại</b>.</p>
+    <p class="hint">Nếu Chrome hỏi có giữ file tải từ mạng nhà (http) không, chọn <b>Giữ lại</b>: file đi thẳng từ máy tính của bạn.</p>
+    <p class="hint">Thẻ nhớ dưới 32 GB (FAT32) không chứa được một file lớn hơn 4 GB. Gặp file như vậy, app sẽ nhắc tải từng bài hoặc lưu vào bộ nhớ trong.</p>
+  </details>
+
+  <nav class="dt-tabs" role="tablist">
+    <button type="button" class="dt-tab on" data-tab="music" role="tab">♪ Nhạc</button>
+    <button type="button" class="dt-tab" data-tab="video" role="tab">▶ Phim &amp; video</button>
+  </nav>
+
+  <section id="tabMusic" class="dt-sec">
+    <h2 class="dt-h">Playlist</h2>
+    <div id="plList" class="dt-list"><p class="hint">Đang tải…</p></div>
+    <h2 class="dt-h">Tìm bài lẻ</h2>
+    <input type="search" id="qTrack" class="dt-search" placeholder="Tên bài, ca sĩ…" autocomplete="off">
+    <div id="trList" class="dt-list"></div>
+  </section>
+
+  <section id="tabVideo" class="dt-sec" hidden>
+    <input type="search" id="qVideo" class="dt-search" placeholder="Tìm phim, video…" autocomplete="off">
+    <div id="vdList" class="dt-list"><p class="hint">Đang tải…</p></div>
+    <div><button type="button" class="btn plain dt-more" id="vdMore" hidden>Xem thêm</button></div>
+  </section>
+
+  <details class="box dt-help" id="helpUse">
+    <summary><span class="dt-ic">▶</span> Nghe, xem và xóa trên điện thoại</summary>
+    <h3>Gói playlist (.zip)</h3>
+    <ol>
+      <li>Mở app <b>Files</b> (Files by Google), hoặc <b>File của bạn</b> trên Samsung → <b>Tải xuống</b>.</li>
+      <li>Bấm vào file <b>CircleVault - …zip</b> → <b>Giải nén</b>. Bạn sẽ có một thư mục cùng tên playlist. File .zip xóa được ngay sau đó.</li>
+      <li>Nghe: mở thư mục, bấm file <b>.m3u8</b> bằng <b>VLC</b> (miễn phí trên CH Play) để nghe đúng thứ tự. App nhạc của máy cũng tự thấy các bài.</li>
+    </ol>
+    <h3>Phim</h3>
+    <p>Bấm file <b>.mp4</b> trong app Files, hoặc mở bằng Thư viện ảnh hay VLC.</p>
+    <h3>Xóa để tải đợt mới</h3>
+    <p>Trong app Files, giữ tay lên thư mục playlist hay file phim → <b>Xóa</b>. Nhớ dọn cả <b>Thùng rác</b> của app Files để lấy lại dung lượng.</p>
+  </details>
+</main>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="/static/js/dt.js"></script>
+</body>
+</html>

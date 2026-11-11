@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 import json
 
-from . import config, db, detect, downloader, edit, gametr, music, party, storage, translate, ytdlp_update, ytmusic
+from . import config, db, detect, downloader, edit, gametr, music, party, phone, storage, translate, ytdlp_update, ytmusic
 from .manager import manager
 
 WEB = config.WEB
@@ -42,6 +42,7 @@ app.include_router(ytmusic.router)
 app.include_router(ytmusic.acct)
 app.include_router(music.router)
 app.include_router(edit.router)
+app.include_router(phone.router)
 app.include_router(party.router)
 app.include_router(translate.router)
 app.include_router(gametr.router)
@@ -284,3 +285,9 @@ app.mount("/static", party.NoCacheStatic(directory=WEB), name="static")
 @app.get("/")
 def index():
     return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/dt")
+def phone_page():
+    """Trang "Mang theo điện thoại" (mở từ điện thoại cùng Wi-Fi)."""
+    return FileResponse(WEB / "dt.html", headers={"Cache-Control": "no-cache"})

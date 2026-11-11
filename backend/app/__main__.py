@@ -23,6 +23,7 @@ def main() -> None:
     host = a.host or cfg["host"]
     port = a.port or cfg["port"]
     os.environ["CIRCLEVAULT_PORT"] = str(port)   # máy chủ phòng xem chung dùng cổng kế tiếp
+    os.environ["CIRCLEVAULT_HOST"] = host        # trang Mang theo điện thoại biết đang mở cho Wi-Fi hay chưa
     url = f"http://127.0.0.1:{port}"
     print(f"\n  CircleVault {config.VERSION} đang chạy tại {url}", flush=True)
     if host == "0.0.0.0":

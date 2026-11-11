@@ -607,6 +607,7 @@ function renderTools() {
       <p class="hint">${t.ffmpeg ? 'Dùng để ghép hình + tiếng, tạo MP3, nhúng phụ đề.' : 'Không có ffmpeg thì chỉ tải được tối đa 720p.' + (window.cvDesktop ? ' Bản app đã kèm sẵn ffmpeg; hãy cài lại app.' : ' Cài bằng lệnh: <code>winget install Gyan.FFmpeg</code> rồi mở lại.')}</p></div>
     <div class="box pcard"><h3>Deno: ${t.deno ? '<span class="ok">có</span>' : '<span class="no">chưa cài</span>'}</h3>
       <p class="hint">${t.deno ? 'yt-dlp dùng Deno để giải mã link YouTube.' : 'YouTube cần Deno để lấy đủ định dạng.' + (window.cvDesktop ? ' Bản app đã kèm sẵn Deno; hãy cài lại app.' : ' Cài bằng: <code>winget install DenoLand.Deno</code> rồi mở lại.')}</p></div>`;
+  renderPhone();
   $('#chkUpd')?.addEventListener('click', () => { window.cvDesktop.updateAct(); toast('Đang kiểm tra bản mới…'); });
   $('#updYt').addEventListener('click', async e => {
     const b = e.currentTarget; b.disabled = true; b.textContent = 'Đang cập nhật…';
@@ -620,6 +621,39 @@ function renderTools() {
       }
     } catch (err) { toast(err.message, 'err'); }
     b.disabled = false; b.textContent = 'Cập nhật yt-dlp';
+  });
+}
+
+/* Mang theo điện thoại: điện thoại cùng Wi-Fi mở /dt để tải nhạc/phim về máy nó trước khi tắt máy tính */
+async function renderPhone() {
+  let box = $('#phoneBox');
+  if (!box) { box = document.createElement('div'); box.id = 'phoneBox'; box.className = 'box pcard phone-box'; $('#tools').prepend(box); }
+  let i;
+  try { i = await api('/api/phone/info'); } catch (e) { box.remove(); return; }
+  const restart = window.cvDesktop?.restartServer;
+  box.innerHTML = i.lan && i.url ? `
+    <h3>Mang theo điện thoại</h3>
+    <div class="phone-in">
+      <img class="phone-qr" src="/api/phone/qr.svg?t=${Date.now()}" alt="Mã QR mở trang Mang theo" onerror="this.remove()">
+      <div class="phone-txt">
+        <p>Trước khi tắt máy tính, dùng điện thoại <b>cùng Wi-Fi</b> quét mã này bằng Camera, hoặc gõ vào Chrome:</p>
+        <p><code class="phone-url">${esc(i.url)}</code></p>
+        <p class="hint">Chọn playlist hay phim rồi bấm Tải về: file lưu vào bộ nhớ điện thoại (chọn bộ nhớ máy hay thẻ nhớ trong cài đặt Tải xuống của Chrome). Tắt máy tính xong vẫn nghe, xem được. Xài xong xóa trong app Files để tối sau tải đợt mới.</p>
+        <p class="hint">Lần đầu, Windows có thể hỏi cho phép CircleVault dùng mạng: chọn <b>Cho phép</b> (mạng riêng).</p>
+      </div>
+    </div>` : `
+    <h3>Mang theo điện thoại</h3>
+    <p class="hint">Tải nhạc, phim từ máy tính sang điện thoại để tối tắt máy tính rồi vẫn nghe, xem trên điện thoại.</p>
+    ${i.pending ? '<p>Đã bật chế độ cho điện thoại. Cần khởi động lại để áp dụng.</p>' : '<p>Cần bật chế độ <b>Cho điện thoại cùng Wi-Fi</b>. Trong mạng nhà, ai dùng chung Wi-Fi cũng mở được thư viện (không có mật khẩu).</p>'}
+    <div><button class="btn green" type="button" id="phoneOn">${i.pending ? 'Khởi động lại để áp dụng' : (restart ? 'Bật &amp; khởi động lại' : 'Bật chế độ điện thoại')}</button></div>`;
+  $('#phoneOn')?.addEventListener('click', async e => {
+    const b = e.currentTarget; b.disabled = true;
+    try {
+      if (!i.pending) S.config = await api('/api/config', {method: 'PUT', body: {...S.config, host: '0.0.0.0'}});
+      if (restart) { b.textContent = 'Đang khởi động lại…'; await window.cvDesktop.restartServer(); return; }
+      toast('Đã bật. Tắt rồi chạy lại backend (python -m app) để áp dụng.');
+      renderConfig(); renderTools();
+    } catch (err) { toast(err.message, 'err'); b.disabled = false; }
   });
 }
 
@@ -741,6 +775,12 @@ async function poll() {
   setTimeout(poll, active || S.view === 'queue' ? 1000 : 4000);
 }
 
+if (!window.cvDesktop && matchMedia('(pointer: coarse)').matches && innerWidth < 820) {   // mở trang chính từ điện thoại
+  const bar = document.createElement('a');
+  bar.href = '/dt'; bar.className = 'phone-banner';
+  bar.innerHTML = '<b>Đang dùng điện thoại?</b> Mở trang <u>Mang theo điện thoại</u> để tải nhạc, phim về máy →';
+  document.body.prepend(bar);
+}
 (async () => {
   try { S.config = await api('/api/config'); } catch (e) {}
   route();

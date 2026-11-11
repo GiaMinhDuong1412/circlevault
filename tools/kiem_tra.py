@@ -48,6 +48,10 @@ def kiem_html():
     for ref in re.findall(r'(?:src|href)="/static/([^"]+)"', html):
         if not (ROOT / "frontend" / ref).exists():
             loi.append(f"index.html trỏ tới /static/{ref} nhưng không có frontend/{ref}")
+    dt = (ROOT / "frontend" / "dt.html").read_text(encoding="utf-8")       # trang Mang theo điện thoại
+    for ref in re.findall(r'(?:src|href)="/static/([^"]+)"', dt):
+        if not (ROOT / "frontend" / ref).exists():
+            loi.append(f"dt.html trỏ tới /static/{ref} nhưng không có frontend/{ref}")
     party = (ROOT / "frontend" / "party.html").read_text(encoding="utf-8")   # trang phòng xem chung: /p/ = frontend/
     for ref in re.findall(r'(?:src|href)="/p/([^"]+)"', party):
         if not (ROOT / "frontend" / ref).exists():

@@ -49,6 +49,12 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   - `edit.py`: router `/api/edit/*` – cắt đoạn (`POST /{item|track}/{id}/cut` {start,end,accurate}) và chuyển MP4 (`/mp4`) bằng ffmpeg
     trong thread, tiến độ `GET /jobs/{id}`. Luôn ghi FILE MỚI cạnh file gốc (không ghi đè/xóa gốc) rồi thêm vào thư viện/Nghe Nhạc.
     Cắt nhanh = `-c copy` (lệch theo keyframe), chính xác = H.264/AAC. Giao diện: `openCutter` trong app.js (hộp #player).
+  - `phone.py`: "Mang theo điện thoại" – trang `/dt` (frontend/dt.html, js/dt.js, css/dt.css) cho điện thoại cùng Wi-Fi (cần chế độ
+    `host` 0.0.0.0; tab Lưu Trữ có QR `/api/phone/qr.svg` (segno) + nút bật & khởi động lại). Điện thoại tải nhạc/phim như FILE THƯỜNG
+    (trình duyệt Android không cho trang chọn ổ lưu, http trong mạng nhà không chạy offline được – người dùng đã chọn cách này):
+    chọn bộ nhớ máy/thẻ nhớ trong cài đặt Tải xuống của Chrome, phát bằng app của điện thoại/VLC, xóa bằng app Files.
+    Playlist = gói .zip không nén ghi thẳng ra luồng (thư mục `<tên>/` + .m3u8, Content-Length tính bằng lượt chạy thử, zip64 khi >4 GB)
+    hoặc tải từng bài `?n=` + `.m3u8`. API chỉ đọc. Thử tên file tiếng Việt bằng Playwright trên Linux cần `LANG=C.UTF-8`.
   - Video tải về luôn ra .mp4 (`FFmpegVideoRemuxer`, cấu hình `video_format`: mp4 | original).
   - `ytdlp_update.py`: tải wheel yt-dlp (+ yt-dlp-ejs đúng phiên bản) từ PyPI vào `DATA/pylib`; `app/__init__.py` ưu tiên thư mục này.
 - `frontend/` – JS thuần, không build. Theme màu: `THEMES` trong app.js + khối `:root[data-theme=…]` trong app.css (localStorage `cv-theme`, không có = theo Windows). `js/app.js` định nghĩa `window.CV` (api, esc, toast, fmt…, `views`) dùng chung cho
