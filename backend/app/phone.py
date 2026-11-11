@@ -14,6 +14,7 @@ import io
 import json
 import mimetypes
 import os
+import platform
 import re
 import time
 import zipfile
@@ -78,13 +79,18 @@ def me(request: Request):
     if request.client is None or devices.is_local(request.client.host):
         return {"paired": True, "local": True, "name": "Máy tính này", "scope": "full"}
     d = request.scope.get("state", {}).get("device")
-    return {"paired": bool(d), "local": False, "name": d and d["name"], "scope": d and d["scope"]}
+    return {"paired": bool(d), "local": False, "name": d and d["name"], "scope": d and d["scope"],
+            "server": platform.node() or "Máy tính", "version": config.VERSION}
 
 
 @router.post("/pair")
 def pair(body: PairIn, request: Request):
-    d, token = devices.pair(body.code, body.name, request.headers.get("user-agent", ""))
-    return JSONResponse({"ok": True, "device": d}, headers={"Set-Cookie": devices.cookie_header(token)})
+    app = request.headers.get("x-circlevault-app") == "1"          # app Android: nhận mã trong JSON, tự gửi lại bằng cookie
+    d, token = devices.pair(body.code, body.name, request.headers.get("user-agent", ""), app=app)
+    out = {"ok": True, "device": d, "server": platform.node() or "Máy tính"}
+    if app:
+        out["token"] = token
+    return JSONResponse(out, headers={"Set-Cookie": devices.cookie_header(token)})
 
 
 @router.post("/pair-code", dependencies=[Depends(devices.local_only)])
@@ -198,6 +204,14 @@ def track_file(tid: int, n: int | None = None):
         raise HTTPException(404, "File nhạc không còn trên ổ.")
     return FileResponse(t["path"], media_type=mimetypes.guess_type(t["path"])[0] or "audio/mpeg",
                         filename=_track_name(t, n))
+
+
+@router.get("/track/{tid}/cover")
+def track_cover(tid: int):
+    c = music.cover_of(music._track(tid)["path"])
+    if not c:
+        raise HTTPException(404, "Bài này không có ảnh bìa.")
+    return Response(content=c[0], media_type=c[1], headers={"Cache-Control": "max-age=86400"})
 
 
 @router.api_route("/video/{iid}/file", methods=["GET", "HEAD"])

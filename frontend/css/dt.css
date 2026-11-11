@@ -44,3 +44,6 @@
 .dt-dev{margin-left:auto;font:600 12px var(--f-mono);background:var(--surface);color:var(--text);border:2px solid var(--ink);border-radius:4px;padding:3px 7px;max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dt-dev:empty{display:none}
 .dt-gate{gap:10px}
+.dt-app{display:flex;gap:12px;align-items:center;padding:12px 14px;text-decoration:none;color:var(--text);background:var(--green)}
+.dt-app .hint{color:var(--on-accent);opacity:.85}
+.dt-app b{color:var(--on-accent)}

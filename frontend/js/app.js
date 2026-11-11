@@ -655,13 +655,14 @@ async function renderPhone() {
   box.innerHTML = `<h3>Mang theo điện thoại</h3>
     <p class="hint">Chỉ thiết bị bạn ghép bằng mã QR mới mở được CircleVault qua Wi-Fi. Mỗi thiết bị có quyền riêng và thu hồi được bất cứ lúc nào.</p>
     <div class="phone-devs">${devs.length ? devs.map(d => `<div class="phone-dev" data-dev="${esc(d.id)}">
-        <div class="phone-dev-name"><b>${esc(d.name)}</b><span class="hint">Ghép ${new Date(d.created_at * 1000).toLocaleDateString('vi-VN')} · dùng lần cuối ${ago(d.last_seen)}</span></div>
+        <div class="phone-dev-name"><b>${esc(d.name)}</b><span class="hint">${d.app ? 'App Android · ' : ''}Ghép ${new Date(d.created_at * 1000).toLocaleDateString('vi-VN')} · dùng lần cuối ${ago(d.last_seen)}</span></div>
         <select data-scope aria-label="Quyền của ${esc(d.name)}">${Object.entries(SCOPE_TXT).map(([k, v]) => `<option value="${k}" ${d.scope === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
         <button class="btn sm plain" type="button" data-rename>Đổi tên</button>
         <button class="btn sm red" type="button" data-revoke>Thu hồi</button>
       </div>`).join('') : '<p class="hint">Chưa có thiết bị nào.</p>'}</div>
     <div class="phone-pair" id="phonePair" hidden></div>
     <div class="btn-row"><button class="btn green" type="button" id="pairBtn">+ Thêm thiết bị</button></div>
+    <p class="hint"><b>App Android:</b> mở trên điện thoại link <code class="phone-url">github.com/GiaMinhDuong1412/circlevault-releases/releases/latest/download/CircleVault-Android.apk</code> để tải file APK và cài (lần đầu cho phép "cài ứng dụng không rõ nguồn gốc").</p>
     <p class="hint">Thiết bị đã ghép mở lại bằng địa chỉ <code class="phone-url">${esc(i.url)}</code> (nên lưu ra màn hình chính). Nếu địa chỉ IP của máy tính đổi, hãy ghép lại.</p>`;
   $('#pairBtn').addEventListener('click', () => showPair(devs.length));
   box.querySelectorAll('[data-dev]').forEach(row => {
@@ -688,7 +689,7 @@ async function showPair(before) {
   el.hidden = false; $('#pairBtn').hidden = true;
   el.innerHTML = `<img class="phone-qr" src="/api/phone/qr.svg?code=${encodeURIComponent(c.code)}" alt="Mã QR ghép thiết bị">
     <div class="phone-txt">
-      <p><b>Dùng điện thoại cần thêm</b> (cùng Wi-Fi) quét mã này bằng Camera, rồi đặt tên cho thiết bị.</p>
+      <p><b>Dùng điện thoại cần thêm</b> (cùng Wi-Fi) quét mã này: bằng <b>app CircleVault</b> (nút "Quét mã QR") hoặc bằng Camera nếu chưa cài app.</p>
       <p class="hint">Hoặc mở <code class="phone-url">${esc(c.url)}</code></p>
       <p class="hint">Mã ghép <b class="mono">${esc(c.code)}</b> chỉ dùng được một lần, còn <b id="pairLeft"></b>. Thiết bị mới chỉ được tải nhạc, phim về; muốn cho toàn quyền thì đổi ở danh sách trên.</p>
       <p class="hint">Lần đầu, Windows có thể hỏi cho phép CircleVault dùng mạng: chọn <b>Cho phép</b> (mạng riêng).</p>

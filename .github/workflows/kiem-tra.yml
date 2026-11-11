@@ -70,3 +70,23 @@ jobs:
           name: CircleVault-Setup-thu
           path: desktop/dist/CircleVault-Setup-*.exe
           retention-days: 2
+
+  android:                           # build thử app Android (ký bằng khóa thật nếu có secret, không thì khóa debug)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: Build APK
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          CV_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+        run: |
+          if [ -n "$KS_B64" ]; then echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/cv.jks"; export CV_KEYSTORE="$RUNNER_TEMP/cv.jks"; fi
+          gradle -p android --no-daemon assembleRelease -PvName="0.0.${GITHUB_RUN_NUMBER}" -PvCode="${GITHUB_RUN_NUMBER}"
+          ls -la android/app/build/outputs/apk/release/

@@ -99,7 +99,7 @@ def new_code() -> dict:
     return {"code": code, "expires_in": PAIR_TTL}
 
 
-def pair(code: str, name: str, ua: str) -> tuple[dict, str]:
+def pair(code: str, name: str, ua: str, app: bool = False) -> tuple[dict, str]:
     now = time.time()
     code = (code or "").strip().upper()
     with _lock:
@@ -112,7 +112,7 @@ def pair(code: str, name: str, ua: str) -> tuple[dict, str]:
             raise HTTPException(403, "Mã ghép sai hoặc đã hết hạn. Trên máy tính bấm \"Thêm thiết bị\" để lấy mã mới.")
         token = secrets.token_urlsafe(32)
         d = {"id": secrets.token_hex(6), "name": (name or "").strip()[:40] or "Thiết bị", "scope": "phone",
-             "ua": (ua or "")[:200], "created_at": now, "last_seen": now, "token_hash": _hash(token)}
+             "ua": (ua or "")[:200], "app": app, "created_at": now, "last_seen": now, "token_hash": _hash(token)}
         _load().append(d)
         _save()
     return public(d), token

@@ -78,6 +78,17 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   `splash.html`: màn hình chờ khi mở app (đợi backend) và khi bấm "Khởi động lại để cập nhật" (`beforeInstall` → splash,
   ẩn cửa sổ, `quitAndInstall(false, true)` = bộ cài hiện tiến trình rồi tự mở lại app).
   `--smoke` cho CI (kiểm cả bộ nhận diện chữ qua /api/translate/warmup). Cập nhật: `updater.js` đọc repo public `GiaMinhDuong1412/circlevault-releases`.
+- `android/` – app Android "CircleVault" (Kotlin + Jetpack Compose, `vn.circlevault.app`, minSdk 26). Ghép bằng quét QR
+  (play-services-code-scanner) hoặc nhập địa chỉ + mã → `POST /api/phone/pair` với header `X-CircleVault-App: 1` (nhận `token`
+  trong JSON) → mọi request gửi `Cookie: cv_dev=…`. Chỉ dùng `/api/phone/*` (playlists, tracks, videos, file, cover).
+  `Core.kt`: Prefs, Api (OkHttp), Store (thư viện offline `filesDir/thu-vien.json`; file lưu ở thư mục riêng của app trên
+  bộ nhớ máy/thẻ nhớ = `getExternalFilesDirs`, không cần quyền, gỡ app thì mất). `Downloads.kt`: hàng đợi + `DownloadService`
+  (foreground dataSync, tải tiếp bằng Range từ `.part`). `Playback.kt`: Media3 `PlaybackService` (MediaSessionService, đường dẫn
+  file đi qua `requestMetadata.mediaUri`) + `PlayerConn`. Giao diện `ui/` cùng bảng màu neo-brutalist. Phim: ExoPlayer riêng.
+  Build: `gradle -p android assembleRelease -PvName=… -PvCode=…` (Gradle 8.14, AGP 8.7.3, JDK 17+, cần Android SDK 35).
+  Ký: biến `CV_KEYSTORE`/`CV_KEYSTORE_PASS`; CI lấy từ secret `ANDROID_KEYSTORE_B64`/`ANDROID_KEYSTORE_PASS` (KHÔNG đổi khóa).
+  Phát hành: job `android` trong release.yml đính `CircleVault-Android.apk` vào Release 2 repo; link cố định
+  `…/circlevault-releases/releases/latest/download/CircleVault-Android.apk`.
 - `tools/dong_goi_app.py` chuẩn bị `desktop/res/`; `tools/kiem_tra.py` kiểm tra cú pháp + liên kết file.
 
 ## Quy trình
