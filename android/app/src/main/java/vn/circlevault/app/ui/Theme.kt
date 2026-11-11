@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -193,7 +194,7 @@ fun Field(
 @Composable
 fun Bar(frac: Float, modifier: Modifier = Modifier, color: Color = cv.green) {
     val c = cv
-    Canvas(modifier.fillMaxWidth().heightIn(min = 10.dp).padding(vertical = 2.dp)) {
+    Canvas(modifier.fillMaxWidth().padding(vertical = 2.dp).height(12.dp)) {
         val r = CornerRadius(3.dp.toPx())
         drawRoundRect(c.surface2, cornerRadius = r)
         drawRoundRect(color, size = Size(size.width * frac.coerceIn(0f, 1f), size.height), cornerRadius = r)

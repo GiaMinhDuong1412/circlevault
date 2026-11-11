@@ -69,34 +69,38 @@ class PState {
     var dur by mutableLongStateOf(0L)
     var hasNext by mutableStateOf(false)
     var hasPrev by mutableStateOf(false)
+    var mediaId by mutableStateOf<String?>(null)
+}
+
+private fun syncState(s: PState, ctl: Player) {
+    val item = ctl.currentMediaItem
+    s.has = item != null
+    s.mediaId = item?.mediaId
+    s.title = item?.mediaMetadata?.title?.toString() ?: ""
+    s.artist = item?.mediaMetadata?.artist?.toString() ?: ""
+    s.art = item?.mediaMetadata?.artworkUri
+    s.playing = ctl.isPlaying
+    s.hasNext = ctl.hasNextMediaItem()
+    s.hasPrev = ctl.hasPreviousMediaItem()
+    s.dur = ctl.duration.coerceAtLeast(0)
+    s.pos = ctl.currentPosition
 }
 
 @Composable
 fun rememberPState(): PState {
     val ctl = PlayerConn.controller
-    val s = remember { PState() }
+    // đọc trạng thái ngay khi tạo (không đợi một nhịp vẽ), sau đó cập nhật theo sự kiện của trình phát
+    val s = remember(ctl) { PState().also { st -> ctl?.let { syncState(st, it) } } }
     DisposableEffect(ctl) {
         if (ctl == null) {
             s.has = false
             onDispose { }
         } else {
-            fun sync() {
-                val item = ctl.currentMediaItem
-                s.has = item != null
-                s.title = item?.mediaMetadata?.title?.toString() ?: ""
-                s.artist = item?.mediaMetadata?.artist?.toString() ?: ""
-                s.art = item?.mediaMetadata?.artworkUri
-                s.playing = ctl.isPlaying
-                s.hasNext = ctl.hasNextMediaItem()
-                s.hasPrev = ctl.hasPreviousMediaItem()
-                s.dur = ctl.duration.coerceAtLeast(0)
-                s.pos = ctl.currentPosition
-            }
             val l = object : Player.Listener {
-                override fun onEvents(player: Player, events: Player.Events) = sync()
+                override fun onEvents(player: Player, events: Player.Events) = syncState(s, ctl)
             }
             ctl.addListener(l)
-            sync()
+            syncState(s, ctl)
             onDispose { ctl.removeListener(l) }
         }
     }
@@ -154,7 +158,7 @@ fun NowPlaying(onClose: () -> Unit) {
     var drag by remember { mutableFloatStateOf(-1f) }
     BackHandler(onBack = onClose)
     if (!s.has || ctl == null) {
-        LaunchedEffect(Unit) { onClose() }
+        LaunchedEffect(s.has, ctl) { if (!s.has || ctl == null) onClose() }
         return
     }
     Column(

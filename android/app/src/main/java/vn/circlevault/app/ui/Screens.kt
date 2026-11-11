@@ -154,7 +154,11 @@ private fun Confirm(title: String, text: String, ok: String, onOk: () -> Unit, o
         title = { Text(title, fontWeight = FontWeight.Black) },
         text = { Text(text) },
         confirmButton = { TextButton(onClick = { onOk(); onDismiss() }) { Text(ok, color = cv.red, fontWeight = FontWeight.Bold) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Thôi") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Thôi", color = cv.text) } },
+        containerColor = cv.surface,
+        titleContentColor = cv.text,
+        textContentColor = cv.text,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
     )
 }
 
@@ -394,6 +398,7 @@ private fun PhoneTab(vm: MainVM) {
     var openPl by remember { mutableStateOf(setOf<Int>()) }
     val vol = remember(lib, jobs.size) { Store.current() }
     val allTracks = lib.tracks.values.reversed()
+    val ps = rememberPState()
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -408,13 +413,13 @@ private fun PhoneTab(vm: MainVM) {
             }
         }
         val pending = jobs.filter { it.state != JState.DONE }
-        if (jobs.isNotEmpty()) {
+        if (pending.isNotEmpty()) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     H("Đang tải (${pending.size})", Modifier.weight(1f))
                     if (pending.any { it.state == JState.QUEUED } && !active) BButton("Tiếp tục", { Downloads.resume(ctx) }, small = true, color = c.yellow)
                     Spacer(Modifier.width(8.dp))
-                    if (jobs.any { it.state == JState.DONE || it.state == JState.ERROR }) BButton("Dọn", { Downloads.clearFinished() }, small = true, color = c.surface)
+                    if (pending.any { it.state == JState.ERROR }) BButton("Bỏ file lỗi", { Downloads.clearFinished() }, small = true, color = c.surface)
                 }
             }
             items(jobs.filter { it.state != JState.DONE }.take(60), key = { "j" + it.key }) { j -> JobRow(j) }
@@ -447,7 +452,7 @@ private fun PhoneTab(vm: MainVM) {
                             ) { Store.deletePlaylist(p.id) }
                         }, color = c.surface)
                     }
-                    if (open) tracks.forEachIndexed { i, t -> LocalTrackRow(t, onPlay = { PlayerConn.play(tracks, i) }, onDelete = null) }
+                    if (open) tracks.forEachIndexed { i, t -> LocalTrackRow(t, ps.mediaId, onPlay = { PlayerConn.play(tracks, i) }, onDelete = null) }
                 }
             }
         }
@@ -460,7 +465,7 @@ private fun PhoneTab(vm: MainVM) {
             }
             items(allTracks, key = { "ot" + it.id }) { t ->
                 Box(Modifier.fillMaxWidth().brutal(c.surface, c.ink, shadow = 2.dp, border = 2.dp).padding(horizontal = 12.dp)) {
-                    LocalTrackRow(t, onPlay = { PlayerConn.play(allTracks, allTracks.indexOf(t)) }, onDelete = {
+                    LocalTrackRow(t, ps.mediaId, onPlay = { PlayerConn.play(allTracks, allTracks.indexOf(t)) }, onDelete = {
                         ask = Triple("Xóa \"${t.title}\"?", "Chỉ xóa trên điện thoại, máy tính vẫn còn.") { Store.deleteTrack(t.id) }
                     })
                 }
@@ -528,10 +533,9 @@ private fun JobRow(j: DJob) {
 }
 
 @Composable
-private fun LocalTrackRow(t: OTrack, onPlay: () -> Unit, onDelete: (() -> Unit)?) {
+private fun LocalTrackRow(t: OTrack, playingId: String?, onPlay: () -> Unit, onDelete: (() -> Unit)?) {
     val c = cv
-    val ctl = PlayerConn.controller
-    val playing = ctl?.currentMediaItem?.mediaId == "t${t.id}"
+    val playing = playingId == "t${t.id}"
     Row(Modifier.fillMaxWidth().clickable(onClick = onPlay).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Thumb(t.cover?.let { File(it) }, Ic.music, size = 44)
         Spacer(Modifier.width(10.dp))

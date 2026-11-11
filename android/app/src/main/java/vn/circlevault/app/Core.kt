@@ -107,7 +107,7 @@ object Api {
         }
     }
 
-    suspend fun me(): JSONObject = JSONObject(get("https://rp2.alfred511.top/hf/api/phone/me"))
+    suspend fun me(): JSONObject = JSONObject(get("/api/phone/me"))
 
     private fun JSONObject.track() = RTrack(
         getInt("id"), optString("title"), optString("artist").takeIf { it.isNotBlank() && it != "null" },
@@ -116,18 +116,18 @@ object Api {
 
     private inline fun <T> JSONArray.map(f: (JSONObject) -> T): List<T> = (0 until length()).map { f(getJSONObject(it)) }
 
-    suspend fun playlists(): List<RPlaylist> = JSONArray(get("https://rp2.alfred511.top/hf/api/phone/playlists"))
+    suspend fun playlists(): List<RPlaylist> = JSONArray(get("/api/phone/playlists"))
         .map { RPlaylist(it.getInt("id"), it.optString("name"), it.optInt("count"), it.optLong("size")) }
 
-    suspend fun playlist(id: Int): RPlaylistDetail = JSONObject(get("https://rp2.alfred511.top/hf/api/phone/playlists/$id")).let { j ->
+    suspend fun playlist(id: Int): RPlaylistDetail = JSONObject(get("/api/phone/playlists/$id")).let { j ->
         RPlaylistDetail(j.getInt("id"), j.optString("name"), j.getJSONArray("tracks").map { it.track() })
     }
 
     suspend fun tracks(q: String): List<RTrack> =
-        JSONArray(get("https://rp2.alfred511.top/hf/api/phone/tracks?limit=${if (q.isBlank()) 30 else 100}&q=${Uri.encode(q)}")).map { it.track() }
+        JSONArray(get("/api/phone/tracks?limit=${if (q.isBlank()) 30 else 100}&q=${Uri.encode(q)}")).map { it.track() }
 
     suspend fun videos(q: String, offset: Int): List<RVideo> =
-        JSONArray(get("https://rp2.alfred511.top/hf/api/phone/videos?limit=40&offset=$offset&q=${Uri.encode(q)}")).map {
+        JSONArray(get("/api/phone/videos?limit=40&offset=$offset&q=${Uri.encode(q)}")).map {
             RVideo(
                 it.getInt("id"), it.optString("title"), it.optDouble("duration", 0.0).let { d -> if (d.isNaN()) 0.0 else d },
                 it.optInt("height"), it.optLong("size"), it.optString("ext", ".mp4"),
