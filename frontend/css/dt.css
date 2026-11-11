@@ -41,3 +41,6 @@
 .dt .warn{padding:8px 10px;border-left:6px solid var(--red);background:var(--surface-2);border-radius:4px;font-size:14px}
 .dt .no{color:var(--red);font-weight:600}
 .dt-more{width:100%;min-height:48px}
+.dt-dev{margin-left:auto;font:600 12px var(--f-mono);background:var(--surface);color:var(--text);border:2px solid var(--ink);border-radius:4px;padding:3px 7px;max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dt-dev:empty{display:none}
+.dt-gate{gap:10px}

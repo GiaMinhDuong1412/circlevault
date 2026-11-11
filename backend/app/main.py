@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 import json
 
-from . import config, db, detect, downloader, edit, gametr, music, party, phone, storage, translate, ytdlp_update, ytmusic
+from . import config, db, detect, devices, downloader, edit, gametr, music, party, phone, storage, translate, ytdlp_update, ytmusic
 from .manager import manager
 
 WEB = config.WEB
@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="CircleVault", lifespan=lifespan)
+app.add_middleware(devices.Guard)   # qua Wi-Fi: chỉ thiết bị đã ghép bằng mã QR
 app.include_router(ytmusic.router)
 app.include_router(ytmusic.acct)
 app.include_router(music.router)

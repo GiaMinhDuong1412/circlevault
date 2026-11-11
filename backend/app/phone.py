@@ -19,10 +19,11 @@ import time
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from pydantic import BaseModel
 
-from . import config, db, music, party
+from . import config, db, devices, music, party
 
 router = APIRouter(prefix="/api/phone")
 VIDEO_EXT = {".mp4", ".m4v", ".mkv", ".webm", ".mov", ".avi", ".ts", ".flv"}
@@ -52,20 +53,71 @@ def running() -> dict:
 
 
 # ------------------------------------------------------------------ thông tin cho tab Lưu Trữ
-@router.get("/info")
+@router.get("/info", dependencies=[Depends(devices.local_only)])
 def info():
     r = running()
     lan = r["host"] == "0.0.0.0"
     ip = party.lan_ip() if lan else None
     return {"lan": lan, "pending": config.load()["host"] != r["host"], "ip": ip, "port": r["port"],
-            "url": f"http://{ip}:{r['port']}/dt" if ip else None}
+            "url": f"http://{ip}:{r['port']}/dt" if ip else None, "devices": devices.list_devices()}
 
 
-@router.get("/qr.svg")
-def qr():
-    url = info()["url"]
-    if not url:
+# ------------------------------------------------------------------ ghép thiết bị (chỉ thiết bị đã ghép mới mở được qua Wi-Fi)
+class PairIn(BaseModel):
+    code: str
+    name: str = ""
+
+
+class DeviceIn(BaseModel):
+    name: str | None = None
+    scope: str | None = None
+
+
+@router.get("/me")
+def me(request: Request):
+    if request.client is None or devices.is_local(request.client.host):
+        return {"paired": True, "local": True, "name": "Máy tính này", "scope": "full"}
+    d = request.scope.get("state", {}).get("device")
+    return {"paired": bool(d), "local": False, "name": d and d["name"], "scope": d and d["scope"]}
+
+
+@router.post("/pair")
+def pair(body: PairIn, request: Request):
+    d, token = devices.pair(body.code, body.name, request.headers.get("user-agent", ""))
+    return JSONResponse({"ok": True, "device": d}, headers={"Set-Cookie": devices.cookie_header(token)})
+
+
+@router.post("/pair-code", dependencies=[Depends(devices.local_only)])
+def pair_code():
+    i = info()
+    if not i["url"]:
+        raise HTTPException(400, "Chưa bật chế độ cho điện thoại cùng Wi-Fi.")
+    c = devices.new_code()
+    return {**c, "url": f"{i['url']}?pair={c['code']}"}
+
+
+@router.get("/devices", dependencies=[Depends(devices.local_only)])
+def list_devices():
+    return devices.list_devices()
+
+
+@router.put("/devices/{did}", dependencies=[Depends(devices.local_only)])
+def edit_device(did: str, body: DeviceIn):
+    return devices.update(did, body.name, body.scope)
+
+
+@router.delete("/devices/{did}", dependencies=[Depends(devices.local_only)])
+def delete_device(did: str):
+    devices.remove(did)
+    return {"ok": True}
+
+
+@router.get("/qr.svg", dependencies=[Depends(devices.local_only)])
+def qr(code: str):
+    base = info()["url"]
+    if not base:
         raise HTTPException(404, "Chưa bật chế độ cho điện thoại cùng Wi-Fi.")
+    url = f"{base}?pair={code.strip().upper()[:12]}"
     try:
         import segno
     except ImportError:

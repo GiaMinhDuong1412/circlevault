@@ -54,7 +54,10 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     (trình duyệt Android không cho trang chọn ổ lưu, http trong mạng nhà không chạy offline được – người dùng đã chọn cách này):
     chọn bộ nhớ máy/thẻ nhớ trong cài đặt Tải xuống của Chrome, phát bằng app của điện thoại/VLC, xóa bằng app Files.
     Playlist = gói .zip không nén ghi thẳng ra luồng (thư mục `<tên>/` + .m3u8, Content-Length tính bằng lượt chạy thử, zip64 khi >4 GB)
-    hoặc tải từng bài `?n=` + `.m3u8`. API chỉ đọc. Thử tên file tiếng Việt bằng Playwright trên Linux cần `LANG=C.UTF-8`.
+    hoặc tải từng bài `?n=` + `.m3u8`. API chỉ đọc.
+  - `devices.py`: ghép thiết bị cho chế độ Wi-Fi – middleware `Guard` (máy tính 127.0.0.1 luôn qua; thiết bị khác cần cookie `cv_dev`,
+    lưu băm SHA-256 ở `DATA/devices.json`; quyền `phone` = chỉ /dt + /api/phone/*, `full` = như máy tính). Mã ghép 8 ký tự, 10 phút,
+    dùng một lần, sai 20 lần/10 phút thì khóa. Tab Lưu Trữ: danh sách thiết bị (đổi quyền, đổi tên, thu hồi) + nút Thêm thiết bị (QR). Thử tên file tiếng Việt bằng Playwright trên Linux cần `LANG=C.UTF-8`.
   - Video tải về luôn ra .mp4 (`FFmpegVideoRemuxer`, cấu hình `video_format`: mp4 | original).
   - `ytdlp_update.py`: tải wheel yt-dlp (+ yt-dlp-ejs đúng phiên bản) từ PyPI vào `DATA/pylib`; `app/__init__.py` ưu tiên thư mục này.
 - `frontend/` – JS thuần, không build. Theme màu: `THEMES` trong app.js + khối `:root[data-theme=…]` trong app.css (localStorage `cv-theme`, không có = theo Windows). `js/app.js` định nghĩa `window.CV` (api, esc, toast, fmt…, `views`) dùng chung cho
@@ -85,5 +88,6 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
 
 ## Quy tắc
 - Không thêm tính năng vượt DRM. Chỉ phục vụ lưu trữ cá nhân.
-- Backend chỉ nghe `127.0.0.1` trừ khi người dùng bật chế độ mạng LAN trong tab Lưu Trữ (không có mật khẩu).
+- Backend chỉ nghe `127.0.0.1` trừ khi người dùng bật chế độ mạng LAN trong tab Lưu Trữ. Khi đó chỉ THIẾT BỊ ĐÃ GHÉP (quét QR mã
+  dùng một lần) mới vào được (`devices.Guard`); API mới chỉ dành cho máy tính thì thêm `Depends(devices.local_only)`.
 - Không xóa file của người dùng nếu họ không bấm "Xóa cả file" (có bước xác nhận 2 lần).

@@ -16,9 +16,26 @@
 <header class="dt-top">
   <span class="logo-mark" aria-hidden="true"></span>
   <div><span class="sec-title">CircleVault</span><b>Mang theo điện thoại</b></div>
+  <span class="dt-dev" id="devName"></span>
 </header>
 
-<main class="dt">
+<main class="dt" id="dtLocked" hidden>
+  <section class="box dt-card dt-gate" id="pairBox" hidden>
+    <h2 class="dt-h">Ghép điện thoại này</h2>
+    <p>Đặt tên để bạn nhận ra thiết bị này trong danh sách trên máy tính.</p>
+    <form id="pairForm" class="dt-sec">
+      <input type="text" id="pairName" class="dt-search" maxlength="40" required autocomplete="off" placeholder="Ví dụ: Điện thoại của Minh">
+      <button class="btn green dt-more" type="submit">Kết nối</button>
+    </form>
+  </section>
+  <section class="box dt-card dt-gate" id="lockBox" hidden>
+    <h2 class="dt-h">🔒 Thiết bị này chưa được phép</h2>
+    <p>CircleVault chỉ mở cho thiết bị bạn đã ghép. Trên <b>máy tính</b>: tab <b>Lưu Trữ</b> → <b>Mang theo điện thoại</b> → <b>Thêm thiết bị</b>, rồi dùng điện thoại này quét mã QR.</p>
+    <p class="hint" id="lockMsg"></p>
+  </section>
+</main>
+
+<main class="dt" id="dtMain" hidden>
   <p class="dt-lead">Chọn nhạc hoặc phim, bấm <b>Tải về</b> khi máy tính còn bật. Tải xong thì tắt máy tính, điện thoại vẫn nghe và xem được, không cần mạng.</p>
 
   <details class="box dt-help" id="helpWhere">

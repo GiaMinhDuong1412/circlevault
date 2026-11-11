@@ -624,37 +624,93 @@ function renderTools() {
   });
 }
 
-/* Mang theo điện thoại: điện thoại cùng Wi-Fi mở /dt để tải nhạc/phim về máy nó trước khi tắt máy tính */
+/* Mang theo điện thoại: chỉ thiết bị đã GHÉP (quét mã QR dùng một lần) mới mở được CircleVault qua Wi-Fi */
+const SCOPE_TXT = {phone: 'Chỉ tải nhạc, phim về', full: 'Toàn quyền như máy tính'};
+let pairTimer = 0;
+const ago = t => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 2 ? 'vừa xong' : m < 60 ? `${m} phút trước` : m < 1440 ? `${Math.round(m / 60)} giờ trước` : `${Math.round(m / 1440)} ngày trước`; };
 async function renderPhone() {
   let box = $('#phoneBox');
   if (!box) { box = document.createElement('div'); box.id = 'phoneBox'; box.className = 'box pcard phone-box'; $('#tools').prepend(box); }
   let i;
   try { i = await api('/api/phone/info'); } catch (e) { box.remove(); return; }
   const restart = window.cvDesktop?.restartServer;
-  box.innerHTML = i.lan && i.url ? `
-    <h3>Mang theo điện thoại</h3>
-    <div class="phone-in">
-      <img class="phone-qr" src="/api/phone/qr.svg?t=${Date.now()}" alt="Mã QR mở trang Mang theo" onerror="this.remove()">
-      <div class="phone-txt">
-        <p>Trước khi tắt máy tính, dùng điện thoại <b>cùng Wi-Fi</b> quét mã này bằng Camera, hoặc gõ vào Chrome:</p>
-        <p><code class="phone-url">${esc(i.url)}</code></p>
-        <p class="hint">Chọn playlist hay phim rồi bấm Tải về: file lưu vào bộ nhớ điện thoại (chọn bộ nhớ máy hay thẻ nhớ trong cài đặt Tải xuống của Chrome). Tắt máy tính xong vẫn nghe, xem được. Xài xong xóa trong app Files để tối sau tải đợt mới.</p>
-        <p class="hint">Lần đầu, Windows có thể hỏi cho phép CircleVault dùng mạng: chọn <b>Cho phép</b> (mạng riêng).</p>
-      </div>
-    </div>` : `
-    <h3>Mang theo điện thoại</h3>
-    <p class="hint">Tải nhạc, phim từ máy tính sang điện thoại để tối tắt máy tính rồi vẫn nghe, xem trên điện thoại.</p>
-    ${i.pending ? '<p>Đã bật chế độ cho điện thoại. Cần khởi động lại để áp dụng.</p>' : '<p>Cần bật chế độ <b>Cho điện thoại cùng Wi-Fi</b>. Trong mạng nhà, ai dùng chung Wi-Fi cũng mở được thư viện (không có mật khẩu).</p>'}
-    <div><button class="btn green" type="button" id="phoneOn">${i.pending ? 'Khởi động lại để áp dụng' : (restart ? 'Bật &amp; khởi động lại' : 'Bật chế độ điện thoại')}</button></div>`;
-  $('#phoneOn')?.addEventListener('click', async e => {
-    const b = e.currentTarget; b.disabled = true;
-    try {
-      if (!i.pending) S.config = await api('/api/config', {method: 'PUT', body: {...S.config, host: '0.0.0.0'}});
-      if (restart) { b.textContent = 'Đang khởi động lại…'; await window.cvDesktop.restartServer(); return; }
-      toast('Đã bật. Tắt rồi chạy lại backend (python -m app) để áp dụng.');
-      renderConfig(); renderTools();
-    } catch (err) { toast(err.message, 'err'); b.disabled = false; }
+  if (!(i.lan && i.url)) {
+    box.innerHTML = `<h3>Mang theo điện thoại</h3>
+      <p class="hint">Tải nhạc, phim từ máy tính sang điện thoại để tối tắt máy tính rồi vẫn nghe, xem trên điện thoại.</p>
+      ${i.pending ? '<p>Đã bật chế độ cho điện thoại. Cần khởi động lại để áp dụng.</p>'
+        : '<p>Cần bật chế độ <b>Cho điện thoại cùng Wi-Fi</b>. Chỉ thiết bị bạn quét mã QR ghép mới mở được, người khác dùng chung Wi-Fi không vào được.</p>'}
+      <div><button class="btn green" type="button" id="phoneOn">${i.pending ? 'Khởi động lại để áp dụng' : (restart ? 'Bật &amp; khởi động lại' : 'Bật chế độ điện thoại')}</button></div>`;
+    $('#phoneOn').addEventListener('click', async e => {
+      const b = e.currentTarget; b.disabled = true;
+      try {
+        if (!i.pending) S.config = await api('/api/config', {method: 'PUT', body: {...S.config, host: '0.0.0.0'}});
+        if (restart) { b.textContent = 'Đang khởi động lại…'; await window.cvDesktop.restartServer(); return; }
+        toast('Đã bật. Tắt rồi chạy lại backend (python -m app) để áp dụng.');
+        renderConfig(); renderTools();
+      } catch (err) { toast(err.message, 'err'); b.disabled = false; }
+    });
+    return;
+  }
+  const devs = i.devices || [];
+  box.innerHTML = `<h3>Mang theo điện thoại</h3>
+    <p class="hint">Chỉ thiết bị bạn ghép bằng mã QR mới mở được CircleVault qua Wi-Fi. Mỗi thiết bị có quyền riêng và thu hồi được bất cứ lúc nào.</p>
+    <div class="phone-devs">${devs.length ? devs.map(d => `<div class="phone-dev" data-dev="${esc(d.id)}">
+        <div class="phone-dev-name"><b>${esc(d.name)}</b><span class="hint">Ghép ${new Date(d.created_at * 1000).toLocaleDateString('vi-VN')} · dùng lần cuối ${ago(d.last_seen)}</span></div>
+        <select data-scope aria-label="Quyền của ${esc(d.name)}">${Object.entries(SCOPE_TXT).map(([k, v]) => `<option value="${k}" ${d.scope === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+        <button class="btn sm plain" type="button" data-rename>Đổi tên</button>
+        <button class="btn sm red" type="button" data-revoke>Thu hồi</button>
+      </div>`).join('') : '<p class="hint">Chưa có thiết bị nào.</p>'}</div>
+    <div class="phone-pair" id="phonePair" hidden></div>
+    <div class="btn-row"><button class="btn green" type="button" id="pairBtn">+ Thêm thiết bị</button></div>
+    <p class="hint">Thiết bị đã ghép mở lại bằng địa chỉ <code class="phone-url">${esc(i.url)}</code> (nên lưu ra màn hình chính). Nếu địa chỉ IP của máy tính đổi, hãy ghép lại.</p>`;
+  $('#pairBtn').addEventListener('click', () => showPair(devs.length));
+  box.querySelectorAll('[data-dev]').forEach(row => {
+    const id = row.dataset.dev, name = row.querySelector('b').textContent;
+    row.querySelector('[data-scope]').addEventListener('change', async e => {
+      try { await api(`/api/phone/devices/${id}`, {method: 'PUT', body: {scope: e.target.value}}); toast(`${name}: ${SCOPE_TXT[e.target.value]}.`); }
+      catch (err) { toast(err.message, 'err'); renderPhone(); }
+    });
+    row.querySelector('[data-rename]').addEventListener('click', async () => {
+      const n = prompt('Tên mới cho thiết bị:', name); if (!n || !n.trim()) return;
+      try { await api(`/api/phone/devices/${id}`, {method: 'PUT', body: {name: n}}); renderPhone(); } catch (err) { toast(err.message, 'err'); }
+    });
+    row.querySelector('[data-revoke]').addEventListener('click', async () => {
+      if (!confirm(`Thu hồi "${name}"? Thiết bị này sẽ không mở được CircleVault nữa (muốn dùng lại phải quét mã ghép mới).`)) return;
+      try { await api(`/api/phone/devices/${id}`, {method: 'DELETE'}); toast(`Đã thu hồi ${name}.`); renderPhone(); } catch (err) { toast(err.message, 'err'); }
+    });
   });
+}
+async function showPair(before) {
+  const el = $('#phonePair'); if (!el) return;
+  let c;
+  try { c = await api('/api/phone/pair-code', {method: 'POST'}); } catch (e) { toast(e.message, 'err'); return; }
+  const end = Date.now() + c.expires_in * 1000;
+  el.hidden = false; $('#pairBtn').hidden = true;
+  el.innerHTML = `<img class="phone-qr" src="/api/phone/qr.svg?code=${encodeURIComponent(c.code)}" alt="Mã QR ghép thiết bị">
+    <div class="phone-txt">
+      <p><b>Dùng điện thoại cần thêm</b> (cùng Wi-Fi) quét mã này bằng Camera, rồi đặt tên cho thiết bị.</p>
+      <p class="hint">Hoặc mở <code class="phone-url">${esc(c.url)}</code></p>
+      <p class="hint">Mã ghép <b class="mono">${esc(c.code)}</b> chỉ dùng được một lần, còn <b id="pairLeft"></b>. Thiết bị mới chỉ được tải nhạc, phim về; muốn cho toàn quyền thì đổi ở danh sách trên.</p>
+      <p class="hint">Lần đầu, Windows có thể hỏi cho phép CircleVault dùng mạng: chọn <b>Cho phép</b> (mạng riêng).</p>
+      <div><button class="btn sm plain" type="button" id="pairCancel">Đóng mã</button></div>
+    </div>`;
+  const stop = () => { clearInterval(pairTimer); pairTimer = 0; };
+  $('#pairCancel').addEventListener('click', () => { stop(); renderPhone(); });
+  stop();
+  let n = 0;
+  pairTimer = setInterval(async () => {
+    const left = Math.max(0, Math.round((end - Date.now()) / 1000));
+    const lb = $('#pairLeft');
+    if (!lb || S.view !== 'storage') return stop();
+    lb.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    if (!left) { stop(); toast('Mã ghép đã hết hạn.'); return renderPhone(); }
+    if (++n % 3) return;                        // 3 giây xem có thiết bị mới chưa
+    try {
+      const list = await api('/api/phone/devices');
+      if (list.length > before) { stop(); toast(`Đã thêm thiết bị "${list[list.length - 1].name}".`); renderPhone(); }
+    } catch (e) { /* bỏ qua */ }
+  }, 1000);
+  $('#pairLeft').textContent = `${Math.floor(c.expires_in / 60)}:00`;
 }
 
 /* ------------------------------------------------------------ routing */

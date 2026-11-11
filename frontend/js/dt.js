@@ -23,11 +23,52 @@ function toast(msg, kind = 'ok') {
   $('#toasts').appendChild(t);
   setTimeout(() => t.remove(), kind === 'err' ? 7000 : 4000);
 }
-async function get(path) {
-  const r = await fetch(path);
+async function get(path, opts) {
+  const r = await fetch(path, opts);
   const d = await r.json().catch(() => ({}));
+  if (r.status === 401) { locked(d.detail); throw new Error(d.detail || 'Thiết bị chưa được phép.'); }
   if (!r.ok) throw new Error(d.detail || `Lỗi ${r.status}`);
   return d;
+}
+
+/* ---- ghép thiết bị: chỉ thiết bị đã quét mã QR trên máy tính mới mở được */
+function locked(msg) {
+  $('#dtMain').hidden = true; $('#dtLocked').hidden = false;
+  $('#pairBox').hidden = true; $('#lockBox').hidden = false;
+  if (msg) $('#lockMsg').textContent = msg;
+}
+function guessName() {
+  const ua = navigator.userAgent;
+  if (/iPad|Tablet|SM-T|SM-X/i.test(ua) || (/Android/i.test(ua) && !/Mobile/i.test(ua))) return 'Máy tính bảng';
+  if (/iPhone/i.test(ua)) return 'iPhone';
+  const m = ua.match(/Android[^;)]*;\s*([^;)]+?)(?:\s+Build|\))/);
+  return m && !/^K$/.test(m[1]) ? `Điện thoại ${m[1].trim()}`.slice(0, 40) : 'Điện thoại';
+}
+async function gate() {
+  const code = new URLSearchParams(location.search).get('pair');
+  if (code) {
+    $('#dtLocked').hidden = false; $('#pairBox').hidden = false; $('#lockBox').hidden = true;
+    $('#pairName').value = guessName();
+    return new Promise(resolve => {
+      $('#pairForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn = e.submitter || $('#pairForm button'); btn.disabled = true;
+        try {
+          const r = await fetch('/api/phone/pair', {method: 'POST', headers: {'content-type': 'application/json'},
+            body: JSON.stringify({code, name: $('#pairName').value})});
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.detail || `Lỗi ${r.status}`);
+          history.replaceState(null, '', '/dt');
+          toast(`Đã kết nối "${d.device.name}". Lần sau mở lại địa chỉ này là vào thẳng.`);
+          resolve(d.device);
+        } catch (err) { toast(err.message, 'err'); btn.disabled = false; }
+      });
+    });
+  }
+  let me;
+  try { me = await get('/api/phone/me'); } catch (e) { $('#dtLocked').hidden = false; $('#lockBox').hidden = false; $('#lockMsg').textContent = offlineMsg(e); return null; }
+  if (!me.paired) { locked(); return null; }
+  return me;
 }
 
 /* ---- nhớ những gì đã tải (chỉ để nhắc, điện thoại không cho trang biết file còn hay đã xóa) */
@@ -183,9 +224,14 @@ function offlineMsg(e) {
     : e.message;
 }
 
-let tab = 'music';
-try { tab = localStorage.getItem('cv-dt-tab') || 'music'; } catch (e) { /* bỏ qua */ }
-setTab(tab === 'video' ? 'video' : 'music');
-loadPlaylists();
-loadTracks();
+gate().then(dev => {
+  if (!dev) return;
+  $('#dtLocked').hidden = true; $('#dtMain').hidden = false;
+  $('#devName').textContent = dev.name || '';
+  let tab = 'music';
+  try { tab = localStorage.getItem('cv-dt-tab') || 'music'; } catch (e) { /* bỏ qua */ }
+  setTab(tab === 'video' ? 'video' : 'music');
+  loadPlaylists();
+  loadTracks();
+});
 })();
