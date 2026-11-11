@@ -87,6 +87,15 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   file đi qua `requestMetadata.mediaUri`) + `PlayerConn`. Giao diện `ui/` cùng bảng màu neo-brutalist. Phim: ExoPlayer riêng.
   Build: `gradle -p android assembleRelease -PvName=… -PvCode=…` (Gradle 8.14, AGP 8.7.3, JDK 17+, cần Android SDK 35).
   Ký: biến `CV_KEYSTORE`/`CV_KEYSTORE_PASS`; CI lấy từ secret `ANDROID_KEYSTORE_B64`/`ANDROID_KEYSTORE_PASS` (KHÔNG đổi khóa).
+  Đợt 2: 4 tab dưới (Thư viện/Online/Máy tính/Cài đặt), theme như PC (`THEMES`, `ThemeState`, Prefs.theme). `Eq.kt`: Equalizer
+  trên audioSessionId của ExoPlayer, lưu dB theo 5 dải chuẩn, EQ riêng từng bài (Prefs.eqTracks theo mediaId) hoặc mặc định.
+  `Editor.kt`: cắt/ghép bằng Media3 Transformer → .m4a mới trong `cat-ghep/` (id âm, không sửa file gốc). `Updater.kt`: đọc
+  release mới nhất của repo public (GitHub API), WorkManager 12 giờ, mỗi bản chỉ báo 1 lần (Prefs.updNotified/updLater), tải APK
+  vào cache → FileProvider → trình cài (REQUEST_INSTALL_PACKAGES). `YouTube.kt`: phát `cvyt://<id>` – PlaybackService dùng
+  ResolvingDataSource: máy tính kết nối được thì `/api/phone/yt/stream` (cookie YouTube trên PC), không thì NewPipeExtractor
+  (jitpack, tự lấy luồng âm thanh; UA visionOS). Lưu bài YouTube về máy (`DJob.online`) → hàng chờ `Prefs.syncQueue` →
+  `POST /api/phone/saved` → PC hiện khung "Điện thoại vừa lưu…" ở tab Nghe Nhạc (`GET /api/phone/saved`, tải/ bỏ qua, chỉ máy này).
+  Spotify: không làm (DRM, người dùng đã chọn bỏ).
   Phát hành: job `android` trong release.yml đính `CircleVault-Android.apk` vào Release 2 repo; link cố định
   `…/circlevault-releases/releases/latest/download/CircleVault-Android.apk`.
 - `tools/dong_goi_app.py` chuẩn bị `desktop/res/`; `tools/kiem_tra.py` kiểm tra cú pháp + liên kết file.

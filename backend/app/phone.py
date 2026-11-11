@@ -331,3 +331,102 @@ def playlist_zip(pid: int, request: Request):
     if request.method == "HEAD":         # app tải xuống hỏi trước kích thước
         return Response(media_type="application/zip", headers=headers)
     return StreamingResponse(_zip_iter(plan, _Sink()), media_type="application/zip", headers=headers)
+
+
+# ------------------------------------------------------------------ YouTube online cho app (qua tài khoản YouTube trên máy tính)
+@router.get("/yt/playlists")
+def yt_playlists(refresh: bool = False):
+    from . import ytmusic
+    return ytmusic.my_playlists(refresh)
+
+
+@router.get("/yt/list")
+def yt_list(src: str, refresh: bool = False):
+    from . import ytmusic
+    return ytmusic.open_list(src, refresh)
+
+
+@router.get("/yt/search")
+def yt_search(q: str):
+    from . import ytmusic
+    return ytmusic.search(q, "yt")
+
+
+@router.get("/yt/stream")
+def yt_stream(u: str, request: Request):
+    from . import ytmusic
+    return ytmusic.stream_url(u, request)
+
+
+# ------------------------------------------------------------------ bài điện thoại lưu từ YouTube → máy tính hỏi rồi tải
+SAVED_PATH = config.DATA / "phone-saved.json"
+_VID = re.compile(r"^[\w-]{11}$")
+
+
+class SavedIn(BaseModel):
+    items: list[dict]
+
+
+class SavedPick(BaseModel):
+    ids: list[str]
+
+
+def _saved() -> list[dict]:
+    try:
+        return json.loads(SAVED_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
+def _save_saved(rows: list[dict]) -> None:
+    SAVED_PATH.write_text(json.dumps(rows[-500:], ensure_ascii=False), encoding="utf-8")
+
+
+@router.post("/saved")
+def phone_saved(body: SavedIn, request: Request):
+    """App báo các bài vừa lưu về điện thoại (YouTube). Máy tính giữ danh sách chờ để hỏi người dùng có tải về ổ HDD không."""
+    d = request.scope.get("state", {}).get("device") or {}
+    rows = _saved()
+    have = {r["yt"] for r in rows}
+    added = 0
+    for it in body.items[:300]:
+        yt = str(it.get("yt") or "")
+        if not _VID.match(yt) or yt in have:
+            continue
+        rows.append({"yt": yt, "title": str(it.get("title") or yt)[:200], "artist": str(it.get("artist") or "")[:120] or None,
+                     "playlist": str(it.get("playlist") or "")[:80] or None, "device": d.get("name") or "Điện thoại",
+                     "at": time.time()})
+        have.add(yt)
+        added += 1
+    _save_saved(rows)
+    return {"ok": True, "added": added}
+
+
+@router.get("/saved", dependencies=[Depends(devices.local_only)])
+def saved_list():
+    from . import ytmusic
+    local = ytmusic._local_map()
+    rows = [r for r in _saved() if r["yt"] not in local]
+    if len(rows) != len(_saved()):
+        _save_saved(rows)              # bài đã có trên máy tính thì thôi không hỏi nữa
+    return rows
+
+
+@router.post("/saved/download", dependencies=[Depends(devices.local_only)])
+def saved_download(body: SavedPick):
+    from . import main
+    rows = _saved()
+    pick = [r for r in rows if r["yt"] in set(body.ids)]
+    n = 0
+    for r in pick:
+        main.add_task(main.TaskIn(url=f"https://www.youtube.com/watch?v={r['yt']}", quality="audio", title=r["title"],
+                                  music_playlist_name=r.get("playlist") or "Từ điện thoại"))
+        n += 1
+    _save_saved([r for r in rows if r["yt"] not in set(body.ids)])
+    return {"ok": True, "queued": n}
+
+
+@router.post("/saved/dismiss", dependencies=[Depends(devices.local_only)])
+def saved_dismiss(body: SavedPick):
+    _save_saved([r for r in _saved() if r["yt"] not in set(body.ids)])
+    return {"ok": True}

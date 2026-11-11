@@ -508,3 +508,10 @@ dialog.pl-add{max-width:720px}
 .phone-dev-name b{overflow-wrap:anywhere}
 .phone-dev select{min-height:32px}
 .phone-pair{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;padding:12px;border:var(--bw) dashed var(--ink);border-radius:6px}
+
+/* bài điện thoại vừa lưu (tab Nghe Nhạc) */
+.phone-saved{padding:12px 14px;display:flex;flex-direction:column;gap:10px;border-left:10px solid var(--cyan)}
+.phone-saved .ps-head{display:flex;gap:12px;align-items:flex-start}
+.phone-saved .ps-ic{font-size:24px;line-height:1}
+.phone-saved .ps-list{display:flex;flex-direction:column;gap:4px;max-height:260px;overflow:auto;margin-top:8px}
+.phone-saved summary{cursor:pointer;font-weight:700}

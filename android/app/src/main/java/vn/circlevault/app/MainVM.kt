@@ -17,7 +17,8 @@ import java.io.IOException
 class MainVM(app: Application) : AndroidViewModel(app) {
     var paired by mutableStateOf(Prefs.paired)
     var pairing by mutableStateOf(false)
-    var tab by mutableIntStateOf(if (Store.lib.value.empty) 0 else 1)
+    /** 0 Thư viện · 1 Online · 2 Máy tính · 3 Cài đặt */
+    var tab by mutableIntStateOf(if (Prefs.paired && Store.lib.value.empty) 2 else 0)
     var remoteKind by mutableIntStateOf(0)
 
     var playlists by mutableStateOf<List<RPlaylist>?>(null)
@@ -69,11 +70,88 @@ class MainVM(app: Application) : AndroidViewModel(app) {
             if (remoteKind == 1 || videos != null) loadVideos(true)
             remoteErr = null
             revoked = false
+            YouTube.pcOk = true
+            YouTube.flushReports()
         } catch (e: Exception) {
+            YouTube.pcOk = false
             fail(e)
         } finally {
             loading = false
         }
+    }
+
+    /* ---- tab Online (YouTube) */
+    var myLists by mutableStateOf(YouTube.cachedLists())
+    var ytLogged by mutableStateOf<Boolean?>(null)
+    var onlineList by mutableStateOf<OnlineList?>(null)
+    var onlineErr by mutableStateOf<String?>(null)
+    var onlineBusy by mutableStateOf(false)
+    var onlineQ by mutableStateOf("")
+
+    fun loadMyLists() = viewModelScope.launch {
+        if (!Prefs.paired) return@launch
+        try {
+            val l = YouTube.myLists()
+            ytLogged = l != null
+            if (l != null) myLists = l
+        } catch (e: Throwable) {
+            YouTube.pcOk = false
+        }
+    }
+
+    private fun netMsg(e: Throwable, what: String): String = when {
+        e is java.net.UnknownHostException || e.cause is java.net.UnknownHostException ->
+            "Không vào được YouTube: điện thoại chưa có Internet."
+        e is java.net.SocketTimeoutException -> "YouTube phản hồi quá chậm, thử lại sau."
+        else -> "$what: ${e.message ?: "lỗi"}"
+    }
+
+    fun openOnline(src: String) = viewModelScope.launch {
+        onlineBusy = true
+        onlineErr = null
+        try {
+            onlineList = YouTube.open(ctx, src)
+        } catch (e: Throwable) {
+            onlineErr = netMsg(e, "Không mở được")
+        } finally {
+            onlineBusy = false
+        }
+    }
+
+    fun searchOnline() = viewModelScope.launch {
+        val q = onlineQ.trim()
+        if (q.isEmpty()) return@launch
+        if (q.contains("youtu")) return@launch openOnline(q).let { }
+        onlineBusy = true
+        onlineErr = null
+        try {
+            onlineList = YouTube.search(q)
+        } catch (e: Throwable) {
+            onlineErr = netMsg(e, "Không tìm được")
+        } finally {
+            onlineBusy = false
+        }
+    }
+
+    /** lưu bài YouTube về điện thoại (và báo máy tính để hỏi có tải về ổ HDD không) */
+    fun saveOnline(tracks: List<OnlineTrack>, list: OnlineList?) {
+        val need = tracks.filter { Store.byYt(it.yt) == null }
+        if (need.isEmpty()) {
+            toast("Đã có trên điện thoại."); return
+        }
+        val pl = list?.takeIf { it.key != "@search" && !it.key.startsWith("v:") }?.let { YouTube.playlistIdFor(it.key) to it.title }
+        if (!enoughSpace(need.size * 6L * 1024 * 1024)) return
+        val n = Downloads.enqueue(ctx, need.map { YouTube.saveJob(it, pl) })
+        toast(if (n == 0) "Đang lưu rồi." else "Đang lưu $n bài về điện thoại${pl?.let { " (playlist \"${it.second}\")" } ?: ""}.")
+    }
+
+    /* ---- chọn bài để ghép, cắt */
+    var selecting by mutableStateOf(listOf<Int>())
+    var cutting by mutableStateOf<OTrack?>(null)
+    var merging by mutableStateOf(false)
+
+    fun toggleSelect(id: Int) {
+        selecting = if (id in selecting) selecting - id else selecting + id
     }
 
     fun searchTracks() = viewModelScope.launch {
@@ -165,7 +243,7 @@ class MainVM(app: Application) : AndroidViewModel(app) {
                 paired = true
                 revoked = false
                 remoteErr = null
-                tab = 0
+                tab = 2
                 toast("Đã kết nối với $server.")
                 refresh()
             } catch (e: IOException) {

@@ -46,6 +46,8 @@ data class DJob(
     val video: RVideo? = null,
     val coverUrl: String? = null,
     val coverAuth: Boolean = true,
+    val online: OnlineTrack? = null,                 // bài YouTube: link thật lấy lúc tải
+    val onlinePlaylist: Pair<Int, String>? = null,   // lưu vào playlist này trên điện thoại
 )
 
 /** Hàng đợi tải: lần lượt từng file, tải dở thì lần sau tải tiếp (Range) từ file .part. */
@@ -161,6 +163,7 @@ class DownloadService : Service() {
                 fetch(j)
             }
         } finally {
+            runCatching { kotlinx.coroutines.runBlocking { YouTube.flushReports() } }   // báo máy tính các bài vừa lưu từ YouTube
             runCatching { wake.release() }
             runCatching { wifi.release() }
             working = false
@@ -170,14 +173,34 @@ class DownloadService : Service() {
         }
     }
 
-    private fun fetch(j: DJob) {
+    private fun fetch(j0: DJob) {
+        var j = j0
+        var extra: Map<String, String> = emptyMap()
+        if (j.online != null) {
+            // bài YouTube: lấy link lúc tải (qua máy tính nếu được, không thì tự lấy); đuôi file theo định dạng thật
+            val r = try {
+                YouTube.resolve(j.online!!.yt)
+            } catch (e: Throwable) {
+                failed++
+                Downloads.update(j.key) { it.copy(state = JState.ERROR, error = "Không lấy được bài: ${e.message ?: "lỗi"}") }
+                return
+            }
+            val dir = File(Store.baseDir(), "nhac")
+            val stem = "yt-${j.online!!.yt} - ${safeName(j.title)}"
+            val prev = dir.listFiles()?.firstOrNull { it.name.startsWith(stem) && it.name.endsWith(".part") }
+            val dest = prev?.path?.removeSuffix(".part") ?: File(dir, "$stem.${r.ext.ifBlank { "m4a" }}").path
+            j = j.copy(url = r.url, dest = dest)
+            extra = r.headers
+            Downloads.update(j.key) { it.copy(url = r.url, dest = dest) }
+        }
         val dest = File(j.dest)
         val part = File(j.dest + ".part")
         try {
             dest.parentFile?.mkdirs()
             var have = if (part.exists()) part.length() else 0L
             var total = j.total
-            val rb = Api.authed(j.url)
+            val rb = if (j.online != null) Request.Builder().url(j.url) else Api.authed(j.url)
+            extra.forEach { (k, v) -> rb.header(k, v) }
             if (have > 0) rb.header("Range", "bytes=$have-")
             Api.http.newBuilder().readTimeout(60, TimeUnit.SECONDS).build().newCall(rb.build()).execute().use { r ->
                 if (r.code == 401) throw IOException("Thiết bị này đã bị thu hồi quyền trên máy tính.")
@@ -216,6 +239,12 @@ class DownloadService : Service() {
             val cover = j.coverUrl?.let { saveCover(it, j) }
             j.track?.let { Store.addTrack(OTrack(it.id, it.title, it.artist, it.duration, dest.length(), dest.path, cover)) }
             j.video?.let { Store.addVideo(OVideo(it.id, it.title, it.duration, dest.length(), dest.path, cover)) }
+            j.online?.let { o ->
+                val id = Store.byYt(o.yt)?.id ?: Prefs.nextLocalId()
+                Store.addTrack(OTrack(id, o.title, o.artist, o.duration, dest.length(), dest.path, cover, yt = o.yt))
+                j.onlinePlaylist?.let { (pid, name) -> Store.addToPlaylist(pid, name, id) }
+                YouTube.queueReport(o, j.onlinePlaylist?.second)
+            }
             Downloads.update(j.key) { it.copy(state = JState.DONE, done = dest.length(), total = dest.length()) }
             finished++
         } catch (e: Cancelled) {

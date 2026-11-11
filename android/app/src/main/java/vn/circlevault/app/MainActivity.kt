@@ -25,7 +25,15 @@ class MainActivity : ComponentActivity() {
         ) {
             askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        setContent { CvTheme { AppRoot() } }
+        setContent { CvTheme { AppRoot(vm) } }
+        if (intent?.getBooleanExtra("update", false) == true) vm.tab = 3
+    }
+
+    private val vm: MainVM by lazy { androidx.lifecycle.ViewModelProvider(this)[MainVM::class.java] }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra("update", false)) vm.tab = 3
     }
 
     override fun onStart() {

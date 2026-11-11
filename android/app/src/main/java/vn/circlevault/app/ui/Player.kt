@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -151,12 +152,17 @@ fun MiniPlayer(onOpen: () -> Unit) {
 }
 
 @Composable
-fun NowPlaying(onClose: () -> Unit) {
+fun NowPlaying(vm: vn.circlevault.app.MainVM, onClose: () -> Unit) {
     val c = cv
     val s = rememberPState()
     val ctl = PlayerConn.controller
     var drag by remember { mutableFloatStateOf(-1f) }
-    BackHandler(onBack = onClose)
+    var eqOpen by remember { mutableStateOf(false) }
+    BackHandler(onBack = { if (eqOpen) eqOpen = false else onClose() })
+    if (eqOpen) {
+        EqPanel(s.title, onClose = { eqOpen = false })
+        return
+    }
     if (!s.has || ctl == null) {
         LaunchedEffect(s.has, ctl) { if (!s.has || ctl == null) onClose() }
         return
@@ -166,8 +172,14 @@ fun NowPlaying(onClose: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconBtn(Ic.down, "Thu nhỏ", onClose, color = c.surface)
+            Spacer(Modifier.weight(1f))
+            val online = if (s.mediaId?.startsWith("y") == true) PlayerConn.currentOnline() else null
+            if (online != null && vn.circlevault.app.Store.byYt(online.yt) == null) {
+                BButton("Lưu về máy", { vm.saveOnline(listOf(online), null) }, small = true, icon = Ic.download, color = c.yellow)
+            }
+            BButton("EQ", { eqOpen = true }, small = true, icon = Ic.eq, color = if (vn.circlevault.app.Eq.own) c.violet else c.surface)
         }
         Box(Modifier.fillMaxWidth(0.85f).aspectRatio(1f).brutal(c.yellow, c.ink, shadow = 6.dp, radius = 10.dp, border = 3.dp), contentAlignment = Alignment.Center) {
             Icon(Ic.music, null, tint = c.onAccent, modifier = Modifier.size(96.dp))
@@ -241,6 +253,64 @@ fun VideoScreen(v: OVideo, onClose: () -> Unit) {
             IconBtn(Ic.back, "Đóng", onClose, color = cv.surface)
             Spacer(Modifier.width(10.dp))
             Text(v.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** Bộ chỉnh âm: kiểu dựng sẵn + 5 dải, áp cho mọi bài hoặc riêng bài đang nghe */
+@Composable
+fun EqPanel(title: String, onClose: () -> Unit) {
+    val c = cv
+    val eq = vn.circlevault.app.Eq
+    Column(
+        Modifier.fillMaxSize().background(c.bg).statusBarsPadding().navigationBarsPadding()
+            .verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            IconBtn(Ic.back, "Đóng", onClose, color = c.surface)
+            Column(Modifier.weight(1f)) {
+                H("Bộ chỉnh âm", size = 20)
+                Text(title, color = c.muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            BButton(if (eq.enabled) "Đang bật" else "Đang tắt", { eq.turn(!eq.enabled) }, small = true, color = if (eq.enabled) c.green else c.surface)
+        }
+        if (!eq.supported) Card(color = c.surface2) { Text("Điện thoại này không hỗ trợ bộ chỉnh âm cho app.", color = c.red, fontWeight = FontWeight.Bold) }
+        Card(color = if (eq.own) c.violet else c.surface) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(if (eq.own) "Đang dùng EQ riêng cho bài này" else "Đang dùng EQ chung cho mọi bài", color = if (eq.own) c.onAccent else c.text, fontWeight = FontWeight.ExtraBold)
+                    Text(
+                        if (eq.own) "Chỉnh gì cũng chỉ áp cho bài này, lần sau nghe lại vẫn nhớ." else "Bật \"Riêng bài này\" để bài này có EQ của nó.",
+                        color = if (eq.own) c.onAccent else c.muted, fontSize = 13.sp,
+                    )
+                }
+                androidx.compose.material3.Switch(eq.own, { eq.useOwn(it) }, enabled = eq.key != null)
+            }
+        }
+        Text("Kiểu có sẵn", color = c.text, fontWeight = FontWeight.Bold)
+        val cur = eq.presetName()
+        vn.circlevault.app.Eq.PRESETS.keys.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { name ->
+                    BButton(name, { eq.preset(name) }, Modifier.weight(1f), small = true, color = if (cur == name) c.yellow else c.surface)
+                }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+        Card {
+            eq.REF_HZ.forEachIndexed { i, hz ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${eq.label(hz)}Hz", color = c.text, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.width(58.dp))
+                    Slider(
+                        value = eq.levels[i], onValueChange = { eq.setLevel(i, it) }, valueRange = eq.minDb..eq.maxDb,
+                        modifier = Modifier.weight(1f),
+                        colors = SliderDefaults.colors(thumbColor = c.ink, activeTrackColor = c.cyan, inactiveTrackColor = c.surface2),
+                    )
+                    Text("%+.0f dB".format(eq.levels[i]), color = c.muted, fontSize = 13.sp, modifier = Modifier.width(52.dp), textAlign = TextAlign.End)
+                }
+            }
+            Hint("Âm trầm ở bên trái (60 Hz), âm cao ở bên phải (14 kHz).")
         }
     }
 }

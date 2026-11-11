@@ -609,9 +609,37 @@ async function initOnce() {
   M.eq = window.CV.eq.createEQ({mount: $('#eqPanel'), engine, initial: M.settings.eq, onChange: () => { renderBar(); saveSettings(); }});
 }
 
+/* Bài điện thoại vừa lưu (YouTube) mà máy tính chưa có → hỏi rồi tải về ổ HDD */
+async function loadPhoneSaved() {
+  const box = $('#phoneSaved'); if (!box) return;
+  let rows = [];
+  try { rows = await api('/api/phone/saved'); } catch (e) { box.hidden = true; return; }
+  box.hidden = !rows.length;
+  if (!rows.length) return;
+  const dev = [...new Set(rows.map(r => r.device))].join(', ');
+  box.innerHTML = `<div class="ps-head"><span class="ps-ic" aria-hidden="true">📱</span>
+      <div><b>${esc(dev)} vừa lưu ${rows.length} bài mà máy tính chưa có.</b><div class="hint">Tải bản MP3 về ổ HDD? Bài sẽ vào playlist cùng tên như trên điện thoại.</div></div></div>
+    <details><summary>Xem ${rows.length} bài</summary><div class="ps-list">${rows.map(r => `<label class="check"><input type="checkbox" data-ps="${esc(r.yt)}" checked>
+      ${esc(r.title)}${r.artist ? ` <span class="hint">· ${esc(r.artist)}</span>` : ''}${r.playlist ? ` <span class="hint">· ${esc(r.playlist)}</span>` : ''}</label>`).join('')}</div></details>
+    <div class="btn-row"><button class="btn green sm" type="button" id="psGet">Tải bài đã chọn</button>
+      <button class="btn plain sm" type="button" id="psSkip">Bỏ qua</button></div>`;
+  const picked = () => [...box.querySelectorAll('[data-ps]')].filter(c => c.checked).map(c => c.dataset.ps);
+  $('#psGet').addEventListener('click', async () => {
+    const ids = picked(); if (!ids.length) return toast('Chưa chọn bài nào.', 'err');
+    try { const r = await api('/api/phone/saved/download', {method: 'POST', body: {ids}}); toast(`Đã thêm ${r.queued} bài vào hàng đợi tải.`); }
+    catch (e) { toast(e.message, 'err'); }
+    loadPhoneSaved();
+  });
+  $('#psSkip').addEventListener('click', async () => {
+    const ids = picked().length ? picked() : rows.map(r => r.yt);
+    try { await api('/api/phone/saved/dismiss', {method: 'POST', body: {ids}}); } catch (e) { /* bỏ qua */ }
+    loadPhoneSaved();
+  });
+}
+
 window.CV.views.music = async () => {
   await initOnce();
-  renderSide(); loadPlaylists(); loadTracks();
+  renderSide(); loadPlaylists(); loadTracks(); loadPhoneSaved();
   if (!M.yt.loaded) { M.yt.loaded = true; loadYt(false); }
   M.eq && M.eq.redraw();
 };
