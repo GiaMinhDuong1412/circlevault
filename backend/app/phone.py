@@ -430,3 +430,16 @@ def saved_download(body: SavedPick):
 def saved_dismiss(body: SavedPick):
     _save_saved([r for r in _saved() if r["yt"] not in set(body.ids)])
     return {"ok": True}
+
+
+# ------------------------------------------------------------------ xem chung: app điện thoại thấy phòng đang mở trên máy tính
+@router.get("/party")
+def party_room():
+    st = party.status()
+    r = st.get("room")
+    if not r:
+        return {"room": None}
+    links = r.get("links", {})
+    return {"room": {"title": r.get("title"), "type": (r.get("source") or {}).get("type"),
+                     "members": len(r.get("members") or [])},
+            "links": {k: links[k] for k in ("lan", "internet") if links.get(k)}}

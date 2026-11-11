@@ -37,7 +37,16 @@ class PlaybackService : MediaSessionService() {
         // cvyt://<id> → link thật lúc phát (qua máy tính hoặc tự lấy); file trong máy đi thẳng
         val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true).setConnectTimeoutMs(10_000)
         val resolving = ResolvingDataSource.Factory(DefaultDataSource.Factory(this, http)) { spec: DataSpec ->
-            if (spec.uri.scheme == "cvyt") {
+            if (spec.uri.scheme == "cvgd") {         // file nhạc trên Google Drive
+                val email = spec.uri.getQueryParameter("a") ?: Drive.active
+                val tk = try {
+                    Drive.tokenBlocking(this, email)
+                } catch (e: Throwable) {
+                    throw java.io.IOException("Cần cấp quyền Google Drive lại (mở tab Online → Drive).", e)
+                }
+                spec.buildUpon().setUri(Uri.parse(Drive.mediaUrl(spec.uri.host ?: "")))
+                    .setHttpRequestHeaders(spec.httpRequestHeaders + mapOf("Authorization" to "Bearer $tk")).build()
+            } else if (spec.uri.scheme == "cvyt") {
                 val r = try {
                     YouTube.resolve(spec.uri.host ?: "")
                 } catch (e: Throwable) {
@@ -129,6 +138,20 @@ object PlayerConn {
         c.prepare()
         c.play()
     }
+
+    /** phát file nhạc trên Google Drive (bài đã tải về máy thì phát file) */
+    fun playDrive(items: List<Drive.Item>, email: String, start: Int) = playItems(
+        items.map { i ->
+            Store.byGd(i.id)?.toItem() ?: run {
+                val uri = Drive.uriOf(i.id, email)
+                MediaItem.Builder().setMediaId("g${i.id}").setUri(uri)
+                    .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(uri).build())
+                    .setMediaMetadata(MediaMetadata.Builder().setTitle(i.name.substringBeforeLast('.')).setArtist("Google Drive").build())
+                    .build()
+            }
+        },
+        start,
+    )
 
     /** bài đang phát có phải bài YouTube online (chưa lưu) không → hiện nút Lưu */
     fun currentOnline(): OnlineTrack? {

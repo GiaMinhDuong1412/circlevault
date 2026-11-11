@@ -608,6 +608,7 @@ function renderTools() {
     <div class="box pcard"><h3>Deno: ${t.deno ? '<span class="ok">có</span>' : '<span class="no">chưa cài</span>'}</h3>
       <p class="hint">${t.deno ? 'yt-dlp dùng Deno để giải mã link YouTube.' : 'YouTube cần Deno để lấy đủ định dạng.' + (window.cvDesktop ? ' Bản app đã kèm sẵn Deno; hãy cài lại app.' : ' Cài bằng: <code>winget install DenoLand.Deno</code> rồi mở lại.')}</p></div>`;
   renderPhone();
+  renderDrive();
   $('#chkUpd')?.addEventListener('click', () => { window.cvDesktop.updateAct(); toast('Đang kiểm tra bản mới…'); });
   $('#updYt').addEventListener('click', async e => {
     const b = e.currentTarget; b.disabled = true; b.textContent = 'Đang cập nhật…';
@@ -671,9 +672,16 @@ async function renderPhone() {
       try { await api(`/api/phone/devices/${id}`, {method: 'PUT', body: {scope: e.target.value}}); toast(`${name}: ${SCOPE_TXT[e.target.value]}.`); }
       catch (err) { toast(err.message, 'err'); renderPhone(); }
     });
-    row.querySelector('[data-rename]').addEventListener('click', async () => {
-      const n = prompt('Tên mới cho thiết bị:', name); if (!n || !n.trim()) return;
-      try { await api(`/api/phone/devices/${id}`, {method: 'PUT', body: {name: n}}); renderPhone(); } catch (err) { toast(err.message, 'err'); }
+    row.querySelector('[data-rename]').addEventListener('click', () => {
+      const nm = row.querySelector('.phone-dev-name');
+      nm.innerHTML = `<form class="inline-edit"><input type="text" maxlength="40" value="${esc(name)}" aria-label="Tên mới"><button class="btn sm green" type="submit">Lưu</button></form>`;
+      const f = nm.querySelector('form'); f.querySelector('input').select();
+      f.addEventListener('submit', async e => {
+        e.preventDefault();
+        const n = f.querySelector('input').value.trim(); if (!n) return;
+        try { await api(`/api/phone/devices/${id}`, {method: 'PUT', body: {name: n}}); } catch (err) { toast(err.message, 'err'); }
+        renderPhone();
+      });
     });
     row.querySelector('[data-revoke]').addEventListener('click', async () => {
       if (!confirm(`Thu hồi "${name}"? Thiết bị này sẽ không mở được CircleVault nữa (muốn dùng lại phải quét mã ghép mới).`)) return;
@@ -713,6 +721,108 @@ async function showPair(before) {
   }, 1000);
   $('#pairLeft').textContent = `${Math.floor(c.expires_in / 60)}:00`;
 }
+
+/* Google Drive: nhiều tài khoản, chọn tài khoản + thư mục lưu nhạc, xem tiến độ tải lên */
+let driveTimer = 0;
+async function renderDrive() {
+  let box = $('#driveBox');
+  if (!box) {
+    box = document.createElement('div'); box.id = 'driveBox'; box.className = 'box pcard phone-box drive-box';
+    const after = $('#phoneBox'); after ? after.after(box) : $('#tools').prepend(box);
+  }
+  let g;
+  try { g = await api('/api/gdrive'); } catch (e) { box.remove(); return; }
+  const jobs = g.jobs.filter(j => j.status === 'running' || j.status === 'queued' || (Date.now() / 1000 - (j.finished_at || 0) < 600));
+  if (!g.configured) {
+    box.innerHTML = `<h3>Google Drive</h3>
+      <p class="hint">Lưu nhạc lên Google Drive của bạn để nghe, tải về trên điện thoại kể cả khi máy tính tắt. Bước đầu: nhập OAuth client loại <b>Desktop app</b> đã tạo trong Google Cloud.</p>
+      <label class="btn yellow file-btn" for="gdJson">Chọn file JSON đã tải (client_secret_….json)</label>
+      <input type="file" id="gdJson" accept=".json,application/json" hidden>
+      <details><summary class="hint">Hoặc dán Client ID và Client secret</summary>
+        <form id="gdForm" class="cols2" style="margin-top:8px">
+          <label class="field">Client ID<input type="text" id="gdId" autocomplete="off" placeholder="…apps.googleusercontent.com"></label>
+          <label class="field">Client secret<input type="password" id="gdSecret" autocomplete="off" placeholder="GOCSPX-…"></label>
+          <div><button class="btn green" type="submit">Lưu</button></div>
+        </form></details>`;
+    const save = async body => { try { await api('/api/gdrive/client', {method: 'PUT', body}); toast('Đã lưu. Giờ thêm tài khoản Google.'); renderDrive(); } catch (err) { toast(err.message, 'err'); } };
+    $('#gdJson').addEventListener('change', async e => { const f = e.target.files[0]; if (f) save({json_text: await f.text()}); });
+    $('#gdForm').addEventListener('submit', e => { e.preventDefault(); save({client_id: $('#gdId').value, client_secret: $('#gdSecret').value}); });
+    return;
+  }
+  box.innerHTML = `<h3>Google Drive</h3>
+    <p class="hint">Nhạc lưu vào tài khoản đang chọn (●). Mỗi playlist là một thư mục con. App chỉ thấy file do CircleVault tạo, không đọc file khác trong Drive của bạn.</p>
+    <div class="phone-devs">${g.accounts.length ? g.accounts.map(a => `<div class="phone-dev" data-acc="${esc(a.email)}">
+        <label class="check gd-pick"><input type="radio" name="gdActive" ${a.email === g.active ? 'checked' : ''}> <span class="phone-dev-name"><b>${esc(a.email)}</b>
+          <span class="hint">Thư mục: <b>${esc(a.folder_name || '—')}</b> · đã lưu ${a.uploaded} bài</span></span></label>
+        <button class="btn sm plain" type="button" data-folder>Đổi thư mục</button>
+        <button class="btn sm red" type="button" data-unlink>Ngắt</button>
+        <div class="gd-folder" hidden></div>
+      </div>`).join('') : '<p class="hint">Chưa có tài khoản nào.</p>'}</div>
+    <div class="btn-row"><button class="btn green" type="button" id="gdAdd">+ Thêm tài khoản Google</button>
+      <button class="btn sm plain" type="button" id="gdReset">Đổi OAuth client</button></div>
+    <div id="gdJobs">${jobs.map(j => `<div class="gd-job"><b>${esc(j.label)}</b> → ${esc(j.email)} / ${esc(j.folder || '')}
+      <span class="hint">${j.status === 'done' ? `xong: ${j.uploaded} bài mới, ${j.skipped} bài đã có${j.errors.length ? `, ${j.errors.length} lỗi` : ''}`
+        : j.status === 'error' ? `lỗi: ${esc(j.error)}` : `${j.done}/${j.total} bài${j.current ? ' · ' + esc(j.current) : ''}`}</span>
+      ${j.status === 'running' ? `<div class="bar"><i style="width:${j.bytes_total ? Math.min(100, j.bytes_done / j.bytes_total * 100) : j.done / j.total * 100}%"></i></div>` : ''}</div>`).join('')}</div>`;
+  $$('[data-acc]', box).forEach(row => {
+    const email = row.dataset.acc;
+    row.querySelector('input[type=radio]').addEventListener('change', async () => {
+      try { await api('/api/gdrive/active', {method: 'POST', body: {email}}); toast(`Từ giờ lưu vào ${email}.`); } catch (err) { toast(err.message, 'err'); }
+      renderDrive();
+    });
+    row.querySelector('[data-unlink]').addEventListener('click', async e => {
+      const b = e.currentTarget;
+      if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Bấm lần nữa để ngắt'; return; }
+      try { await api(`/api/gdrive/accounts/${encodeURIComponent(email)}`, {method: 'DELETE'}); toast(`Đã ngắt ${email}. Nhạc trên Drive vẫn còn.`); } catch (err) { toast(err.message, 'err'); }
+      renderDrive();
+    });
+    row.querySelector('[data-folder]').addEventListener('click', async () => {
+      const el = row.querySelector('.gd-folder'); el.hidden = false; el.innerHTML = '<p class="hint">Đang đọc thư mục…</p>';
+      let list = [];
+      try { list = await api(`/api/gdrive/folders?email=${encodeURIComponent(email)}`); } catch (err) { el.innerHTML = `<p class="no">${esc(err.message)}</p>`; return; }
+      const top = list.filter(f => !list.some(p => (f.parents || []).includes(p.id)));
+      el.innerHTML = `<form class="inline-edit"><select aria-label="Thư mục có sẵn"><option value="">— Thư mục CircleVault đã tạo —</option>${top.map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join('')}</select>
+        <input type="text" maxlength="100" placeholder="hoặc tên thư mục mới" aria-label="Tên thư mục mới"><button class="btn sm green" type="submit">Dùng thư mục này</button></form>`;
+      el.querySelector('form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const id = el.querySelector('select').value, name = el.querySelector('input').value.trim();
+        if (!id && !name) return toast('Chọn một thư mục hoặc gõ tên mới.', 'err');
+        try { await api('/api/gdrive/folder', {method: 'POST', body: {email, id: name ? '' : id, name}}); toast('Đã đổi thư mục lưu.'); } catch (err) { toast(err.message, 'err'); }
+        renderDrive();
+      });
+    });
+  });
+  $('#gdAdd').addEventListener('click', async () => {
+    let r; try { r = await api('/api/gdrive/auth/start', {method: 'POST'}); } catch (err) { return toast(err.message, 'err'); }
+    window.open(r.url, '_blank');
+    toast('Đăng nhập Google trong trình duyệt vừa mở. Xong thì quay lại đây.');
+    const before = g.accounts.length; let n = 0;
+    clearInterval(driveTimer);
+    driveTimer = setInterval(async () => {
+      if (++n > 90 || S.view !== 'storage') return clearInterval(driveTimer);
+      try { const x = await api('/api/gdrive'); if (x.accounts.length > before) { clearInterval(driveTimer); toast('Đã thêm tài khoản Google Drive.'); renderDrive(); } } catch (e) { /* bỏ qua */ }
+    }, 2000);
+  });
+  $('#gdReset').addEventListener('click', () => { box.innerHTML = ''; renderDriveSetup(box); });
+  if (jobs.some(j => j.status === 'running' || j.status === 'queued')) setTimeout(() => S.view === 'storage' && renderDrive(), 2000);
+}
+function renderDriveSetup(box) {
+  box.innerHTML = `<h3>Đổi OAuth client</h3><p class="hint">Chọn file JSON mới (client loại Desktop app). Tài khoản đã thêm vẫn giữ.</p>
+    <label class="btn yellow file-btn" for="gdJson2">Chọn file JSON</label><input type="file" id="gdJson2" accept=".json" hidden>
+    <div><button class="btn sm plain" type="button" id="gdBack">Thôi</button></div>`;
+  $('#gdJson2').addEventListener('change', async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try { await api('/api/gdrive/client', {method: 'PUT', body: {json_text: await f.text()}}); toast('Đã đổi OAuth client.'); } catch (err) { toast(err.message, 'err'); }
+    renderDrive();
+  });
+  $('#gdBack').addEventListener('click', renderDrive);
+}
+window.CV.drive = {upload: async (body, label) => {
+  try {
+    const j = await api('/api/gdrive/upload', {method: 'POST', body});
+    toast(`Đang lưu ${j.total} bài${label ? ` của "${label}"` : ''} lên Google Drive (${j.email} / ${j.folder}). Xem tiến độ ở tab Lưu Trữ.`);
+  } catch (err) { toast(err.message, 'err'); }
+}};
 
 /* ------------------------------------------------------------ routing */
 function refreshView() {

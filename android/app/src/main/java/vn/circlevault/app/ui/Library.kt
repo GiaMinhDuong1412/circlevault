@@ -190,6 +190,7 @@ fun LibraryTab(vm: MainVM) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             BButton("Phát", { PlayerConn.play(tracks, 0) }, Modifier.weight(1f), icon = Ic.play, enabled = tracks.isNotEmpty())
                             BButton("Trộn", { PlayerConn.play(tracks.shuffled(), 0) }, Modifier.weight(1f), color = c.surface, enabled = tracks.isNotEmpty())
+                            BButton("☁", { vm.uploadDrive(tracks, open.name) }, color = c.surface, enabled = tracks.isNotEmpty())
                             IconBtn(Ic.delete, "Xóa playlist", {
                                 ask = Triple(
                                     "Xóa playlist \"${open.name}\"?",
@@ -336,6 +337,7 @@ private fun TrackCard(vm: MainVM, t: OTrack, playingId: String?, onPlay: () -> U
                 DropdownMenuItem({ Text("Phát") }, { menu = false; onPlay() })
                 DropdownMenuItem({ Text("Cắt đoạn") }, { menu = false; vm.cutting = t })
                 DropdownMenuItem({ Text(if (selected) "Bỏ chọn ghép" else "Chọn để ghép") }, { menu = false; vm.toggleSelect(t.id) })
+                DropdownMenuItem({ Text("Lưu lên Google Drive") }, { menu = false; vm.uploadDrive(listOf(t), null) })
                 if (onDelete != null) DropdownMenuItem({ Text("Xóa khỏi điện thoại", color = c.red) }, { menu = false; onDelete() })
             }
         }

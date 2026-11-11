@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 import json
 
-from . import config, db, detect, devices, downloader, edit, gametr, music, party, phone, storage, translate, ytdlp_update, ytmusic
+from . import config, db, detect, devices, downloader, edit, gametr, gdrive, music, party, phone, storage, translate, ytdlp_update, ytmusic
 from .manager import manager
 
 WEB = config.WEB
@@ -44,6 +44,7 @@ app.include_router(ytmusic.acct)
 app.include_router(music.router)
 app.include_router(edit.router)
 app.include_router(phone.router)
+app.include_router(gdrive.router)
 app.include_router(party.router)
 app.include_router(translate.router)
 app.include_router(gametr.router)

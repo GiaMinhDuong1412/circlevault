@@ -81,6 +81,8 @@ object Prefs {
     /** bài lưu từ YouTube chờ báo cho máy tính (JSON) */
     var syncQueue: String get() = str("sync_q").ifBlank { "[]" }; set(v) = put("sync_q", v)
     var ytLists: String get() = str("yt_lists").ifBlank { "[]" }; set(v) = put("yt_lists", v)
+    var gdAccounts: String get() = str("gd_accounts").ifBlank { "[]" }; set(v) = put("gd_accounts", v)
+    var gdActive: String get() = str("gd_active"); set(v) = put("gd_active", v)
 }
 
 /* ------------------------------------------------------------------ dữ liệu từ máy tính */
@@ -176,6 +178,9 @@ object Api {
         }
     }
 
+    /** phòng xem chung đang mở trên máy tính (nếu có) */
+    suspend fun party(): JSONObject = JSONObject(get("/api/phone/party"))
+
     fun trackFileUrl(id: Int) = "${Prefs.base}/api/phone/track/$id/file"
     fun trackCoverUrl(id: Int) = "${Prefs.base}/api/phone/track/$id/cover"
     fun videoFileUrl(id: Int) = "${Prefs.base}/api/phone/video/$id/file"
@@ -185,6 +190,7 @@ object Api {
 data class OTrack(
     val id: Int, val title: String, val artist: String?, val duration: Double, val size: Long, val path: String, val cover: String?,
     val yt: String? = null,
+    val gd: String? = null,           // id file trên Google Drive (bài tải từ Drive)
 ) {
     /** bài do điện thoại tự tạo (cắt/ghép) hoặc lưu từ YouTube – không có trên máy tính */
     val local get() = id < 0
@@ -245,6 +251,7 @@ object Store {
                     it.optDouble("duration", 0.0), it.optLong("size"), it.getString("path"),
                     it.optString("cover").takeIf { c -> c.isNotBlank() },
                     it.optString("yt").takeIf { y -> y.isNotBlank() },
+                    it.optString("gd").takeIf { g -> g.isNotBlank() },
                 )
             },
             videos = (0 until vd.length()).map { vd.getJSONObject(it) }.associate {
@@ -264,7 +271,7 @@ object Store {
         val j = JSONObject()
         j.put("tracks", JSONArray(l.tracks.values.map {
             JSONObject().put("id", it.id).put("title", it.title).put("artist", it.artist ?: "").put("duration", it.duration)
-                .put("size", it.size).put("path", it.path).put("cover", it.cover ?: "").put("yt", it.yt ?: "")
+                .put("size", it.size).put("path", it.path).put("cover", it.cover ?: "").put("yt", it.yt ?: "").put("gd", it.gd ?: "")
         }))
         j.put("videos", JSONArray(l.videos.values.map {
             JSONObject().put("id", it.id).put("title", it.title).put("duration", it.duration).put("size", it.size)
@@ -299,6 +306,7 @@ object Store {
     }
 
     fun byYt(yt: String): OTrack? = lib.value.tracks.values.find { it.yt == yt }
+    fun byGd(gd: String): OTrack? = lib.value.tracks.values.find { it.gd == gd }
 
     fun deleteTrack(id: Int) = edit { l ->
         l.tracks[id]?.let { delFiles(it.path, it.cover) }

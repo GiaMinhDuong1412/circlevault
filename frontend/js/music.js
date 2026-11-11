@@ -637,6 +637,14 @@ async function loadPhoneSaved() {
   });
 }
 
+$('#toDrive').addEventListener('click', () => {
+  if (!window.CV.drive) return;
+  const pl = typeof M.list === 'number' ? M.playlists.find(p => p.id === M.list) : null;
+  if (pl) return window.CV.drive.upload({playlist_id: pl.id}, pl.name);
+  if (M.list === 'all') return window.CV.drive.upload({all: true}, 'Tất cả bài hát');
+  window.CV.drive.upload({track_ids: M.tracks.filter(t => t.id).map(t => t.id)});
+});
+
 window.CV.views.music = async () => {
   await initOnce();
   renderSide(); loadPlaylists(); loadTracks(); loadPhoneSaved();

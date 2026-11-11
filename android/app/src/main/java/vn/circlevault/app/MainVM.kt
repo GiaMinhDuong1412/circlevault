@@ -145,6 +145,33 @@ class MainVM(app: Application) : AndroidViewModel(app) {
         toast(if (n == 0) "Đang lưu rồi." else "Đang lưu $n bài về điện thoại${pl?.let { " (playlist \"${it.second}\")" } ?: ""}.")
     }
 
+    /* ---- Online: 0 YouTube · 1 Google Drive · 2 Xem chung */
+    var onlineSeg by mutableIntStateOf(0)
+    var partyUrl by mutableStateOf<String?>(null)
+
+    /** đưa bài trên điện thoại lên Google Drive (tài khoản đang chọn); playlist → thư mục con cùng tên */
+    fun uploadDrive(tracks: List<OTrack>, sub: String?) {
+        if (Drive.accounts.isEmpty()) {
+            toast("Chưa kết nối Google Drive: vào Online → Google Drive → Thêm tài khoản.")
+            onlineSeg = 1; tab = 1
+            return
+        }
+        if (Drive.uploading != null) {
+            toast("Đang lưu lên Drive, đợi xong đã."); return
+        }
+        viewModelScope.launch {
+            toast("Đang lưu ${tracks.size} bài lên Google Drive (${Drive.active})…")
+            try {
+                val failed = Drive.upload(ctx, tracks, sub)
+                toast(if (failed == 0) "Đã lưu lên Google Drive${sub?.let { " (thư mục \"$it\")" } ?: ""}." else "Xong, $failed bài không lưu được.")
+            } catch (e: Drive.NeedConsent) {
+                toast("Cần cho phép Google Drive lại: vào Online → Google Drive.")
+            } catch (e: Throwable) {
+                toast("Không lưu được lên Drive: ${e.message}")
+            }
+        }
+    }
+
     /* ---- chọn bài để ghép, cắt */
     var selecting by mutableStateOf(listOf<Int>())
     var cutting by mutableStateOf<OTrack?>(null)

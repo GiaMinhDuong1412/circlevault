@@ -105,6 +105,12 @@ fun AppRoot(vm: MainVM = viewModel()) {
                     else -> SettingsTab(vm)
                 }
             }
+            vn.circlevault.app.Drive.uploading?.let { what ->
+                Column(Modifier.fillMaxWidth().background(c.surface2).padding(horizontal = 14.dp, vertical = 8.dp)) {
+                    Text("Đang lưu \"$what\" lên Google Drive · ${vn.circlevault.app.Drive.upDone}/${vn.circlevault.app.Drive.upTotal}", color = c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Bar(if (vn.circlevault.app.Drive.upTotal > 0) vn.circlevault.app.Drive.upDone.toFloat() / vn.circlevault.app.Drive.upTotal else 0f, color = c.cyan)
+                }
+            }
             Editor.busy?.let { label ->
                 Column(Modifier.fillMaxWidth().background(c.surface2).padding(horizontal = 14.dp, vertical = 8.dp)) {
                     Text(label, color = c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -117,6 +123,7 @@ fun AppRoot(vm: MainVM = viewModel()) {
         if (vm.nowPlaying) NowPlaying(vm, onClose = { vm.nowPlaying = false })
         vm.playingVideo?.let { VideoScreen(it, onClose = { vm.playingVideo = null }) }
         vm.cutting?.let { CutScreen(vm, it) }
+        vm.partyUrl?.let { PartyScreen(it) { vm.partyUrl = null } }
         if (vm.merging) MergeScreen(vm)
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 140.dp))
     }

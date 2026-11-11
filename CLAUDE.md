@@ -58,6 +58,10 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   - `devices.py`: ghép thiết bị cho chế độ Wi-Fi – middleware `Guard` (máy tính 127.0.0.1 luôn qua; thiết bị khác cần cookie `cv_dev`,
     lưu băm SHA-256 ở `DATA/devices.json`; quyền `phone` = chỉ /dt + /api/phone/*, `full` = như máy tính). Mã ghép 8 ký tự, 10 phút,
     dùng một lần, sai 20 lần/10 phút thì khóa. Tab Lưu Trữ: danh sách thiết bị (đổi quyền, đổi tên, thu hồi) + nút Thêm thiết bị (QR). Thử tên file tiếng Việt bằng Playwright trên Linux cần `LANG=C.UTF-8`.
+  - `gdrive.py`: Google Drive trên PC, router `/api/gdrive/*` (chỉ máy này). OAuth client "Desktop app" người dùng tự tạo (nhập file JSON
+    ở tab Lưu Trữ), đăng nhập loopback `/api/gdrive/auth/callback` (PKCE), nhiều tài khoản + tài khoản đang chọn + thư mục gốc
+    (đổi được; drive.file chỉ thấy thư mục app tạo), DATA/gdrive.json giữ refresh token. Tải lên resumable 8 MB/phần, playlist = thư mục
+    con, nhớ file đã tải (`uploaded`) để không trùng. Nút "☁ Lưu lên Drive" ở Nghe Nhạc. Hướng dẫn tạo client: artifact "Kết nối Google Drive".
   - Video tải về luôn ra .mp4 (`FFmpegVideoRemuxer`, cấu hình `video_format`: mp4 | original).
   - `ytdlp_update.py`: tải wheel yt-dlp (+ yt-dlp-ejs đúng phiên bản) từ PyPI vào `DATA/pylib`; `app/__init__.py` ưu tiên thư mục này.
 - `frontend/` – JS thuần, không build. Theme màu: `THEMES` trong app.js + khối `:root[data-theme=…]` trong app.css (localStorage `cv-theme`, không có = theo Windows). `js/app.js` định nghĩa `window.CV` (api, esc, toast, fmt…, `views`) dùng chung cho
@@ -96,6 +100,10 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   (jitpack, tự lấy luồng âm thanh; UA visionOS). Lưu bài YouTube về máy (`DJob.online`) → hàng chờ `Prefs.syncQueue` →
   `POST /api/phone/saved` → PC hiện khung "Điện thoại vừa lưu…" ở tab Nghe Nhạc (`GET /api/phone/saved`, tải/ bỏ qua, chỉ máy này).
   Spotify: không làm (DRM, người dùng đã chọn bỏ).
+  Đợt 3: tab Online chia YouTube / Google Drive / Xem chung. `Drive.kt`: Google Identity AuthorizationClient (quyền drive.file,
+  client Android theo gói + SHA-1 khóa ký), nhiều tài khoản (Prefs.gdAccounts/gdActive), chọn thư mục gốc; phát `cvgd://<id>?a=<email>`
+  (ResolvingDataSource gắn Bearer), tải về (`DJob.drive`, OTrack.gd), đưa bài lên (resumable). `ui/Party.kt`: `GET /api/phone/party`
+  → phòng đang mở trên PC; vào phòng bằng link/QR → WebView trang phòng (toàn màn hình qua onShowCustomView).
   Phát hành: job `android` trong release.yml đính `CircleVault-Android.apk` vào Release 2 repo; link cố định
   `…/circlevault-releases/releases/latest/download/CircleVault-Android.apk`.
 - `tools/dong_goi_app.py` chuẩn bị `desktop/res/`; `tools/kiem_tra.py` kiểm tra cú pháp + liên kết file.

@@ -43,9 +43,29 @@ import vn.circlevault.app.Store
 import vn.circlevault.app.YouTube
 import vn.circlevault.app.fmtDur
 
-/* ------------------------------------------------------------------ tab Online: YouTube (qua máy tính hoặc trực tiếp) */
+/* ------------------------------------------------------------------ tab Online: YouTube · Google Drive · Xem chung */
 @Composable
 fun OnlineTab(vm: MainVM) {
+    val c = cv
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("YouTube", "Google Drive", "Xem chung").forEachIndexed { i, t ->
+                BButton(t, { vm.onlineSeg = i }, Modifier.weight(1f), small = true, color = if (vm.onlineSeg == i) c.green else c.surface)
+            }
+        }
+        Box(Modifier.weight(1f)) {
+            when (vm.onlineSeg) {
+                1 -> DriveSection(vm)
+                2 -> PartySection(vm)
+                else -> YouTubePane(vm)
+            }
+        }
+    }
+}
+
+/* ---- YouTube (qua máy tính hoặc trực tiếp) */
+@Composable
+private fun YouTubePane(vm: MainVM) {
     val c = cv
     val focus = LocalFocusManager.current
     val lib by Store.lib.collectAsState()

@@ -48,6 +48,7 @@ data class DJob(
     val coverAuth: Boolean = true,
     val online: OnlineTrack? = null,                 // bài YouTube: link thật lấy lúc tải
     val onlinePlaylist: Pair<Int, String>? = null,   // lưu vào playlist này trên điện thoại
+    val drive: Pair<String, String>? = null,         // (email, id file) – tải từ Google Drive
 )
 
 /** Hàng đợi tải: lần lượt từng file, tải dở thì lần sau tải tiếp (Range) từ file .part. */
@@ -199,7 +200,15 @@ class DownloadService : Service() {
             dest.parentFile?.mkdirs()
             var have = if (part.exists()) part.length() else 0L
             var total = j.total
-            val rb = if (j.online != null) Request.Builder().url(j.url) else Api.authed(j.url)
+            if (j.drive != null) {
+                extra = mapOf("Authorization" to "Bearer " + try {
+                    Drive.tokenBlocking(this, j.drive!!.first)
+                } catch (e: Throwable) {
+                    throw IOException("Mở app CircleVault → Online → Drive để cấp quyền Google Drive lại.")
+                })
+            }
+            // KHÔNG gửi mã ghép của máy tính tới YouTube / Google
+            val rb = if (j.online != null || j.drive != null) Request.Builder().url(j.url) else Api.authed(j.url)
             extra.forEach { (k, v) -> rb.header(k, v) }
             if (have > 0) rb.header("Range", "bytes=$have-")
             Api.http.newBuilder().readTimeout(60, TimeUnit.SECONDS).build().newCall(rb.build()).execute().use { r ->
@@ -239,6 +248,26 @@ class DownloadService : Service() {
             val cover = j.coverUrl?.let { saveCover(it, j) }
             j.track?.let { Store.addTrack(OTrack(it.id, it.title, it.artist, it.duration, dest.length(), dest.path, cover)) }
             j.video?.let { Store.addVideo(OVideo(it.id, it.title, it.duration, dest.length(), dest.path, cover)) }
+            j.drive?.let { (_, gid) ->
+                val mmr = android.media.MediaMetadataRetriever()
+                val meta = runCatching {
+                    mmr.setDataSource(dest.path)
+                    Triple(
+                        mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE),
+                        mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST),
+                        (mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L) / 1000.0,
+                    )
+                }.getOrDefault(Triple(null, null, 0.0))
+                runCatching { mmr.release() }
+                val title = meta.first?.takeIf { it.isNotBlank() } ?: j.title
+                if (dest.extension.lowercase() in setOf("mp4", "mkv", "mov", "m4v")) {
+                    Store.addVideo(OVideo(Prefs.nextLocalId(), title, meta.third, dest.length(), dest.path, null))
+                } else {
+                    val id = Store.byGd(gid)?.id ?: Prefs.nextLocalId()
+                    Store.addTrack(OTrack(id, title, meta.second, meta.third, dest.length(), dest.path, null, gd = gid))
+                    j.onlinePlaylist?.let { (pid, name) -> Store.addToPlaylist(pid, name, id) }
+                }
+            }
             j.online?.let { o ->
                 val id = Store.byYt(o.yt)?.id ?: Prefs.nextLocalId()
                 Store.addTrack(OTrack(id, o.title, o.artist, o.duration, dest.length(), dest.path, cover, yt = o.yt))
