@@ -24,6 +24,23 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     sao lưu `CircleVault-truoc-VH/<mã>/`, nhớ kích thước + mtime để báo "Steam đã ghi đè" → Cài lại; Gỡ trả file gốc.
     (3) `GET /api/translate/vh/steam`: game Steam đã cài (registry + libraryfolders.vdf + appmanifest). Gói VH mẫu của người dùng là
     hàng đã mua – KHÔNG đưa nội dung vào repo.
+  - `langscan.py`: Việt hóa game chỉ cần thư mục game – quét nền có tiến độ (`POST /api/translate/games/scan` → `GET …/scan/<job>`:
+    phase list/engine/files, done/total/bytes, found, strings; frontend vẽ thanh tiến độ sọc chạy + kính lúp). Nhận Ren'Py / RPG Maker /
+    Unity Localization qua `gametr._specials`, rồi lục file chữ (.json .csv .tsv .xml .po .ini .cfg .properties .lang .strings .yaml .txt
+    .ks…) và TextAsset trong .assets/.bundle (UnityPy). Mỗi định dạng trả (start, end, chữ, ngữ cảnh, hàm mã hóa) để ghi đè ĐÚNG CHỖ, giữ
+    nguyên định dạng; CSV chọn cột theo tiêu đề ngôn ngữ (ghi tiếng Việt thay cột gốc). Chấm điểm file ngôn ngữ (thư mục loc/lang/text…,
+    tên en/english…), đoán ngôn ngữ (chữ viết + từ thường gặp), bật sẵn file ngôn ngữ gốc. Dự án engine `files` hoặc kèm `extra`
+    (mã giữ nguyên kiểu `generic`); sao lưu `CircleVault-ban-goc/`, đọc lại từ bản sao lưu. Engine chưa đọc được → `hints`.
+    Ngữ cảnh cho Claude (`gametr._context`): `brief` (bối cảnh game – `POST /games/<id>/brief` để Claude tự đọc mẫu chữ rồi viết +
+    thuật ngữ), `glossary` riêng game, `who`/`ctx` từng câu, `_sig` trong khóa bộ nhớ dịch. Không có API key: `GET /games/<id>/export`
+    (file nhờ Claude chat dịch) → `POST /games/<id>/import` (JSON {"số": "dịch"}).
+  - `novel.py`: truyện chữ (.txt/.epub không DRM/.html/.md/dán văn bản), tách chương, dịch nền theo lô đoạn (`kind="novel"`,
+    SYSTEM_NOVEL), sửa từng đoạn, xuất EPUB3/TXT vào `<ổ truyện>/Truyen dich/`. DATA/translate/novels/<id>/novel.json.
+  - `learn.py`: tab Học (`/api/learn/*`, chỉ máy này): môn ielts/ja/zh/ko → mục (`SUBJECTS`) → bộ thẻ (bảng `learn_decks`,
+    `learn_cards` có cột SRS kiểu Anki, `learn_log` theo ngày học từ 4 giờ sáng). Bảng Hiragana/Katakana/Hangul/Pinyin có sẵn
+    (`_builtin`). Dữ liệu khác nhập bằng `POST /api/learn/import` (JSON {"decks":[{subject,section,name,level,cards:[{front,reading,
+    meaning,example,example_vi,extra}]}]} hoặc CSV/TSV) – định dạng ở docstring đầu file. Giao diện `frontend/js/learn.js`
+    (thẻ ghi nhớ / trắc nghiệm / gõ đáp án, phím Space 1–4 Esc, đọc phát âm bằng speechSynthesis).
   - `party.py`: phòng xem chung. `router` /api/party (chỉ app chính dùng) + `party_app` chạy cổng app+1 (chỉ có /r/<mã>,
     /r/<mã>/ws, /r/<mã>/media, tĩnh /p = frontend). Bạn bè/đường hầm chỉ chạm party_app, không thấy API chính.
     Đồng bộ: máy chủ giữ {playing,pos,rate,at}, client tự tính theo đồng hồ máy chủ (ping/pong).
@@ -80,8 +97,9 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
 - `frontend/` – JS thuần, không build. Theme màu: `THEMES` trong app.js + khối `:root[data-theme=…]` trong app.css (localStorage `cv-theme`, không có = theo Windows). `js/app.js` định nghĩa `window.CV` (api, esc, toast, fmt…, `views`) dùng chung cho
   `js/eq.js` (Engine Web Audio + giao diện EQ 10 dải, preset `PRESETS`) và `js/music.js` (thư viện nhạc, thanh phát nhạc).
   `js/watch.js`: tab Xem Online + Xem Chung. `party.html` + `js/party.js`: trang phòng (không dùng app.js).
-  `js/translate.js`: tab Dịch (truyện/game/dịch nhanh/cài đặt).
-  Định tuyến bằng hash: `#home #queue #library #music #online #party #translate #storage`.
+  `js/translate.js`: tab Dịch – menu nhóm bên trái (`NAV`): Truyện tranh, Truyện chữ / Việt hóa game, Gói Việt hóa có sẵn, Dịch màn hình
+  game / Dịch nhanh, Cài đặt. `js/learn.js`: tab Học.
+  Định tuyến bằng hash: `#home #queue #library #music #online #party #translate #learn #storage`.
 - `desktop/` – Electron theo mẫu repo `aq-autotest` (`desktop/`): `main.js` chạy `pythonw -m app` bằng Python nhúng
   (`resources/python`, ._pth có `..\app\backend`), mã ở `resources/app/{backend,frontend}`, ffmpeg + Deno ở `resources/bin`
   (thêm vào PATH backend). Cầu nối trang ↔ app: `window.cvDesktop` (onUpdate/getUpdate/updateAct/pickFolder/restartServer).

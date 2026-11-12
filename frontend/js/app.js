@@ -834,10 +834,10 @@ function refreshView() {
 }
 function route() {
   const v = (location.hash || '#home').slice(1);
-  S.view = ['home', 'queue', 'library', 'music', 'online', 'party', 'translate', 'storage'].includes(v) ? v : 'home';
+  S.view = ['home', 'queue', 'library', 'music', 'online', 'party', 'translate', 'learn', 'storage'].includes(v) ? v : 'home';
   $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.view === S.view));
   document.body.classList.toggle('view-music', S.view === 'music');
-  document.body.classList.toggle('view-wide', S.view === 'translate');
+  document.body.classList.toggle('view-wide', S.view === 'translate' || S.view === 'learn');
   $$('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== S.view);
   refreshView();
 }

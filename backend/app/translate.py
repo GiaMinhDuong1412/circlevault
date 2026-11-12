@@ -121,7 +121,8 @@ def glossary(s: dict) -> list[tuple[str, str]]:
 # ------------------------------------------------------------------ bộ nhớ dịch
 def _cache_key(s: dict, text: str) -> str:
     sig = s["engine"] + "|" + (s["claude_model"] if s["engine"] == "claude" else "") + "|" + s["source"] + "|" \
-        + s.get("glossary", "") + "|" + (s.get("style", "") if s["engine"] == "claude" else "")
+        + s.get("glossary", "") + "|" + (s.get("style", "") if s["engine"] == "claude" else "") \
+        + ("|" + s["_sig"] if s.get("_sig") and s["engine"] == "claude" else "")
     return hashlib.sha1((sig + "\0" + text).encode("utf-8")).hexdigest()
 
 
@@ -204,6 +205,29 @@ Quy tắc:
 - Giữ số lần xuống dòng tương tự bản gốc nếu bản gốc có xuống dòng.
 - Trả về đúng mọi id được gửi, mỗi id một bản dịch, không thêm chú thích.{terms}{style}"""
 
+SYSTEM_GAME = """Bạn là dịch giả game chuyên nghiệp, Việt hóa game từ {src} sang tiếng Việt cho người chơi Việt Nam.
+
+Quy tắc:
+- Các câu được gửi theo đúng thứ tự trong file game. Đọc cả lô để hiểu tình huống, ai đang nói với ai, rồi mới dịch.
+- Dịch đúng ngữ cảnh game: thể loại, bối cảnh, giọng nhân vật, cách xưng hô trong "Bối cảnh game" (nếu có) và giữ nhất quán.
+- "who" là nhân vật đang nói; "ctx" là tên khóa / bảng / file chứa câu (gợi ý chữ đó là nút menu, tên vật phẩm, mô tả kỹ năng, thoại…).
+- Chữ giao diện (nút, menu, cài đặt) dịch ngắn gọn như game Việt: "Start" → "Bắt đầu", "Options" → "Tùy chọn", "Load" → "Tải game".
+- Tên riêng nhân vật, địa danh, chiêu thức: giữ nguyên trừ khi bảng thuật ngữ có cách dịch hoặc tên có nghĩa nên Việt hóa.
+- Mã dạng ⟦số⟧ là mã của game (biến, màu chữ, thẻ, xuống dòng): giữ đủ và đúng từng mã, đặt vào vị trí hợp lý, không dịch, không thêm.
+- Giữ số dòng tương tự bản gốc nếu có xuống dòng. Không thêm chú thích, không bỏ câu.
+- Câu là ký hiệu, mã, tên file hoặc không cần dịch thì trả lại nguyên văn.
+- Trả về đúng mọi id được gửi, mỗi id một bản dịch.{terms}{style}"""
+
+SYSTEM_NOVEL = """Bạn là dịch giả văn học chuyên nghiệp, dịch truyện chữ (tiểu thuyết, light novel, web novel) từ {src} sang tiếng Việt.
+
+Quy tắc:
+- Các đoạn được gửi liên tiếp trong cùng một chương: đọc hết để hiểu mạch truyện rồi dịch, giữ văn phong truyện tiếng Việt tự nhiên, trôi chảy.
+- Chọn xưng hô theo thể loại và quan hệ nhân vật (tiên hiệp/kiếm hiệp: ta – ngươi, huynh – đệ…; hiện đại: tôi – cậu, anh – em…) và giữ nhất quán.
+- Giữ nguyên tên riêng trừ khi bảng thuật ngữ có cách dịch; tên Hán Việt (truyện Trung) thì phiên âm Hán Việt.
+- Không tóm tắt, không bỏ ý, không thêm chú thích của người dịch. Mỗi đoạn dịch thành một đoạn.
+- Mã dạng ⟦số⟧ giữ nguyên.
+- Trả về đúng mọi id được gửi, mỗi id một bản dịch.{terms}{style}"""
+
 SCHEMA = {"type": "object", "additionalProperties": False, "required": ["items"],
           "properties": {"items": {"type": "array", "items": {
               "type": "object", "additionalProperties": False, "required": ["id", "vi"],
@@ -211,7 +235,37 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": ["items"]
 
 
 def _claude(texts: list[str], s: dict, image: bytes | None, kind: str, context: str,
-            who: list[str] | None = None) -> list[str]:
+            who: list[str] | None = None, notes: list[str] | None = None) -> list[str]:
+    terms = glossary(s)
+    system = {"gamefile": SYSTEM_GAME, "novel": SYSTEM_NOVEL}.get(kind, SYSTEM).format(
+        src=LANGS.get(s["source"], "tiếng nước ngoài") if s["source"] != "auto" else "ngôn ngữ gốc",
+        img_rule=" và theo ảnh được gửi kèm (nhìn nhân vật đang nói để chọn xưng hô)" if image else "",
+        terms=("\n\nBảng thuật ngữ (bắt buộc dùng):\n" + "\n".join(f"- {a} → {b}" for a, b in terms)) if terms else "",
+        style=("\n\nYêu cầu thêm của người đọc: " + s["style"].strip()) if s.get("style", "").strip() else "")
+    items = [{"id": i, "text": t, **({"who": who[i]} if who and who[i] else {}), **({"ctx": notes[i]} if notes and notes[i] else {})}
+             for i, t in enumerate(texts)]
+    content: list[dict] = []
+    if image:
+        import base64
+        content.append({"type": "image", "source": {"type": "base64", "media_type": _mime(image),
+                                                     "data": base64.standard_b64encode(image).decode("ascii")}})
+    where = {"comic": "các khung thoại trên một trang truyện tranh, theo thứ tự đọc",
+             "gamefile": "câu thoại và chữ giao diện lấy từ file game, theo thứ tự trong kịch bản",
+             "novel": "các đoạn văn tiếp theo của chương truyện"
+             }.get(kind, "chữ trên màn hình game")
+    content.append({"type": "text", "text": (f"{context}\n" if context else "") + f"Dịch {where}:\n"
+                    + json.dumps(items, ensure_ascii=False)})
+    data = claude_json(s, system, content, SCHEMA, "low" if kind == "game" else "medium")
+    try:
+        got = {int(it["id"]): it["vi"] for it in data["items"]}
+    except (ValueError, KeyError, TypeError):
+        raise TranslateError("Claude trả kết quả không đúng định dạng. Thử dịch lại.")
+    return [got.get(i, "") for i in range(len(texts))]
+
+
+def claude_json(s: dict, system: str, content: list[dict], schema: dict, effort: str = "medium",
+                max_tokens: int = 16000) -> dict:
+    """Gọi Claude với structured output (JSON theo schema), đổi lỗi API thành TranslateError dễ hiểu."""
     try:
         import anthropic
     except ImportError as e:
@@ -219,30 +273,12 @@ def _claude(texts: list[str], s: dict, image: bytes | None, kind: str, context: 
     key = s.get("claude_key") or None
     if not key and not os.environ.get("ANTHROPIC_API_KEY"):
         raise TranslateError("Chưa nhập API key của Claude. Vào phần Cài đặt bộ dịch để nhập, hoặc chuyển sang Google Dịch.")
-    terms = glossary(s)
-    system = SYSTEM.format(
-        src=LANGS.get(s["source"], "tiếng nước ngoài") if s["source"] != "auto" else "ngôn ngữ gốc",
-        img_rule=" và theo ảnh được gửi kèm (nhìn nhân vật đang nói để chọn xưng hô)" if image else "",
-        terms=("\n\nBảng thuật ngữ (bắt buộc dùng):\n" + "\n".join(f"- {a} → {b}" for a, b in terms)) if terms else "",
-        style=("\n\nYêu cầu thêm của người đọc: " + s["style"].strip()) if s.get("style", "").strip() else "")
-    items = [{"id": i, "text": t, **({"who": who[i]} if who and who[i] else {})} for i, t in enumerate(texts)]
-    content: list[dict] = []
-    if image:
-        import base64
-        content.append({"type": "image", "source": {"type": "base64", "media_type": _mime(image),
-                                                     "data": base64.standard_b64encode(image).decode("ascii")}})
-    where = {"comic": "các khung thoại trên một trang truyện tranh, theo thứ tự đọc",
-             "gamefile": "câu thoại và chữ giao diện lấy từ file game, theo thứ tự trong kịch bản (who = nhân vật đang nói)"
-             }.get(kind, "chữ trên màn hình game")
-    content.append({"type": "text", "text": (f"{context}\n" if context else "") + f"Dịch {where}:\n"
-                    + json.dumps(items, ensure_ascii=False)})
-    client = anthropic.Anthropic(api_key=key, max_retries=3, timeout=180)
+    client = anthropic.Anthropic(api_key=key, max_retries=3, timeout=300)
     try:
         resp = client.beta.messages.create(
-            model=s["claude_model"], max_tokens=16000, system=system,
+            model=s["claude_model"], max_tokens=max_tokens, system=system,
             messages=[{"role": "user", "content": content}],
-            output_config={"effort": "low" if kind in ("game", "gamefile") else "medium",
-                           "format": {"type": "json_schema", "schema": SCHEMA}},
+            output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
             betas=["server-side-fallback-2026-07-01"], fallbacks="default")
     except anthropic.AuthenticationError:
         raise TranslateError("API key của Claude không đúng hoặc đã bị thu hồi.")
@@ -260,16 +296,14 @@ def _claude(texts: list[str], s: dict, image: bytes | None, kind: str, context: 
     except anthropic.APIConnectionError:
         raise TranslateError("Không kết nối được tới Claude. Kiểm tra mạng.")
     if resp.stop_reason == "refusal":
-        raise TranslateError("Claude không dịch trang này (nội dung bị chặn). Thử Google Dịch cho trang này.")
+        raise TranslateError("Claude không dịch phần này (nội dung bị chặn). Thử Google Dịch cho phần này.")
     if resp.stop_reason == "max_tokens":
-        raise TranslateError("Trang có quá nhiều chữ, bản dịch bị cắt. Thử dịch lại.")
+        raise TranslateError("Quá nhiều chữ trong một lần, bản dịch bị cắt. Thử dịch lại.")
     text = next((b.text for b in resp.content if b.type == "text"), "")
     try:
-        got = {int(it["id"]): it["vi"] for it in json.loads(text)["items"]}
-    except (ValueError, KeyError, TypeError):
+        return json.loads(text)
+    except ValueError:
         raise TranslateError("Claude trả kết quả không đúng định dạng. Thử dịch lại.")
-    return [got.get(i, "") for i in range(len(texts))]
-
 
 def _mime(data: bytes) -> str:
     if data[:8] == b"\x89PNG\r\n\x1a\n":
@@ -294,7 +328,8 @@ def _small_jpeg(im) -> bytes:
 
 
 def translate_texts(texts: list[str], s: dict | None = None, image: bytes | None = None,
-                    kind: str = "comic", context: str = "", who: list[str] | None = None) -> list[str]:
+                    kind: str = "comic", context: str = "", who: list[str] | None = None,
+                    notes: list[str] | None = None) -> list[str]:
     s = s or settings()
     keys = [_cache_key(s, t) for t in texts]
     have = _cache_get(list(set(keys)))
@@ -302,11 +337,13 @@ def translate_texts(texts: list[str], s: dict | None = None, image: bytes | None
     if todo:
         if s["engine"] == "claude":
             speaker = {t: w for t, w in zip(texts, who or []) if w}
+            note = {t: n for t, n in zip(texts, notes or []) if n}
             res = []
             for i in range(0, len(todo), 80):
                 part = todo[i:i + 80]
                 res += _claude(part, s, image if s.get("send_image") else None, kind, context,
-                               [speaker.get(t, "") for t in part] if who else None)
+                               [speaker.get(t, "") for t in part] if who else None,
+                               [note.get(t, "") for t in part] if notes else None)
         else:
             res = _google(todo, s)
         new = {_cache_key(s, t): v.strip() for t, v in zip(todo, res)}

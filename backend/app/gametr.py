@@ -14,6 +14,7 @@ Không làm game có mã hóa/chống chỉnh sửa (không vượt bảo vệ).
 from __future__ import annotations
 
 import copy
+import hashlib
 import io
 import json
 import os
@@ -24,12 +25,13 @@ import threading
 import time
 import uuid
 import zlib
+from collections import Counter
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from . import config, translate, unitygame
+from . import config, langscan, translate, unitygame
 
 router = APIRouter(prefix="/api/translate/games", dependencies=[Depends(translate._local_only)])
 GAMES = config.DATA / "translate" / "games"
@@ -51,11 +53,17 @@ CODES = {
     "rpg": re.compile(r"\\[A-Za-z]+\[[^\]]*\]|\\[A-Za-z]+<[^>]*>|\\[{}$.|!><^\\]|%\d"),
     # Unity: Smart String {0} {name} {value:N0}, thẻ rich text <color=#fff> </b> <sprite name=x>, %s
     "unity": re.compile(r"\{[^{}]*\}|<[^<>]+>|%[sd]"),
+    # file chữ bất kỳ (JSON/CSV/XML/.ks…): {0} <b> %s %1$s [p] \n $var
+    "generic": langscan.GENERIC_CODES,
 }
 
 
 def code_kind(engine: str) -> str:
-    return engine if engine in ("renpy", "unity") else "rpg"
+    return engine if engine in ("renpy", "unity", "generic") else "rpg"
+
+
+def kind_of(p: dict) -> str:
+    return "generic" if p["engine"] == "files" or p.get("extra") else code_kind(p["engine"])
 
 
 def protect(text: str, kind: str) -> tuple[str, list[str]]:
@@ -856,7 +864,7 @@ def detect(path: Path) -> tuple[str, Path]:
                     "và RPG Maker MV/MZ (có data/System.json hoặc www/data/System.json).")
 
 
-ENGINE_NAMES = {"renpy": "Ren'Py", "rpgmv": "RPG Maker MV", "rpgmz": "RPG Maker MZ", "unity": "Unity"}
+ENGINE_NAMES = {"renpy": "Ren'Py", "rpgmv": "RPG Maker MV", "rpgmz": "RPG Maker MZ", "unity": "Unity", "files": "File chữ"}
 
 
 def _proj_dir(pid: str) -> Path:
@@ -885,7 +893,9 @@ def _summary(p: dict) -> dict:
             "bad": sum(1 for it in items if it.get("bad")), "edited": sum(1 for it in items if it.get("edited")),
             "chars": sum(len(it["t"]) for it in items), "status": p.get("status", "idle"), "error": p.get("error"),
             "applied": p.get("applied"), "opts": p.get("opts", {}), "created": p["created"],
-            "running": WORKER.current == p["id"], "warnings": p.get("warnings", [])}
+            "running": WORKER.current == p["id"], "warnings": p.get("warnings", []), "brief": p.get("brief", ""),
+            "glossary": p.get("glossary", ""), "lang": p.get("lang") or "en",
+            "sources": [{"label": x.get("label") or x.get("rel"), "count": x.get("count", 0)} for x in p.get("extra") or []]}
 
 
 def estimate(chars: int) -> dict:
@@ -896,44 +906,143 @@ def estimate(chars: int) -> dict:
     return {m: round(tin / 1e6 * a + tout / 1e6 * b, 2) for m, (a, b) in price.items()}
 
 
+def _specials(root: Path, job: dict) -> list[dict]:
+    """Nguồn chữ của engine đã có bộ đọc riêng (kịch bản Ren'Py, data RPG Maker, bảng chữ Unity Localization)."""
+    out: list[dict] = []
+
+    def add(sid, kind, label, engine, eroot, raw, info, covers):
+        texts = [it["t"] for it in raw if it["t"].strip()]
+        if not texts:
+            return
+        out.append({"id": sid, "kind": kind, "engine": engine, "label": label, "rel": str(eroot.relative_to(root)) if eroot != root else "",
+                    "count": len(texts), "lang": langscan.lang_of_texts(texts), "loc": True, "sample": [t[:120] for t in texts[:3]],
+                    "_items": raw, "_info": info, "_covers": covers})
+    try:
+        if rpg_dirs(root):
+            job["text"] = "Đang đọc dữ liệu RPG Maker…"
+            raw, info = scan_rpg(root)
+            eng, _web, data = rpg_dirs(root)
+            add("rpg", "rpg", f"Dữ liệu {ENGINE_NAMES[eng]} ({data.relative_to(root)})", eng, root, raw, info,
+                [str(data.relative_to(root)).replace("\\", "/") + "/"])
+            return out
+    except GameError as e:
+        job.setdefault("_warn", []).append(str(e))
+    for cand in (root / "game", root):
+        if cand.is_dir() and (any(cand.glob("*.rpy")) or any(cand.glob("*.rpa")) or (cand / "script.rpyc").exists()
+                              or (cand.name == "game" and any(cand.glob("**/*.rpyc")))):
+            job["text"] = "Đang đọc kịch bản Ren'Py…"
+            try:
+                raw, info = scan_renpy(cand)
+                add("renpy", "renpy", f"Kịch bản Ren'Py ({cand.relative_to(root) if cand != root else '.'})", "renpy", cand, raw, info,
+                    [str(cand.relative_to(root)).replace("\\", "/") + "/"] if cand != root else [])
+            except GameError as e:
+                job.setdefault("_warn", []).append(str(e))
+            return out
+    uroot = unitygame.unity_root(root)
+    if uroot == root and unitygame.string_bundles(root):
+        job["text"] = "Đang đọc bảng chữ Unity Localization…"
+        try:
+            raw, info = unitygame.scan(root)
+            u = info["unity"]
+            add("unity", "unity-loc", f"Bảng chữ Unity Localization ({u.get('locale') or '?'})", "unity", root, raw, info,
+                [b.replace("\\", "/") for b in u["bundles"]] + ([u["catalog"].replace("\\", "/")] if u.get("catalog") else []))
+        except unitygame.GameError as e:
+            job.setdefault("_warn", []).append(str(e))
+    return out
+
+
+class ScanStart(BaseModel):
+    path: str
+
+
+@router.post("/scan")
+def scan_start(body: ScanStart):
+    path = Path(body.path.strip().strip('"'))
+    if not path.exists():
+        raise HTTPException(400, "Không thấy thư mục này.")
+    return {"job": langscan.new_job(str(path), _prefer(), _specials)}
+
+
+@router.get("/scan/{jid}")
+def scan_state(jid: str):
+    j = langscan.get_job(jid)
+    if not j:
+        raise HTTPException(404, "Lượt tìm đã hết hạn, bấm Tìm lại.")
+    out = langscan.public_job(j)
+    if j.get("_warn") and out.get("result"):
+        out["result"] = {**out["result"], "hints": j["_warn"] + out["result"]["hints"]}
+    return out
+
+
+@router.post("/scan/{jid}/cancel")
+def scan_cancel(jid: str):
+    langscan.cancel(jid)
+    return {"ok": True}
+
+
+def _prefer() -> str:
+    src = translate.settings().get("source") or "en"
+    return {"zh-CN": "zh", "auto": "en"}.get(src, src)
+
+
 class ScanIn(BaseModel):
     path: str
+    job: str | None = None
+    pick: list[str] | None = None
+
+
+TR_LANG = {"en": "en", "ja": "ja", "ko": "ko", "zh": "zh-CN"}
 
 
 @router.post("")
 def create(body: ScanIn):
     path = Path(body.path.strip().strip('"'))
-    try:
-        engine, root = detect(path)
-        if engine == "renpy":
-            raw, info = scan_renpy(root)
-        elif engine == "unity":
-            raw, info = unitygame.scan(root)
-        else:
-            raw, info = scan_rpg(root)
-    except (GameError, unitygame.GameError) as e:
-        raise HTTPException(400, str(e))
-    seen: dict[str, dict] = {}
+    job = langscan.get_job(body.job) if body.job else None
+    if not job or job.get("state") != "done":
+        job = {"_items": {}, "found": 0, "strings": 0, "done": 0, "total": 0}
+        try:
+            job["result"] = langscan.scan_folder(path, job, _prefer(), _specials)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    res = job["result"]
+    picked = set(body.pick) if body.pick is not None else {s["id"] for s in res["sources"] if s.get("on")}
+    chosen = [s for s in res["sources"] if s["id"] in picked]
+    if not chosen:
+        hints = (job.get("_warn") or []) + res.get("hints", [])
+        raise HTTPException(400, (hints[0] if hints else "Không tìm thấy file chữ nào trong thư mục này.")
+                            + " Có gói Việt hóa của nhóm dịch thì dùng 'Cài gói Việt hóa có sẵn'; không thì dùng Dịch màn hình game.")
+    groot = Path(res["root"])
+    special = next((s for s in chosen if s["kind"] in ("renpy", "rpg", "unity-loc")), None)
+    extra = [{k: v for k, v in s.items() if k not in ("sample",)} for s in chosen if s["kind"] in ("file", "textasset")]
+    info = (job.get("_infos") or {}).get(special["id"], {}) if special else {}
+    seen: set[str] = set()
     items = []
-    for it in raw:
-        t = it["t"]
-        if not t.strip() or not re.search(r"[A-Za-z]", t):
-            continue
-        key = ("u:" if it["kind"] in ("ui", "db", "name") and engine == "renpy" else "") + t
-        if key in seen:
-            continue
-        seen[key] = it
-        items.append({"t": t, "kind": it["kind"], "ctx": it.get("ctx", ""), "who": it.get("who", ""), "vi": None})
+    letters = re.compile(r"[A-Za-z぀-ヿ㐀-鿿가-힯]")
+    for s in ([special] if special else []) + [x for x in chosen if x is not special]:
+        engine = special["engine"] if special else "files"
+        for it in job["_items"].get(s["id"], []):
+            t = it["t"]
+            if not t.strip() or not letters.search(t):
+                continue
+            key = ("u:" if it["kind"] in ("ui", "db", "name") and engine == "renpy" else "") + t
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append({"t": t, "kind": it["kind"], "ctx": it.get("ctx", ""), "who": it.get("who", ""), "vi": None})
     if not items:
-        raise HTTPException(400, "Không tìm thấy câu chữ tiếng Anh nào để dịch.")
+        raise HTTPException(400, "Không tìm thấy câu chữ nào để dịch trong các file đã chọn.")
+    langs = Counter()
+    for s in chosen:
+        langs[s.get("lang")] += s["count"]
+    lang = langs.most_common(1)[0][0] or "en"
     pid = uuid.uuid4().hex[:12]
-    name = (path.parent.name if path.name.lower() in ("game", "www") or path.name.endswith("_Data") else path.name) or "Game"
-    p = {"id": pid, "name": name, "path": str(path), "root": str(root), "engine": engine, "created": time.time(),
-         "items": items, "status": "idle", "opts": {"font": True, "width": 50, "width_face": 40, "fonts": info.get("fonts", [])},
-         "warnings": info.get("errors", [])}
-    if engine == "unity":
+    eroot = groot / special["rel"] if special and special.get("rel") else groot
+    p = {"id": pid, "name": res.get("name") or groot.name or "Game", "path": str(groot), "root": str(eroot),
+         "engine": special["engine"] if special else "files", "created": time.time(), "items": items, "status": "idle",
+         "opts": {"font": bool(special) and special["engine"] != "unity", "width": 50, "width_face": 40, "fonts": info.get("fonts", [])},
+         "warnings": info.get("errors", []), "extra": extra, "lang": lang, "groot": str(groot)}
+    if special and special["engine"] == "unity":
         p["unity"] = info["unity"]
-        p["opts"]["font"] = False
     _save(p)
     return {**_summary(p), "estimate": estimate(sum(len(i["t"]) for i in items))}
 
@@ -993,6 +1102,9 @@ class OptsIn(BaseModel):
     font: bool | None = None
     width: int | None = None
     width_face: int | None = None
+    name: str | None = None
+    brief: str | None = None          # bối cảnh game (thể loại, nhân vật, xưng hô…) gửi kèm mỗi lô cho Claude
+    glossary: str | None = None       # thuật ngữ riêng của game: "gốc = dịch" mỗi dòng
 
 
 @router.patch("/{pid}")
@@ -1000,9 +1112,146 @@ def set_opts(pid: str, body: OptsIn):
     with _lock:
         p = _load(pid)
         for k, v in body.model_dump(exclude_none=True).items():
-            p["opts"][k] = max(20, min(120, v)) if k.startswith("width") else v
+            if k in ("brief", "glossary"):
+                p[k] = v[:8000]
+            elif k == "name":
+                p["name"] = v.strip()[:120] or p["name"]
+            else:
+                p["opts"][k] = max(20, min(120, v)) if k.startswith("width") else v
         _save(p)
     return _summary(p)
+
+
+BRIEF_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["brief", "terms"],
+                "properties": {"brief": {"type": "string"},
+                               "terms": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                                                                    "required": ["src", "vi"],
+                                                                    "properties": {"src": {"type": "string"}, "vi": {"type": "string"}}}}}}
+BRIEF_SYSTEM = """Bạn là trưởng nhóm Việt hóa game. Trước khi cả nhóm dịch, bạn đọc mẫu chữ trong file game và viết "Bối cảnh game"
+ngắn gọn bằng tiếng Việt để các lượt dịch sau dịch đúng ngữ cảnh. Bối cảnh gồm (mỗi mục 1–3 dòng, gạch đầu dòng):
+- Thể loại và không khí (hài, kinh dị, kiếm hiệp, quản lý nhà hàng…), giọng văn nên dùng.
+- Bối cảnh/thế giới.
+- Nhân vật chính và tính cách, quan hệ; cách xưng hô nên dùng giữa họ (vd: Mira gọi người chơi là "anh", tự xưng "em").
+- Cách dịch chữ giao diện (ngắn gọn, thống nhất), những chữ nên giữ tiếng Anh (tên riêng, tên chiêu…).
+Kèm danh sách thuật ngữ quan trọng lặp lại nhiều (tên vật phẩm, kỹ năng, địa danh, chức danh) với cách dịch đề xuất; tên người giữ nguyên
+thì không cần đưa vào. Tối đa 40 thuật ngữ. Không bịa thông tin không có trong mẫu – thiếu thì ghi ngắn "chưa rõ"."""
+
+
+def _sample(p: dict, limit: int = 18000) -> str:
+    """Mẫu chữ đại diện: tên nhân vật hay nói, đầu kịch bản, rải đều phần còn lại."""
+    items = p["items"]
+    who = Counter(it.get("who") for it in items if it.get("who"))
+    lines, size = [], 0
+    step = max(1, len(items) // 400)
+    order = list(range(min(150, len(items)))) + list(range(150, len(items), step))
+    for i in order:
+        it = items[i]
+        t = it["t"].replace("\n", " ")[:300]
+        line = f"[{it.get('ctx') or it['kind']}]{' ' + it['who'] + ':' if it.get('who') else ''} {t}"
+        size += len(line)
+        if size > limit:
+            break
+        lines.append(line)
+    head = f"Tên game: {p['name']} ({ENGINE_NAMES.get(p['engine'], p['engine'])}), {len(items)} câu."
+    if who:
+        head += "\nNhân vật nói nhiều nhất: " + ", ".join(f"{w} ({n})" for w, n in who.most_common(15))
+    return head + "\n\nMẫu chữ (theo thứ tự trong game, [ngữ cảnh]):\n" + "\n".join(lines)
+
+
+@router.post("/{pid}/brief")
+def auto_brief(pid: str):
+    """Claude đọc mẫu chữ của game rồi viết bối cảnh + thuật ngữ (người dùng sửa lại được)."""
+    p = _load(pid)
+    s = translate.settings()
+    if not (s.get("claude_key") or os.environ.get("ANTHROPIC_API_KEY")):
+        raise HTTPException(400, "Cần API key của Claude (Cài đặt bộ dịch). Không có thì tự ghi bối cảnh vào ô bên dưới.")
+    try:
+        data = translate.claude_json(s, BRIEF_SYSTEM, [{"type": "text", "text": _sample(p)}], BRIEF_SCHEMA, "medium", 6000)
+    except translate.TranslateError as e:
+        raise HTTPException(502, str(e))
+    terms = [f"{t['src'].strip()} = {t['vi'].strip()}" for t in data.get("terms", []) if t.get("src", "").strip()][:60]
+    with _lock:
+        p = _load(pid)
+        p["brief"] = (data.get("brief") or "").strip()[:8000]
+        have = {ln.split("=", 1)[0].strip().lower() for ln in (p.get("glossary") or "").splitlines() if "=" in ln}
+        add = [t for t in terms if t.split("=", 1)[0].strip().lower() not in have]
+        p["glossary"] = "\n".join(x for x in [(p.get("glossary") or "").strip(), *add] if x)[:8000]
+        _save(p)
+    return {"brief": p["brief"], "glossary": p["glossary"]}
+
+
+EXPORT_HELP = """Hướng dẫn cho Claude: đây là chữ trong game "{name}" cần Việt hóa. Dịch từng câu sang tiếng Việt đúng ngữ cảnh game
+(xem Bối cảnh game và Thuật ngữ), giữ nguyên mọi mã như {{0}} <b> [p] %s \\n \\C[2] [name]. Trả lời bằng JSON dạng
+{{"<số>": "<bản dịch>", ...}} với đúng các số bên dưới (dịch một phần cũng được, lần sau gửi tiếp phần còn lại).
+"""
+
+
+@router.get("/{pid}/export")
+def export_for_claude(pid: str, only: str = "todo", limit: int = 400, offset: int = 0):
+    """File để nhờ Claude (chat trên claude.ai / app Claude) dịch, không cần API key. Nhập lại bằng /import."""
+    p = _load(pid)
+    rows = [(i, it) for i, it in enumerate(p["items"]) if only == "all" or it.get("vi") is None or (only == "bad" and it.get("bad"))]
+    rows = rows[offset:offset + max(1, min(limit, 2000))]
+    lines = [EXPORT_HELP.format(name=p["name"])]
+    if p.get("brief"):
+        lines.append("Bối cảnh game:\n" + p["brief"])
+    if p.get("glossary"):
+        lines.append("Thuật ngữ (bắt buộc dùng):\n" + p["glossary"])
+    data = {str(i): (f"[{it['who']}] " if it.get("who") else "") + it["t"] for i, it in rows}
+    lines.append(f"Câu cần dịch ({len(rows)} câu, mỗi câu kèm số; [Tên] ở đầu là người nói – không dịch phần đó):\n"
+                 + json.dumps(data, ensure_ascii=False, indent=1))
+    body = "\n\n".join(lines)
+    from fastapi.responses import Response
+    fname = re.sub(r"[^\w\-]+", "_", p["name"])[:40] or "game"
+    return Response(body, media_type="text/plain; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="viet-hoa-{fname}-{offset + 1}.txt"'})
+
+
+class ImportIn(BaseModel):
+    text: str
+
+
+@router.post("/{pid}/import")
+def import_translation(pid: str, body: ImportIn):
+    """Nhận bản dịch Claude trả lời (JSON {"số": "dịch"} hoặc mỗi dòng "số: dịch")."""
+    got: dict[int, str] = {}
+    text = body.text.strip()
+    m = re.search(r"\{.*\}", text, re.S)
+    if m:
+        try:
+            obj = json.loads(m.group(0))
+            if isinstance(obj, dict):
+                got = {int(k): str(v) for k, v in obj.items() if str(k).strip().isdigit() and isinstance(v, (str, int, float))}
+        except ValueError:
+            got = {}
+    if not got:
+        for ln in text.splitlines():
+            mm = re.match(r'^\s*"?(\d+)"?\s*[:\t|=]\s*"?(.*?)"?,?\s*$', ln)
+            if mm:
+                got[int(mm.group(1))] = mm.group(2).replace("\\n", "\n")
+    if not got:
+        raise HTTPException(400, "Không đọc được bản dịch. Dán nguyên câu trả lời JSON của Claude (dạng {\"12\": \"…\"}).")
+    kind = None
+    n = bad = 0
+    with _lock:
+        p = _load(pid)
+        kind = kind_of(p)
+        for i, vi in got.items():
+            if 0 <= i < len(p["items"]) and vi.strip():
+                it = p["items"][i]
+                if it.get("who") and vi.startswith(f"[{it['who']}]"):
+                    vi = vi[len(it["who"]) + 2:].lstrip()
+                _, codes = protect(it["t"], kind)
+                it["vi"] = vi
+                it["edited"] = False
+                if codes and any(c not in vi for c in codes):
+                    it["bad"] = True
+                    bad += 1
+                else:
+                    it.pop("bad", None)
+                n += 1
+        _save(p)
+    return {"ok": True, "imported": n, "bad": bad}
 
 
 @router.post("/{pid}/run")
@@ -1027,7 +1276,7 @@ def stop(pid: str):
 
 
 def _final(p: dict) -> list[dict]:
-    kind = code_kind(p["engine"])
+    kind = kind_of(p)
     out = []
     for it in p["items"]:
         vi = it.get("vi")
@@ -1048,13 +1297,21 @@ def apply(pid: str):
     if not root.exists():
         raise HTTPException(400, f"Không thấy thư mục game: {root}")
     try:
+        final = _final(p)
+        res = {}
         if p["engine"] == "renpy":
-            res = apply_renpy(root, _final(p), p["opts"])
+            res = apply_renpy(root, final, p["opts"])
         elif p["engine"] == "unity":
-            res = unitygame.apply(root, _final(p), p.get("unity") or {})
-        else:
-            res = apply_rpg(root, _final(p), p["opts"])
-    except (GameError, unitygame.GameError) as e:
+            res = unitygame.apply(root, final, p.get("unity") or {})
+        elif p["engine"] != "files":
+            res = apply_rpg(root, final, p["opts"])
+        if p.get("extra"):
+            ex = langscan.apply(Path(p.get("groot") or p["path"]), final, p["extra"], p.get("lang") or "en")
+            res["texts"] = res.get("texts", 0) + ex["texts"]
+            res["files"] = res.get("files", 0) + ex["files"]
+            if ex["errors"]:
+                res["errors"] = ex["errors"]
+    except (GameError, unitygame.GameError, RuntimeError) as e:
         raise HTTPException(400, str(e))
     except PermissionError:
         raise HTTPException(400, "Không ghi được vào thư mục game (đang mở game, hoặc game nằm trong Program Files). "
@@ -1071,7 +1328,11 @@ def restore(pid: str):
     p = _load(pid)
     root = Path(p["root"])
     try:
-        n = restore_renpy(root) if p["engine"] == "renpy" else unitygame.restore(root) if p["engine"] == "unity" else restore_rpg(root)
+        n = 0
+        if p.get("extra"):
+            n += langscan.restore(Path(p.get("groot") or p["path"]), p["extra"])
+        if p["engine"] != "files":
+            n += restore_renpy(root) if p["engine"] == "renpy" else unitygame.restore(root) if p["engine"] == "unity" else restore_rpg(root)
     except PermissionError:
         raise HTTPException(400, "Không ghi được vào thư mục game. Tắt game rồi thử lại.")
     with _lock:
@@ -1132,7 +1393,9 @@ class Worker:
         _status(pid, "running")
         s = translate.settings()
         p = _load(pid)
-        kind = code_kind(p["engine"])
+        if p.get("lang"):
+            s = {**s, "source": TR_LANG.get(p["lang"], "auto")}
+        kind = kind_of(p)
         todo = [i for i, it in enumerate(p["items"]) if it.get("vi") is None]
         for k in range(0, len(todo), BATCH):
             if pid in self._stop:
@@ -1140,10 +1403,11 @@ class Worker:
             idx = todo[k:k + BATCH]
             src = [p["items"][i] for i in idx]
             prot = [protect(it["t"], kind) for it in src]
+            ctx, s2 = _context(p, s)
             try:
-                res = translate.translate_texts([x[0] for x in prot], s, kind="gamefile",
-                                                context=f"Game: {p['name']} ({ENGINE_NAMES.get(p['engine'])}).",
-                                                who=[it.get("who") or "" for it in src])
+                res = translate.translate_texts([x[0] for x in prot], s2, kind="gamefile", context=ctx,
+                                                who=[it.get("who") or "" for it in src],
+                                                notes=[(it.get("ctx") or "")[:60] for it in src])
             except translate.TranslateError as e:
                 _status(pid, "error", str(e))
                 return
@@ -1161,6 +1425,17 @@ class Worker:
                         it.pop("bad", None)
                 _save(p)
         _status(pid, "idle")
+
+
+def _context(p: dict, s: dict) -> tuple[str, dict]:
+    """Ngữ cảnh gửi kèm mỗi lô: tên game, engine, bối cảnh game, thuật ngữ riêng (gộp với thuật ngữ chung)."""
+    ctx = f"Game: {p['name']} ({ENGINE_NAMES.get(p['engine'], p['engine'])})."
+    if (p.get("brief") or "").strip():
+        ctx += "\nBối cảnh game (bám sát khi dịch):\n" + p["brief"].strip()
+    gl = "\n".join(x for x in [(p.get("glossary") or "").strip(), (s.get("glossary") or "").strip()] if x)
+    sig = hashlib.sha1(((p.get("brief") or "") + "\0" + (p.get("glossary") or "")).encode()).hexdigest()[:12] \
+        if (p.get("brief") or p.get("glossary")) else ""
+    return ctx, {**s, "glossary": gl, "_sig": sig}
 
 
 def _status(pid, status, error=None):

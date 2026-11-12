@@ -4,10 +4,25 @@
 const {api, esc, toast} = window.CV;
 const $ = (s, r = document) => r.querySelector(s);
 const desk = window.cvDesktop;
-const T = {sub: 'comic', settings: null, book: null, view: 'vi', poll: null, edit: null, gp: null, gq: {filter: 'all', q: '', offset: 0}};
+const T = {sub: 'comic', settings: null, book: null, novel: null, view: 'vi', poll: null, edit: null, gp: null,
+  gq: {filter: 'all', q: '', offset: 0}, scan: null};
 try { T.sub = localStorage.getItem('cv-tr-sub') || 'comic'; } catch (e) { /* bỏ qua */ }
 
-const SUBS = [['comic', 'Dịch truyện'], ['game', 'Dịch màn hình game'], ['vh', 'Việt hóa game'], ['quick', 'Dịch nhanh'], ['settings', 'Cài đặt bộ dịch']];
+/* Menu bên trái của tab Dịch, chia nhóm cho dễ tìm: [mã, tên, mô tả ngắn, màu, ký hiệu] */
+const NAV = [
+  ['Truyện', [
+    ['comic', 'Truyện tranh', 'CBZ / ảnh – chữ dịch đè lên khung thoại', 'var(--pink)', 'TT'],
+    ['novel', 'Truyện chữ', 'TXT / EPUB / dán văn bản', 'var(--cyan)', 'TC']]],
+  ['Game', [
+    ['vh', 'Việt hóa game', 'Chỉ cần thư mục game, app tự tìm file chữ', 'var(--green)', 'VH'],
+    ['vp', 'Gói Việt hóa có sẵn', 'Cài / gỡ gói .zip của nhóm dịch', 'var(--violet)', 'GÓI'],
+    ['game', 'Dịch màn hình game', 'Khung dịch nổi khi đang chơi', 'var(--yellow)', 'MH']]],
+  ['Khác', [
+    ['quick', 'Dịch nhanh', 'Dán đoạn chữ bất kỳ', 'var(--surface-2)', 'DN'],
+    ['settings', 'Cài đặt bộ dịch', 'Google / Claude, thuật ngữ', 'var(--surface-2)', '⚙']]],
+];
+const SUB_INFO = Object.fromEntries(NAV.flatMap(g => g[1].map(x => [x[0], x])));
+if (!SUB_INFO[T.sub]) T.sub = 'comic';
 
 async function upload(path, file) {
   const r = await fetch(path, {method: 'POST', body: file, headers: {'content-type': 'application/octet-stream'}});
@@ -26,19 +41,32 @@ async function render() {
   try { T.settings = await api('/api/translate/settings'); } catch (e) { T.settings = null; }
   const box = $('#trBox');
   const s = T.settings;
+  const cur = SUB_INFO[T.sub];
   box.innerHTML = `
-    <div class="tr-head row-between">
-      <div class="tr-subs" role="tablist">${SUBS.map(([k, n]) => `<button type="button" class="chip${T.sub === k ? ' on' : ''}" data-sub="${k}" role="tab" aria-selected="${T.sub === k}">${n}</button>`).join('')}</div>
-      <span class="hint">Bộ dịch: <b>${esc(engineName(s))}</b>${s && s.engine === 'claude' && !s.has_key ? ' · <span class="tr-warn">chưa có API key</span>' : ''}</span>
-    </div>
-    <div id="trSub" class="main"></div>`;
+    <div class="tr-layout">
+      <nav class="tr-nav box" aria-label="Các mục của tab Dịch">${NAV.map(([g, list]) => `
+        <div class="tr-nav-g"><span class="tr-nav-h">${g}</span>${list.map(([k, n, d, c, ic]) => `
+          <button type="button" class="tr-nav-i${T.sub === k ? ' on' : ''}" data-sub="${k}" aria-current="${T.sub === k ? 'page' : 'false'}">
+            <span class="tr-ic" style="background:${c}" aria-hidden="true">${ic}</span>
+            <span class="tr-nav-t"><b>${n}</b><small>${d}</small></span>
+          </button>`).join('')}</div>`).join('')}
+        <div class="tr-nav-eng hint">Bộ dịch: <b>${esc(engineName(s))}</b>${s && s.engine === 'claude' && !s.has_key ? '<br><span class="tr-warn">chưa có API key</span>' : ''}</div>
+      </nav>
+      <div class="tr-main main">
+        <div class="tr-title"><span class="tr-ic big" style="background:${cur[3]}" aria-hidden="true">${cur[4]}</span>
+          <div><h2>${cur[1]}</h2><p class="hint">${cur[2]}</p></div></div>
+        <div id="trSub" class="main"></div>
+      </div>
+    </div>`;
   box.querySelectorAll('[data-sub]').forEach(b => b.addEventListener('click', () => {
-    T.sub = b.dataset.sub; T.book = null; T.gp = null;
+    if (T.scan && T.scan.timer) clearInterval(T.scan.timer);
+    T.sub = b.dataset.sub; T.book = null; T.gp = null; T.novel = null; T.scan = null;
     try { localStorage.setItem('cv-tr-sub', T.sub); } catch (e) { /* bỏ qua */ }
     render();
   }));
   if (!s) { $('#trSub').innerHTML = '<div class="notice box err"><b>Không tải được cài đặt dịch.</b><span>Thử khởi động lại app.</span></div>'; return; }
-  ({comic: T.book ? renderReader : renderBooks, game: renderGame, vh: T.gp ? renderProject : renderGames, quick: renderQuick, settings: renderSettings}[T.sub] || renderBooks)();
+  ({comic: T.book ? renderReader : renderBooks, novel: T.novel ? renderNovel : renderNovels, game: renderGame,
+    vh: T.gp ? renderProject : renderGames, vp: renderPatches, quick: renderQuick, settings: renderSettings}[T.sub] || renderBooks)();
 }
 
 /* ================================================================ DỊCH TRUYỆN – danh sách */
@@ -343,7 +371,244 @@ function editBlock(fig, i, el) {
 }
 function closeEdit() { if (T.edit) { T.edit.pop.remove(); T.edit = null; } }
 
+/* ================================================================ TRUYỆN CHỮ */
+async function renderNovels() {
+  const el = $('#trSub');
+  el.innerHTML = `
+    <div class="cols2">
+      <div class="box pcard tr-drop" id="nvDrop">
+        <h3>Thêm truyện chữ</h3>
+        <p>Kéo thả file <b>.txt</b>, <b>.epub</b> (không khóa DRM), <b>.html</b> hoặc <b>.md</b>. App tự chia chương (“Chapter 1”, “第1章”, “제1장”…), dịch nền từng chương và giữ mạch truyện, xưng hô.</p>
+        <div class="btn-row"><label class="btn green">CHỌN FILE<input type="file" id="nvFile" accept=".txt,.epub,.html,.htm,.md" multiple hidden></label></div>
+        <form class="paste-row" id="nvPathForm">
+          <input type="text" id="nvPath" placeholder="Hoặc dán đường dẫn file trên ổ, ví dụ D:\\Truyen\\ten-truyen.epub" aria-label="Đường dẫn truyện trên ổ">
+          <button class="btn plain" type="submit">MỞ</button>
+        </form>
+        <p class="hint" id="nvMsg">Xuất ra EPUB (đọc bằng app đọc sách trên điện thoại) hoặc TXT.</p>
+      </div>
+      <form class="box pcard" id="nvPaste">
+        <h3>Dán văn bản</h3>
+        <input type="text" id="nvName" placeholder="Tên truyện" aria-label="Tên truyện">
+        <textarea id="nvText" rows="7" placeholder="Dán một hay nhiều chương (web novel, light novel…). Mỗi đoạn một dòng hoặc cách nhau dòng trống."></textarea>
+        <div class="btn-row"><button class="btn yellow" type="submit">THÊM VÀ DỊCH</button></div>
+      </form>
+    </div>
+    <div class="sec-title">Truyện chữ đã thêm</div>
+    <div id="nvList" class="main"><div class="loading"><span class="spin"></span>Đang tải…</div></div>`;
+  const drop = $('#nvDrop');
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, () => drop.classList.remove('over')));
+  drop.addEventListener('drop', e => { e.preventDefault(); addNovels([...e.dataTransfer.files]); });
+  $('#nvFile').addEventListener('change', e => addNovels([...e.target.files]));
+  $('#nvPathForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const path = $('#nvPath').value.trim();
+    if (!path) return;
+    try { const n = await api('/api/translate/novels/from-path', {method: 'POST', body: {path}}); await novelAdded(n); }
+    catch (err) { toast(err.message, 'err'); }
+  });
+  $('#nvPaste').addEventListener('submit', async e => {
+    e.preventDefault();
+    const text = $('#nvText').value;
+    if (!text.trim()) return;
+    try { const n = await api('/api/translate/novels/text', {method: 'POST', body: {name: $('#nvName').value.trim(), text}}); await novelAdded(n); }
+    catch (err) { toast(err.message, 'err'); }
+  });
+  await loadNovels();
+  T.poll = setInterval(() => { if (!document.hidden && $('#nvList')) loadNovels(); else if (!$('#nvList')) clearInterval(T.poll); }, 3000);
+}
+
+async function addNovels(files) {
+  const msg = $('#nvMsg');
+  for (const f of files) {
+    msg.textContent = `Đang đọc ${f.name}…`;
+    try { const n = await upload(`/api/translate/novels?filename=${encodeURIComponent(f.name)}`, f); await novelAdded(n, files.length > 1); }
+    catch (err) { msg.textContent = err.message; toast(err.message, 'err'); return; }
+  }
+  msg.textContent = 'Đã thêm.';
+}
+
+async function novelAdded(n, many) {
+  toast(`Đã thêm “${n.name}”: ${n.chapters} chương, ${n.paras.toLocaleString('vi-VN')} đoạn.`);
+  if (!many) { T.novel = n.id; render(); } else loadNovels();
+}
+
+async function loadNovels() {
+  const el = $('#nvList');
+  if (!el) return;
+  let d;
+  try { d = await api('/api/translate/novels'); } catch (e) { el.innerHTML = `<div class="notice box err">${esc(e.message)}</div>`; return; }
+  if (!d.novels.length) { el.innerHTML = '<div class="box empty"><h3>Chưa có truyện chữ nào</h3><p>Thêm file hoặc dán văn bản ở trên.</p></div>'; return; }
+  const key = JSON.stringify(d.novels);
+  if (el.dataset.key === key) return;
+  el.dataset.key = key;
+  el.innerHTML = d.novels.map(n => {
+    const pct = n.paras ? Math.round(n.done / n.paras * 100) : 0;
+    const working = n.running || n.status === 'queued';
+    return `<div class="box tr-book" data-nid="${n.id}">
+      <div class="tr-book-main">
+        <span><b class="tr-name">${esc(n.name)}</b> <span class="badge" style="background:var(--cyan)">${LANG_VI[n.lang] || 'Tự nhận'}</span></span>
+        <div class="prog"><div class="bar"><i class="${pct ? '' : 'w0'}" style="width:${pct}%;background:${n.status === 'error' ? 'var(--red)' : 'var(--green)'}"></i></div>
+          <span class="hint">${working ? 'Đang dịch · ' : ''}${n.chapters_done}/${n.chapters} chương · ${pct}% (${n.chars.toLocaleString('vi-VN')} ký tự)</span></div>
+        ${n.error ? `<span class="tr-err">${esc(n.error)}</span>` : ''}
+        ${n.export ? `<span class="hint mono tr-path">${esc(n.export)}</span>` : ''}
+      </div>
+      <div class="btn-row">
+        <button class="btn sm yellow" type="button" data-na="open">Mở</button>
+        ${working ? '<button class="btn sm plain" type="button" data-na="stop">Dừng</button>' : n.done < n.paras ? '<button class="btn sm green" type="button" data-na="run">Dịch tiếp</button>' : ''}
+        <button class="btn sm cyan" type="button" data-na="epub" ${n.done ? '' : 'disabled'}>Xuất EPUB</button>
+        <button class="btn sm plain" type="button" data-na="del" aria-label="Xóa ${esc(n.name)}">Xóa</button>
+      </div></div>`;
+  }).join('');
+  el.querySelectorAll('[data-nid]').forEach(row => row.addEventListener('click', e => novelAct(e, row.dataset.nid)));
+}
+
+async function novelAct(e, id) {
+  const b = e.target.closest('[data-na]');
+  if (!b) return;
+  const a = b.dataset.na;
+  try {
+    if (a === 'open') { T.novel = id; return render(); }
+    if (a === 'run') await novelRun(id, {start: 0});
+    if (a === 'stop') await api(`/api/translate/novels/${id}/stop`, {method: 'POST'});
+    if (a === 'epub' || a === 'txt') {
+      b.disabled = true;
+      const r = await api(`/api/translate/novels/${id}/export?fmt=${a}`, {method: 'POST'});
+      toast(`Đã lưu ${r.path}${r.done < r.paras ? ` (đoạn chưa dịch giữ nguyên bản gốc)` : ''}`);
+      b.disabled = false;
+    }
+    if (a === 'del') {
+      if (!confirm('Xóa truyện này khỏi danh sách dịch? (File EPUB/TXT đã xuất ra ổ vẫn giữ nguyên.)')) return;
+      await api(`/api/translate/novels/${id}`, {method: 'DELETE'});
+      if (T.novel === id) { T.novel = null; return render(); }
+    }
+  } catch (err) { toast(err.message, 'err'); b.disabled = false; }
+  if ($('#nvList')) { $('#nvList').dataset.key = ''; loadNovels(); } else if (T.novel) refreshNovel();
+}
+
+async function novelRun(id, body) {
+  const s = T.settings;
+  const n = await api(`/api/translate/novels/${id}`);
+  const left = n.chars - (n.done / Math.max(1, n.paras)) * n.chars;
+  if (s.engine === 'claude' && left > 150000) {
+    const usdv = left / 4 * 1.6 / 1e6 * ({'claude-opus-5-5': 24, 'claude-sonnet-5-5': 12, 'claude-haiku-5-5': 0.6}[s.claude_model] || 12);
+    if (!confirm(`Còn khoảng ${Math.round(left).toLocaleString('vi-VN')} ký tự chưa dịch. Ước tính với ${engineName(s)}: ${usd(usdv)}. Dịch tiếp?`)) return;
+  }
+  await api(`/api/translate/novels/${id}/run`, {method: 'POST', body});
+}
+
+/* ---------------------------------------------------------------- đọc & sửa truyện chữ */
+async function renderNovel() {
+  const el = $('#trSub');
+  el.innerHTML = '<div class="loading"><span class="spin"></span>Đang mở truyện…</div>';
+  let n;
+  try { n = await api(`/api/translate/novels/${T.novel}`); } catch (e) { T.novel = null; toast(e.message, 'err'); return render(); }
+  T.nv = {ch: Math.min(T.nv && T.nv.id === n.id ? T.nv.ch : 0, n.list.length - 1), id: n.id, state: n};
+  el.innerHTML = `
+    <div class="box tr-bar">
+      <button class="btn sm plain" type="button" id="nvBack">← Danh sách</button>
+      <b class="tr-name" id="nvTitle" title="Bấm để đổi tên">${esc(n.name)}</b>
+      <span class="hint" id="nvStat"></span>
+      <span class="tr-seg">
+        <button class="btn sm green" type="button" id="nvRun"></button>
+        <button class="btn sm cyan" type="button" data-na="epub">Xuất EPUB</button>
+        <button class="btn sm plain" type="button" data-na="txt">Xuất TXT</button>
+      </span>
+    </div>
+    <details class="box pcard tr-help" ${n.brief ? '' : ''}><summary>Bối cảnh truyện &amp; thuật ngữ (gửi kèm cho Claude)</summary>
+      <div class="cols2">
+        <label class="field">Bối cảnh<textarea id="nvBrief" rows="5" placeholder="Ví dụ: Tiên hiệp, nhân vật chính Lâm Phong xưng “ta”, gọi sư phụ là “sư tôn”…">${esc(n.brief || '')}</textarea></label>
+        <label class="field">Thuật ngữ<textarea id="nvGloss" rows="5" placeholder="Mỗi dòng: chữ gốc = chữ dịch&#10;Qi = Linh khí">${esc(n.glossary || '')}</textarea></label>
+      </div>
+    </details>
+    <div class="nv-layout">
+      <nav class="box nv-toc" aria-label="Mục lục" id="nvToc"></nav>
+      <div class="main" id="nvBody"></div>
+    </div>`;
+  $('#nvBack').addEventListener('click', () => { T.novel = null; render(); });
+  $('#nvTitle').addEventListener('click', async () => {
+    const name = prompt('Tên truyện (dùng làm tên file khi xuất):', n.name);
+    if (!name) return;
+    try { await api(`/api/translate/novels/${n.id}`, {method: 'PATCH', body: {name}}); $('#nvTitle').textContent = name; } catch (err) { toast(err.message, 'err'); }
+  });
+  ['nvBrief', 'nvGloss'].forEach(id => $('#' + id).addEventListener('change', e => api(`/api/translate/novels/${n.id}`, {method: 'PATCH',
+    body: id === 'nvBrief' ? {brief: e.target.value} : {glossary: e.target.value}}).then(() => toast('Đã lưu.')).catch(err => toast(err.message, 'err'))));
+  el.querySelector('.tr-bar').addEventListener('click', e => { if (e.target.closest('[data-na]')) novelAct(e, n.id); });
+  $('#nvRun').addEventListener('click', async () => {
+    const st = T.nv.state;
+    try {
+      if (st.running || st.status === 'queued') await api(`/api/translate/novels/${n.id}/stop`, {method: 'POST'});
+      else await novelRun(n.id, {start: T.nv.ch});
+    } catch (err) { toast(err.message, 'err'); }
+    refreshNovel();
+  });
+  paintNovel(n);
+  await loadChapter();
+  T.poll = setInterval(() => { if ($('#nvBody') && T.novel) refreshNovel(); else clearInterval(T.poll); }, 3000);
+}
+
+function paintNovel(n) {
+  T.nv.state = n;
+  const working = n.running || n.status === 'queued';
+  $('#nvStat').textContent = `${n.chapters_done}/${n.chapters} chương · ${n.done.toLocaleString('vi-VN')}/${n.paras.toLocaleString('vi-VN')} đoạn` + (working ? ' · đang dịch…' : '') + (n.error ? ' · ' + n.error : '');
+  $('#nvRun').textContent = working ? 'Dừng dịch' : n.done < n.paras ? 'Dịch từ chương này' : 'Đã dịch xong';
+  $('#nvRun').disabled = !working && n.done >= n.paras;
+  $('#nvToc').innerHTML = n.list.map(c => `<button type="button" class="nv-ch${c.n === T.nv.ch ? ' on' : ''}${c.done === c.paras ? ' ok' : c.done ? ' half' : ''}" data-ch="${c.n}">
+    <span class="nv-dot" aria-hidden="true"></span><span>${esc(c.title_vi || c.title)}</span></button>`).join('');
+  $('#nvToc').querySelectorAll('[data-ch]').forEach(b => b.addEventListener('click', () => { T.nv.ch = +b.dataset.ch; paintNovel(T.nv.state); loadChapter(); }));
+}
+
+async function refreshNovel() {
+  if (!T.novel || !$('#nvBody')) return;
+  try {
+    const n = await api(`/api/translate/novels/${T.novel}`);
+    const before = T.nv.state.list[T.nv.ch];
+    paintNovel(n);
+    const now = n.list[T.nv.ch];
+    const editing = document.activeElement && document.activeElement.closest && document.activeElement.closest('#nvBody');
+    if (!editing && before && now && (before.done !== now.done || before.title_vi !== now.title_vi)) loadChapter();
+  } catch (e) { /* bỏ qua */ }
+}
+
+async function loadChapter() {
+  const el = $('#nvBody');
+  if (!el) return;
+  let c;
+  try { c = await api(`/api/translate/novels/${T.novel}/chapters/${T.nv.ch}`); } catch (e) { el.innerHTML = `<div class="notice box err">${esc(e.message)}</div>`; return; }
+  const rows = c.paras.map(p => `<div class="nv-p${p.vi == null ? ' todo' : ''}">
+      <div class="nv-src">${esc(p.t)}</div>
+      <textarea data-i="${p.i}" rows="${Math.min(12, Math.max(2, Math.ceil((p.vi || p.t).length / 70)))}" aria-label="Bản dịch đoạn ${p.i + 1}" placeholder="Chưa dịch">${esc(p.vi || '')}</textarea>
+    </div>`).join('');
+  el.innerHTML = `<div class="box pcard nv-chap">
+      <div class="row-between"><input type="text" class="nv-tt" data-i="-1" value="${esc(c.title_vi || '')}" placeholder="${esc(c.title)}" aria-label="Tên chương tiếng Việt">
+        <span class="hint">Chương ${c.n + 1}/${c.total} · ${esc(c.title)}</span></div>
+      <p class="hint">Cột trái là bản gốc, cột phải là bản dịch: sửa trực tiếp, rời ô là tự lưu. Đoạn đã sửa tay được giữ khi dịch lại.</p>
+      <div class="nv-paras">${rows}</div>
+      <div class="row-between">
+        <button class="btn sm plain" type="button" data-step="-1" ${c.n === 0 ? 'disabled' : ''}>← Chương trước</button>
+        <button class="btn sm plain" type="button" id="nvRedo">Dịch lại chương này</button>
+        <button class="btn sm plain" type="button" data-step="1" ${c.n + 1 >= c.total ? 'disabled' : ''}>Chương sau →</button>
+      </div></div>`;
+  el.querySelectorAll('textarea, .nv-tt').forEach(ta => {
+    ta.dataset.orig = ta.value;
+    ta.addEventListener('blur', async () => {
+      if (ta.value === ta.dataset.orig) return;
+      try { await api(`/api/translate/novels/${T.novel}/chapters/${c.n}`, {method: 'PUT', body: [{i: +ta.dataset.i, vi: ta.value}]}); ta.dataset.orig = ta.value; }
+      catch (err) { toast(err.message, 'err'); }
+    });
+  });
+  el.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
+    T.nv.ch = Math.max(0, Math.min(c.total - 1, c.n + (+b.dataset.step))); paintNovel(T.nv.state); loadChapter(); $('#nvBody').scrollIntoView({block: 'start'});
+  }));
+  $('#nvRedo').addEventListener('click', async () => {
+    if (!confirm('Dịch lại chương này? (Đoạn bạn đã sửa tay được giữ nguyên.)')) return;
+    try { await api(`/api/translate/novels/${T.novel}/run`, {method: 'POST', body: {start: c.n, end: c.n, redo: true}}); toast('Đang dịch lại chương.'); refreshNovel(); }
+    catch (err) { toast(err.message, 'err'); }
+  });
+}
+
 /* ================================================================ DỊCH GAME */
+
 function renderGame() {
   const el = $('#trSub');
   el.innerHTML = `
@@ -515,33 +780,194 @@ const usd = (v) => v < 0.01 ? 'dưới 0,01 USD' : `~${v.toLocaleString('vi-VN',
 async function renderGames() {
   const el = $('#trSub');
   el.innerHTML = `
-    <div class="box pcard">
-      <h3>Việt hóa game từ file</h3>
-      <p>Lấy toàn bộ câu chữ trong file game, dịch cả lượt theo đúng thứ tự kịch bản, cho bạn xem và sửa, rồi ghi vào game. Chơi như bản tiếng Việt, không cần khung dịch nổi.</p>
-      <div class="vh-engines"><span class="chip">Ren'Py</span><span class="chip">RPG Maker MV</span><span class="chip">RPG Maker MZ</span><span class="chip">Unity (Unity Localization)</span></div>
+    <div class="box pcard vh-start">
+      <ol class="vh-steps" aria-label="Các bước">
+        <li class="on"><b>1</b>Chọn game</li><li><b>2</b>App tìm file chữ</li><li><b>3</b>Dịch &amp; sửa</li><li><b>4</b>Áp dụng vào game</li>
+      </ol>
       <label class="field" id="vhSteamRow" hidden>Game Steam trên máy này<select id="vhSteam"><option value="">— Chọn game —</option></select></label>
       <form class="paste-row" id="vhForm">
-        <input type="text" id="vhPath" placeholder="Thư mục game, ví dụ D:\\Games\\TenGame" aria-label="Thư mục game">
+        <input type="text" id="vhPath" placeholder="Thư mục game, ví dụ D:\\SteamLibrary\\steamapps\\common\\TenGame" aria-label="Thư mục game">
         ${desk && desk.pickFolder ? '<button class="btn plain" type="button" id="vhPick">Chọn thư mục…</button>' : ''}
-        <button class="btn green" type="submit">QUÉT GAME</button>
+        <button class="btn green" type="submit">TÌM FILE CHỮ</button>
       </form>
-      <p class="hint" id="vhMsg">Chọn thư mục chứa file .exe của game. App tự nhận loại game.</p>
-      <details class="tr-help"><summary>Lưu ý trước khi Việt hóa</summary>
+      <p class="hint" id="vhMsg">Chỉ cần thư mục chứa file .exe của game. App tự lục toàn bộ thư mục, nhận loại game và tìm file chứa ngôn ngữ.</p>
+      <details class="tr-help"><summary>App đọc được những gì?</summary>
         <ul class="tick">
-          <li><b>Ren'Py</b>: app không sửa file nào của game, chỉ thêm 2 file <code>zz_circlevault_vi.rpy</code> và <code>circlevault_vi.json</code> vào thư mục <code>game</code>. Khôi phục = xóa 2 file đó.</li>
-          <li><b>RPG Maker MV/MZ</b>: app sửa các file trong <code>data</code>, nhưng sao lưu bản gốc vào thư mục <code>CircleVault-ban-goc</code> trước. Bấm <b>Khôi phục bản gốc</b> là về như cũ.</li>
-          <li>Tắt game trước khi bấm Áp dụng. Game nằm trong <code>Program Files</code> thì chép ra ổ khác trước (Windows không cho ghi vào đó).</li>
-          <li>Chỉ dùng với game bạn sở hữu, để chơi cá nhân. Nếu chia sẻ, chỉ chia sẻ phần dịch, không chia sẻ file game đã sửa.</li>
-          <li><b>Unity</b>: game lưu chữ bằng Unity Localization (như các game Steam mới) thì app ghi tiếng Việt thay chỗ tiếng Anh trong bảng chữ và tắt kiểm tra CRC trong <code>catalog.json</code>, giống cách các nhóm Việt hóa làm. Bản gốc sao lưu vào <code>CircleVault-ban-goc</code>. Phông của game không có dấu thì chữ có thể hiện ô vuông.</li>
-          <li>Steam cập nhật game hoặc bạn bấm "Verify integrity" thì Steam ghi lại file gốc: bấm Áp dụng lại.</li>
-          <li>Unreal hay game có mã hóa dữ liệu: dùng <b>Dịch màn hình game</b>.</li>
+          <li><b>Ren'Py</b>: kịch bản .rpy / .rpyc / .rpa. App chỉ thêm 2 file <code>zz_circlevault_vi.rpy</code>, <code>circlevault_vi.json</code>, không sửa file của game.</li>
+          <li><b>RPG Maker MV/MZ</b>: <code>data/*.json</code>. Tự xuống dòng, đổi phông có dấu.</li>
+          <li><b>Unity</b>: bảng chữ Unity Localization, và file chữ (JSON/CSV/XML…) để rời hoặc nhúng trong <code>.assets</code> / <code>.bundle</code> (TextAsset).</li>
+          <li><b>File chữ của mọi game</b>: .json .csv .tsv .xml .po .ini .cfg .properties .lang .strings .yaml .txt, kịch bản TyranoScript/KAG .ks. App chấm điểm từng file, chọn sẵn file ngôn ngữ gốc (ưu tiên tiếng Anh), bỏ file dữ liệu khó đoán.</li>
+          <li>Mọi file bị sửa đều được sao lưu vào <code>CircleVault-ban-goc</code> trong thư mục game. Bấm <b>Khôi phục bản gốc</b> là về như cũ.</li>
+          <li>Chưa đọc được: game Unreal (.pak), Godot (.pck), GameMaker (data.win), Kirikiri .xp3, Wolf RPG, RPG Maker VX/XP, game mã hóa dữ liệu. Dùng <b>Dịch màn hình game</b>, hoặc gói của nhóm dịch.</li>
+          <li>Tắt game trước khi Áp dụng. Game nằm trong <code>Program Files</code> thì chép ra ổ khác trước. Steam cập nhật game thì bấm Áp dụng lại.</li>
         </ul>
       </details>
     </div>
+    <div id="vhScan"></div>
+    <div class="sec-title">Game đang Việt hóa</div>
+    <div id="vhList" class="main"><div class="loading"><span class="spin"></span>Đang tải…</div></div>`;
+  steamSelect(['#vhPath']);
+  if ($('#vhPick')) $('#vhPick').addEventListener('click', async () => {
+    const f = await desk.pickFolder('Chọn thư mục game');
+    if (f) { $('#vhPath').value = f; $('#vhForm').requestSubmit(); }
+  });
+  $('#vhForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const path = $('#vhPath').value.trim();
+    if (path) startScan(path);
+  });
+  if (T.scan && T.scan.path) { $('#vhPath').value = T.scan.path; paintScan(T.scan.last); if (T.scan.state === 'running') pollScan(); }
+  await loadGames();
+  T.poll = setInterval(() => { if (!document.hidden && $('#vhList')) loadGames(); else if (!$('#vhList')) clearInterval(T.poll); }, 3000);
+}
+
+function steamSelect(targets) {
+  api('/api/translate/vh/steam').then(d => {
+    if (!d.games.length || !$('#vhSteam')) return;
+    const tag = {unity: ' · Unity', rpg: ' · RPG Maker', renpy: " · Ren'Py"};
+    $('#vhSteam').innerHTML += d.games.map(g => `<option value="${esc(g.path)}">${esc(g.name)}${tag[g.kind] || ''}</option>`).join('');
+    $('#vhSteamRow').hidden = false;
+    $('#vhSteam').addEventListener('change', e => {
+      if (!e.target.value) return;
+      targets.forEach(t => { if ($(t)) $(t).value = e.target.value; });
+      if ($('#vhForm')) $('#vhForm').requestSubmit();
+    });
+  }).catch(() => {});
+}
+
+/* ---------------------------------------------------------------- tìm file chữ (chạy nền, có thanh tiến độ) */
+async function startScan(path) {
+  if (T.scan && T.scan.timer) clearInterval(T.scan.timer);
+  if (T.scan && T.scan.job && T.scan.state === 'running') api(`/api/translate/games/scan/${T.scan.job}/cancel`, {method: 'POST'}).catch(() => {});
+  T.scan = {path, job: null, state: 'running', last: {phase: 'start', text: 'Đang bắt đầu…', done: 0, total: 0, found: 0, strings: 0}};
+  paintScan(T.scan.last);
+  try {
+    const r = await api('/api/translate/games/scan', {method: 'POST', body: {path}});
+    T.scan.job = r.job;
+    pollScan();
+  } catch (err) { T.scan.state = 'error'; paintScan({state: 'error', error: err.message}); }
+}
+
+function pollScan() {
+  clearInterval(T.scan.timer);
+  const tick = async () => {
+    if (!T.scan || !T.scan.job) return;
+    if (!$('#vhScan')) { clearInterval(T.scan.timer); return; }
+    try {
+      const j = await api(`/api/translate/games/scan/${T.scan.job}`);
+      T.scan.last = j; T.scan.state = j.state;
+      paintScan(j);
+      if (j.state !== 'running') clearInterval(T.scan.timer);
+    } catch (err) { clearInterval(T.scan.timer); T.scan.state = 'error'; paintScan({state: 'error', error: err.message}); }
+  };
+  T.scan.timer = setInterval(tick, 300);
+  tick();
+}
+
+const PHASES = [['list', 'Liệt kê file'], ['engine', 'Nhận loại game'], ['files', 'Lục file chữ'], ['done', 'Xong']];
+function paintScan(j) {
+  const el = $('#vhScan');
+  if (!el || !j) return;
+  if (j.state === 'error') {
+    el.innerHTML = `<div class="notice box err"><b>Không tìm được</b><span>${esc(j.error || 'Lỗi không rõ.')}</span></div>`;
+    return;
+  }
+  if (j.state === 'done' && j.result) return paintFound(j.result);
+  const pi = Math.max(0, PHASES.findIndex(p => p[0] === j.phase));
+  const pct = j.phase === 'files' && j.total ? Math.min(99, Math.round((j.bytes != null ? j.bytes : j.done / j.total) * 100)) : null;
+  const old = el.querySelector('.scan-box');
+  const html = `
+      <ol class="scan-phases">${PHASES.slice(0, 3).map(([k, n], i) => `<li class="${i < pi ? 'ok' : i === pi ? 'on' : ''}">${i < pi ? '✓' : i + 1}. ${n}</li>`).join('')}</ol>
+      <div class="scan-row">
+        <div class="scan-glass" aria-hidden="true"><span class="scan-doc"></span><span class="scan-doc"></span><span class="scan-doc"></span><i></i></div>
+        <div class="scan-meter">
+          <div class="scan-bar${pct == null ? ' indet' : ''}" role="progressbar" aria-label="Tiến độ tìm file chữ" ${pct == null ? '' : `aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"`}>
+            <i style="width:${pct == null ? 100 : pct}%"></i><b>${pct == null ? '' : pct + '%'}</b>
+          </div>
+          <div class="scan-now mono" title="${esc(j.current || '')}">${esc(j.text || '')}${j.current ? ' ' + esc(j.current) : ''}</div>
+        </div>
+      </div>
+      <div class="scan-stats">
+        <span><b>${(j.done || 0).toLocaleString('vi-VN')}</b>${j.total ? '/' + j.total.toLocaleString('vi-VN') : ''} file đã xem</span>
+        <span class="g"><b>${(j.found || 0).toLocaleString('vi-VN')}</b> nguồn chữ</span>
+        <span class="y"><b>${(j.strings || 0).toLocaleString('vi-VN')}</b> câu</span>
+        <button class="btn sm plain" type="button" id="scanStop">Dừng</button>
+      </div>`;
+  if (old) { old.innerHTML = html; } else { el.innerHTML = `<div class="box pcard scan-box" aria-live="polite">${html}</div>`; }
+  $('#scanStop').addEventListener('click', () => {
+    if (T.scan && T.scan.job) api(`/api/translate/games/scan/${T.scan.job}/cancel`, {method: 'POST'}).catch(() => {});
+  });
+}
+
+const SRC_KIND = {renpy: "Kịch bản Ren'Py", rpg: 'RPG Maker', 'unity-loc': 'Unity Localization', file: 'File chữ', textasset: 'Unity TextAsset'};
+const LANG_VI = {en: 'Tiếng Anh', ja: 'Tiếng Nhật', zh: 'Tiếng Trung', ko: 'Tiếng Hàn', fr: 'Tiếng Pháp', de: 'Tiếng Đức', es: 'Tiếng TBN',
+  pt: 'Tiếng BĐN', it: 'Tiếng Ý', ru: 'Tiếng Nga', pl: 'Tiếng Ba Lan', tr: 'Tiếng Thổ', latin: 'Chữ Latin'};
+function paintFound(r) {
+  const el = $('#vhScan');
+  const src = r.sources || [];
+  if (!src.length) {
+    el.innerHTML = `<div class="box pcard"><h3>Không tìm thấy file chữ nào</h3>
+      ${(r.hints || []).map(h => `<p>${esc(h)}</p>`).join('') || '<p>Game có thể lưu chữ trong file đóng gói hoặc mã hóa.</p>'}
+      <div class="btn-row"><button class="btn sm yellow" type="button" data-go="vp">Có gói Việt hóa? Cài gói</button>
+        <button class="btn sm plain" type="button" data-go="game">Dùng Dịch màn hình game</button></div></div>`;
+    el.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => goSub(b.dataset.go)));
+    return;
+  }
+  const rows = src.map((s, i) => `<label class="vp-row src-row${s.on ? '' : ' off'}">
+      <input type="checkbox" data-src="${esc(s.id)}" ${s.on ? 'checked' : ''}>
+      <span class="src-main"><span class="mono">${esc(s.label || s.rel || '')}</span>
+        <span class="src-sample">${(s.sample || []).map(t => `“${esc(t)}”`).join(' · ')}</span>
+        ${s.why ? `<span class="hint">${esc(s.why)}</span>` : ''}</span>
+      <span class="badge" style="background:${s.kind === 'file' ? 'var(--cyan)' : s.kind === 'textasset' ? 'var(--pink)' : 'var(--violet)'}">${SRC_KIND[s.kind] || s.kind}</span>
+      <span class="badge" style="background:${s.on ? 'var(--green)' : 'var(--surface-2)'};${s.on ? '' : 'color:var(--text)'}">${LANG_VI[s.lang] || esc(s.lang || '?')}</span>
+      <span class="hint src-n">${s.count.toLocaleString('vi-VN')} câu</span></label>`).join('');
+  el.innerHTML = `<div class="box pcard scan-done">
+    <div class="row-between"><h3>Tìm thấy ${src.length} nguồn chữ trong “${esc(r.name)}”</h3>
+      <span class="hint">Đã xem ${(r.files || 0).toLocaleString('vi-VN')} file</span></div>
+    ${(r.hints || []).map(h => `<p class="hint">${esc(h)}</p>`).join('')}
+    <p class="hint">App đã chọn sẵn file ngôn ngữ gốc. Bản dịch tiếng Việt sẽ ghi thay chỗ ngôn ngữ đó (game không có tiếng Việt), nên trong game hãy chọn ngôn ngữ này.</p>
+    <div class="vp-list">${rows}</div>
+    <div class="btn-row"><button class="btn green" type="button" id="scanMake">TẠO DỰ ÁN DỊCH</button>
+      <button class="btn plain" type="button" id="scanAgain">Tìm lại</button><span class="hint" id="scanSum"></span></div></div>`;
+  const sum = () => {
+    const on = [...el.querySelectorAll('[data-src]')].filter(x => x.checked);
+    const n = on.reduce((a, x) => a + (src.find(s => s.id === x.dataset.src) || {count: 0}).count, 0);
+    $('#scanSum').textContent = `${on.length} nguồn · khoảng ${n.toLocaleString('vi-VN')} câu (câu trùng chỉ dịch một lần)`;
+    el.querySelectorAll('.src-row').forEach(row => row.classList.toggle('off', !$('input', row).checked));
+  };
+  el.querySelectorAll('[data-src]').forEach(x => x.addEventListener('change', sum));
+  sum();
+  $('#scanAgain').addEventListener('click', () => startScan(T.scan.path));
+  $('#scanMake').addEventListener('click', async e => {
+    const pick = [...el.querySelectorAll('[data-src]')].filter(x => x.checked).map(x => x.dataset.src);
+    if (!pick.length) return toast('Chọn ít nhất một nguồn chữ.', 'err');
+    e.currentTarget.disabled = true;
+    try {
+      const g = await api('/api/translate/games', {method: 'POST', body: {path: T.scan.path, job: T.scan.job, pick}});
+      toast(`Đã tạo dự án: ${g.total.toLocaleString('vi-VN')} câu cần dịch.`);
+      T.scan = null; T.gp = g.id; T.gq = {filter: 'all', q: '', offset: 0};
+      render();
+    } catch (err) { toast(err.message, 'err'); e.currentTarget.disabled = false; }
+  });
+}
+
+function goSub(k) {
+  T.sub = k; T.book = null; T.gp = null; T.novel = null;
+  try { localStorage.setItem('cv-tr-sub', k); } catch (e) { /* bỏ qua */ }
+  render();
+}
+
+/* ---------------------------------------------------------------- trang Gói Việt hóa có sẵn */
+function renderPatches() {
+  const el = $('#trSub');
+  el.innerHTML = `
     <div class="box pcard" id="vpBox">
-      <h3>Cài gói Việt hóa có sẵn</h3>
       <p>Có bản Việt hóa của nhóm dịch (file .zip kiểu "chép đè vào thư mục game")? App tự tìm đúng chỗ đặt file, sao lưu file gốc, gỡ được bất cứ lúc nào, và báo khi Steam cập nhật game làm mất Việt hóa.</p>
-      <label class="field">Thư mục game<input type="text" id="vpGame" placeholder="Thư mục chứa file .exe của game" aria-label="Thư mục game"></label>
+      <label class="field" id="vhSteamRow" hidden>Game Steam trên máy này<select id="vhSteam"><option value="">— Chọn game —</option></select></label>
+      <div class="paste-row">
+        <input type="text" id="vpGame" placeholder="Thư mục game (chứa file .exe)" aria-label="Thư mục game">
+        ${desk && desk.pickFolder ? '<button class="btn plain" type="button" id="vpPickGame">Chọn thư mục…</button>' : ''}
+      </div>
       <div class="paste-row">
         <input type="text" id="vpSrc" placeholder="File .zip Việt hóa, hoặc thư mục đã giải nén" aria-label="Gói Việt hóa">
         ${desk && desk.pickFile ? '<button class="btn plain" type="button" id="vpPickZip">Chọn file .zip…</button>' : ''}
@@ -551,38 +977,12 @@ async function renderGames() {
       <p class="hint" id="vpMsg">File .rar / .7z: giải nén ra một thư mục rồi chọn thư mục đó.</p>
       <div id="vpPlan"></div>
     </div>
-    <div id="vpList" class="main"></div>
-    <div class="sec-title">Game đã quét</div>
-    <div id="vhList" class="main"><div class="loading"><span class="spin"></span>Đang tải…</div></div>`;
-  api('/api/translate/vh/steam').then(d => {
-    if (!d.games.length || !$('#vhSteam')) return;
-    const tag = {unity: ' · Unity', rpg: ' · RPG Maker', renpy: " · Ren'Py"};
-    $('#vhSteam').innerHTML += d.games.map(g => `<option value="${esc(g.path)}">${esc(g.name)}${tag[g.kind] || ''}</option>`).join('');
-    $('#vhSteamRow').hidden = false;
-    $('#vhSteam').addEventListener('change', e => { if (e.target.value) { $('#vhPath').value = e.target.value; $('#vpGame').value = e.target.value; } });
-  }).catch(() => {});
-  $('#vhPath').addEventListener('change', e => { if (!$('#vpGame').value) $('#vpGame').value = e.target.value; });
+    <div class="sec-title">Gói đã cài</div>
+    <div id="vpList" class="main"><div class="box empty"><p>Chưa cài gói nào.</p></div></div>`;
+  steamSelect(['#vpGame']);
+  $('#vpPickGame')?.addEventListener('click', async () => { const f = await desk.pickFolder('Chọn thư mục game'); if (f) $('#vpGame').value = f; });
   bindPatch();
-  if ($('#vhPick')) $('#vhPick').addEventListener('click', async () => {
-    const f = await desk.pickFolder('Chọn thư mục game');
-    if (f) { $('#vhPath').value = f; $('#vhForm').requestSubmit(); }
-  });
-  $('#vhForm').addEventListener('submit', async e => {
-    e.preventDefault();
-    const path = $('#vhPath').value.trim();
-    if (!path) return;
-    const btn = e.target.querySelector('[type=submit]');
-    btn.disabled = true; $('#vhMsg').textContent = 'Đang đọc kịch bản game… (game lớn mất vài chục giây)';
-    try {
-      const g = await api('/api/translate/games', {method: 'POST', body: {path}});
-      toast(`Tìm thấy ${g.total.toLocaleString('vi-VN')} câu cần dịch (${g.engine_name}).`);
-      T.gp = g.id; T.gq = {filter: 'all', q: '', offset: 0};
-      render();
-    } catch (err) { $('#vhMsg').innerHTML = `<span class="tr-err">${esc(err.message)}</span>`; }
-    finally { btn.disabled = false; }
-  });
-  await loadGames();
-  T.poll = setInterval(() => { if (!document.hidden && $('#vhList')) { loadGames(); loadPatches(); } else if (!$('#vhList')) clearInterval(T.poll); }, 3000);
+  T.poll = setInterval(() => { if (!document.hidden && $('#vpList')) loadPatches(); else if (!$('#vpList')) clearInterval(T.poll); }, 4000);
 }
 
 /* ---------------------------------------------------------------- gói Việt hóa có sẵn */
@@ -591,7 +991,7 @@ function bindPatch() {
   $('#vpPickZip')?.addEventListener('click', async () => { const f = await desk.pickFile('Chọn file Việt hóa (.zip)', ['zip']); if (f) $('#vpSrc').value = f; });
   $('#vpPickDir')?.addEventListener('click', async () => { const f = await desk.pickFolder('Chọn thư mục Việt hóa đã giải nén'); if (f) $('#vpSrc').value = f; });
   $('#vpPreview').addEventListener('click', async e => {
-    const body = {source: $('#vpSrc').value.trim(), game: $('#vpGame').value.trim() || $('#vhPath').value.trim()};
+    const body = {source: $('#vpSrc').value.trim(), game: $('#vpGame').value.trim()};
     if (!body.game) return msg('Chọn thư mục game trước (ô ở trên, hoặc chọn game Steam).', true);
     if (!body.source) return msg('Chọn file .zip Việt hóa.', true);
     const b = e.currentTarget; b.disabled = true; msg('Đang đọc gói…');
@@ -626,6 +1026,7 @@ async function loadPatches() {
   const key = JSON.stringify(d.patches);
   if (el.dataset.key === key) return;
   el.dataset.key = key;
+  if (!d.patches.length) { el.innerHTML = '<div class="box empty"><p>Chưa cài gói nào.</p></div>'; return; }
   el.innerHTML = d.patches.map(p => {
     const st = {ok: ['var(--green)', 'Đang dùng'], overwritten: ['var(--red)', 'Steam đã ghi đè – cần cài lại'], nogame: ['var(--surface-2)', 'Không thấy thư mục game']}[p.state];
     return `<div class="box tr-book" data-pid="${p.id}">
@@ -658,7 +1059,7 @@ async function loadGames() {
   if (!el) return;
   let d;
   try { d = await api('/api/translate/games'); } catch (e) { el.innerHTML = `<div class="notice box err">${esc(e.message)}</div>`; return; }
-  if (!d.games.length) { el.innerHTML = '<div class="box empty"><h3>Chưa có game nào</h3><p>Nhập thư mục game ở khung trên rồi bấm Quét game.</p></div>'; return; }
+  if (!d.games.length) { el.innerHTML = '<div class="box empty"><h3>Chưa có game nào</h3><p>Nhập thư mục game ở khung trên rồi bấm Tìm file chữ.</p></div>'; return; }
   el.innerHTML = d.games.map(g => gameRow(g)).join('');
   el.querySelectorAll('[data-gid]').forEach(row => row.addEventListener('click', e => gameAct(e, row.dataset.gid)));
 }
@@ -705,6 +1106,7 @@ async function gameAct(e, id) {
       if (!confirm('Tắt game trước khi áp dụng. Áp dụng bản dịch vào game ngay?')) return;
       btn.disabled = true; btn.textContent = 'Đang ghi…';
       const r = await api(`/api/translate/games/${id}/apply`, {method: 'POST'});
+      if (r.errors && r.errors.length) toast(r.errors.slice(0, 2).join(' · '), 'err');
       toast(r.engine === 'renpy' ? `Đã Việt hóa: ${r.say} câu thoại, ${r.ui} chữ giao diện. Mở game để chơi.` : `Đã Việt hóa ${r.texts} câu trong ${r.files} file. Mở game để chơi.`);
       if (r.engine === 'unity' && !r.texts) toast('Không câu nào được thay – dịch xong trước rồi Áp dụng.', 'err');
     }
@@ -727,7 +1129,7 @@ async function renderProject() {
   el.innerHTML = '<div class="loading"><span class="spin"></span>Đang mở…</div>';
   let g;
   try { g = await api(`/api/translate/games/${T.gp}?limit=1`); } catch (e) { T.gp = null; toast(e.message, 'err'); return render(); }
-  const unity = g.engine === 'unity', rpg = g.engine !== 'renpy' && !unity;
+  const unity = g.engine === 'unity', files = g.engine === 'files', rpg = g.engine !== 'renpy' && !unity && !files;
   el.innerHTML = `
     <div class="box tr-bar">
       <button class="btn sm plain" type="button" id="vhBack">← Danh sách game</button>
@@ -736,8 +1138,30 @@ async function renderProject() {
       <span class="hint" id="vhStat"></span>
     </div>
     <div id="vhHead"></div>
+    <div class="box pcard vh-brief">
+      <div class="row-between"><h3>Bối cảnh game cho Claude</h3>
+        <div class="btn-row"><button class="btn sm yellow" type="button" id="vhAuto">Để Claude tìm hiểu game</button></div></div>
+      <p class="hint">Claude dịch theo đúng thứ tự trong game và đọc kèm bối cảnh này mỗi lượt: thể loại, giọng văn, nhân vật, cách xưng hô. Bấm nút vàng để Claude đọc mẫu chữ của game rồi tự viết (vài cent), sau đó sửa lại nếu cần.</p>
+      <div class="cols2">
+        <label class="field">Bối cảnh
+          <textarea id="vhBrief" rows="7" placeholder="Ví dụ:&#10;- Game quản lý nhà hàng vũ trụ, giọng hài hước.&#10;- Mira (nữ, phục vụ) gọi người chơi là &quot;sếp&quot;, xưng &quot;em&quot;.&#10;- Chữ giao diện dịch ngắn gọn.">${esc(g.brief || '')}</textarea></label>
+        <label class="field">Thuật ngữ riêng của game
+          <textarea id="vhGloss" rows="7" placeholder="Mỗi dòng: chữ gốc = chữ dịch&#10;Space Credits = Tín dụng vũ trụ&#10;Mira = Mira">${esc(g.glossary || '')}</textarea></label>
+      </div>
+      <details class="tr-help"><summary>Không có API key? Nhờ Claude (chat) dịch giúp</summary>
+        <ol class="steps">
+          <li>Bấm <b>Tải file cho Claude</b> (mỗi file tối đa 400 câu chưa dịch, kèm bối cảnh và thuật ngữ ở trên).</li>
+          <li>Mở Claude (claude.ai hoặc app Claude), gửi file đó và nhắn “Dịch giúp mình”.</li>
+          <li>Copy câu trả lời JSON của Claude, dán vào ô dưới rồi bấm <b>Nhập bản dịch</b>. Lặp lại cho tới khi hết câu.</li>
+        </ol>
+        <div class="btn-row"><button class="btn sm cyan" type="button" id="vhExport">Tải file cho Claude</button></div>
+        <textarea id="vhImport" rows="4" placeholder='Dán câu trả lời của Claude, dạng {"12": "Bắt đầu", "13": "Tùy chọn"}'></textarea>
+        <div class="btn-row"><button class="btn sm green" type="button" id="vhImportGo">Nhập bản dịch</button></div>
+      </details>
+    </div>
     ${unity ? `<div class="box pcard"><h3>Khi áp dụng</h3><p class="hint">Tiếng Việt được ghi thay chỗ tiếng Anh trong bảng chữ của game (chọn English trong cài đặt ngôn ngữ của game). Chữ hiện ô vuông nghĩa là phông của game thiếu dấu tiếng Việt. Steam cập nhật game thì bấm Áp dụng lại.</p></div>` : ''}
-    <div class="box pcard" ${unity ? 'hidden' : ''}>
+    ${files ? `<div class="box pcard"><h3>Khi áp dụng</h3><p class="hint">Tiếng Việt được ghi thay chỗ chữ gốc trong ${g.sources.length} file (${esc(g.sources.slice(0, 3).map(x => x.label).join(', '))}${g.sources.length > 3 ? '…' : ''}), bản gốc sao lưu trong <code>CircleVault-ban-goc</code>. Trong game chọn ngôn ngữ gốc (thường là English). Chữ hiện ô vuông là do phông của game thiếu dấu tiếng Việt.</p></div>` : ''}
+    <div class="box pcard" ${unity || files ? 'hidden' : ''}>
       <div class="row-between"><h3>Tùy chọn khi áp dụng</h3></div>
       <label class="check"><input type="checkbox" id="vhFont" ${g.opts.font !== false ? 'checked' : ''}> Đổi phông chữ của game sang phông có dấu tiếng Việt</label>
       <p class="hint">${rpg ? 'Phông gốc của RPG Maker thường không có dấu tiếng Việt (hiện ô vuông). App chép phông Arial của Windows vào game.' : 'Nhiều game Ren\'Py dùng phông riêng không có dấu tiếng Việt. App đổi sang phông DejaVuSans có sẵn trong Ren\'Py.'}</p>
@@ -757,6 +1181,27 @@ async function renderProject() {
       <div class="row-between" id="vhPager"></div>
     </div>`;
   $('#vhBack').addEventListener('click', () => { T.gp = null; render(); });
+  ['vhBrief', 'vhGloss'].forEach(id => $('#' + id).addEventListener('change', e => api(`/api/translate/games/${T.gp}`, {method: 'PATCH',
+    body: id === 'vhBrief' ? {brief: e.target.value} : {glossary: e.target.value}}).then(() => toast('Đã lưu. Câu dịch sau sẽ theo bối cảnh mới.')).catch(err => toast(err.message, 'err'))));
+  $('#vhAuto').addEventListener('click', async e => {
+    const b = e.currentTarget; b.disabled = true; b.textContent = 'Claude đang đọc game…';
+    try {
+      const r = await api(`/api/translate/games/${T.gp}/brief`, {method: 'POST'});
+      $('#vhBrief').value = r.brief; $('#vhGloss').value = r.glossary;
+      toast('Claude đã viết bối cảnh game. Xem lại rồi bấm Dịch.');
+    } catch (err) { toast(err.message, 'err'); }
+    finally { b.disabled = false; b.textContent = 'Để Claude tìm hiểu game'; }
+  });
+  $('#vhExport').addEventListener('click', () => { location.href = `/api/translate/games/${T.gp}/export?only=todo&limit=400`; });
+  $('#vhImportGo').addEventListener('click', async () => {
+    const text = $('#vhImport').value.trim();
+    if (!text) return;
+    try {
+      const r = await api(`/api/translate/games/${T.gp}/import`, {method: 'POST', body: {text}});
+      toast(`Đã nhập ${r.imported} câu${r.bad ? `, ${r.bad} câu mất mã cần xem lại` : ''}.`);
+      $('#vhImport').value = ''; refreshProject(); loadRows();
+    } catch (err) { toast(err.message, 'err'); }
+  });
   $('#vhFont').addEventListener('change', e => api(`/api/translate/games/${T.gp}`, {method: 'PATCH', body: {font: e.target.checked}}).catch(err => toast(err.message, 'err')));
   if (rpg) ['vhW', 'vhWF'].forEach(id => $('#' + id).addEventListener('change', e => api(`/api/translate/games/${T.gp}`, {method: 'PATCH',
     body: id === 'vhW' ? {width: +e.target.value} : {width_face: +e.target.value}}).catch(err => toast(err.message, 'err'))));
