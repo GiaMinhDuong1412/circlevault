@@ -520,7 +520,10 @@ async function playAt(i) {
     M.opening = '';
     audio.src = `/api/music/yt/stream?u=${enc(t.ou)}`;
   }
-  audio.play().catch(err => { if (err.name !== 'AbortError') toast('Không phát được bài này: ' + err.message, 'err'); });
+  audio.play().catch(err => {
+    if (err.name === 'AbortError' || (t.ou && !t.local)) return;   // bài online: sự kiện 'error' lo (thử lại / báo lý do)
+    toast('Không phát được bài này: ' + err.message, 'err');
+  });
   renderBar();
 }
 function prefetchNext() {   // lấy sẵn link bài online tiếp theo để chuyển bài nhanh
@@ -546,12 +549,37 @@ function togglePlay() {
 audio.addEventListener('ended', () => next(true));
 audio.addEventListener('play', () => { renderBar(); renderTracks(); });
 audio.addEventListener('pause', () => { renderBar(); renderTracks(); });
-audio.addEventListener('playing', () => { M.errRun = 0; prefetchNext(); });
-audio.addEventListener('error', () => {
+audio.addEventListener('playing', () => { M.errRun = 0; const t = M.queue[M.qi]; if (t) t._retry = 0; prefetchNext(); });
+audio.addEventListener('error', async () => {
   if (!audio.src || !audio.getAttribute('src')) return;
-  const t = M.queue[M.qi];
-  toast(t && t.ou && !t.local ? `Bài online bị ngắt hoặc ${srcName(t)} chặn, chuyển bài tiếp.` : 'File nhạc lỗi hoặc không còn trên ổ, chuyển bài tiếp.', 'err');
-  if (++M.errRun < 5) setTimeout(() => next(true), 800);
+  const t = M.queue[M.qi], my = M.pseq;
+  if (t && t.ou && !t.local) {
+    // Bài online lỗi: hỏi lại máy chủ (nó tự lấy link mới, bị chặn thì tải tạm cả bài) rồi phát tiếp chỗ đang nghe
+    const at = audio.currentTime || 0;
+    let why = '';
+    if ((t._retry || 0) < 1) {
+      t._retry = (t._retry || 0) + 1;
+      M.opening = keyOf(t); renderBar();
+      try {
+        const r = await fetch(`/api/music/yt/stream?u=${enc(t.ou)}`, {headers: {Range: 'bytes=0-1'}});
+        if (r.ok) {
+          r.body?.cancel?.();
+          if (my !== M.pseq) return;
+          M.opening = '';
+          audio.src = `/api/music/yt/stream?u=${enc(t.ou)}&r=${Date.now()}`;
+          if (at > 1) audio.addEventListener('loadedmetadata', () => { audio.currentTime = at; }, {once: true});
+          audio.play().catch(() => {});
+          renderBar(); return;
+        }
+        why = (await r.json().catch(() => ({}))).detail || `mã ${r.status}`;
+      } catch (e) { why = e.message; }
+      M.opening = '';
+    }
+    if (my !== M.pseq) return;
+    toast(`Không nghe được "${t.title}"${why ? ': ' + why : ` (${srcName(t)} chặn hoặc mạng ngắt)`}. Chuyển bài tiếp.`, 'err');
+  } else toast('File nhạc lỗi hoặc không còn trên ổ, chuyển bài tiếp.', 'err');
+  renderBar();
+  if (++M.errRun < 5) setTimeout(() => { if (my === M.pseq) next(true); }, 800);
 });
 audio.addEventListener('volumechange', () => pushMini());
 audio.addEventListener('timeupdate', updateSeek);

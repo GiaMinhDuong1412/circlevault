@@ -7,6 +7,7 @@ Chỉ nhận yêu cầu từ chính máy này: các lệnh ở đây dùng cooki
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import threading
@@ -19,6 +20,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from . import config, db, downloader
+
+_log = logging.getLogger(__name__)
 
 CHUNK = 4 * 1024 * 1024          # mỗi lần hỏi googlevideo 4 MB (yêu cầu quá lớn dễ bị bóp tốc độ)
 LIST_TTL = 10 * 60               # nhớ danh sách bài của playlist 10 phút
@@ -337,12 +340,34 @@ def _cache_file(u: str, key: str) -> dict:
             "duration": info.get("duration"), "preview": "preview" in str(info.get("format_id") or "")}
 
 
-def _resolve(u: str, force: bool = False) -> dict:
+def info_meta(info: dict) -> dict:
+    return {k: v for k, v in {"title": info.get("title"), "artist": info.get("channel") or info.get("uploader"),
+                              "duration": info.get("duration")}.items() if v}
+
+
+def _probe(s: dict) -> int:
+    try:
+        r = _get(s, 0, 1, timeout=12)
+        r.close()
+        return r.status_code
+    except requests.RequestException:
+        return 0
+
+
+def _resolve(u: str, force: bool = False, no_direct: bool = False) -> dict:
     key = _key(u)
     with _lock:
         s = _streams.get(key)
         if s and not force and s["exp"] > time.time():
             return s
+    if no_direct:                                      # luồng trực tiếp đã hỏng giữa chừng → tải tạm
+        with _lock:
+            old = _streams.get(key) or {}
+        s = {**{k: old[k] for k in ("title", "artist", "duration") if old.get(k)}, **_cache_file(u, key),
+             "exp": time.time() + 12 * 3600}
+        with _lock:
+            _streams[key] = s
+        return s
     try:
         info = _ydl_info(u, noplaylist=True, format=FMT_HTTP)
         direct = bool(info.get("url")) and str(info.get("protocol", "https")).startswith("http")
@@ -350,6 +375,7 @@ def _resolve(u: str, force: bool = False) -> dict:
         if "format" not in str(e.detail).lower():
             raise
         info, direct = {}, False
+    s = None
     if direct:
         exp = parse_qs(urlparse(info["url"]).query).get("expire", [None])[0]
         exp = int(exp) - 120 if exp and exp.isdigit() else time.time() + 3 * 3600
@@ -357,9 +383,15 @@ def _resolve(u: str, force: bool = False) -> dict:
              "exp": min(exp, time.time() + 5 * 3600), "title": info.get("title"),
              "artist": info.get("channel") or info.get("uploader"), "duration": info.get("duration"), "ext": info.get("ext"),
              "preview": "preview" in str(info.get("format_id") or "")}
-    else:
+        # Link lấy được chưa chắc phát được (YouTube đổi cách bảo vệ luồng, link gắn với ứng dụng khách…) →
+        # hỏi thử vài byte; bị từ chối thì để yt-dlp tự tải tạm cả bài như với SoundCloud HLS.
+        code = _probe(s)
+        if code not in (200, 206):
+            _log.warning("Link nghe online bị từ chối (mã %s), tải tạm cả bài: %s", code, u)
+            s = None
+    if s is None:
         try:
-            s = {**_cache_file(u, key), "exp": time.time() + 12 * 3600}
+            s = {**info_meta(info), **_cache_file(u, key), "exp": time.time() + 12 * 3600}
         except HTTPException as e:
             if "format" in str(e.detail).lower():
                 raise HTTPException(502, "Bài này được mã hóa bảo vệ bản quyền hoặc không có luồng âm thanh, không nghe được.") from e
@@ -401,9 +433,9 @@ def stream(vid: str, request: Request):
     return _stream(f"https://www.youtube.com/watch?v={vid}", request)
 
 
-def _get(s: dict, start: int, end: int | None):
+def _get(s: dict, start: int, end: int | None, timeout: int = 30):
     return requests.get(s["url"], headers={**s["headers"], "Range": f"bytes={start}-{'' if end is None else end}"},
-                        stream=True, timeout=30)
+                        stream=True, timeout=timeout)
 
 
 _RANGE = re.compile(r"bytes=(\d*)-(\d*)")
@@ -416,7 +448,8 @@ def _stream(u: str, request: Request):
         import mimetypes
         if not os.path.exists(s["file"]):
             s = _resolve(u, force=True)
-        mime = {".opus": "audio/ogg", ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".mp3": "audio/mpeg"}.get(
+        mime = {".opus": "audio/ogg", ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".webm": "audio/webm",
+                ".mp4": "audio/mp4", ".aac": "audio/aac"}.get(
             os.path.splitext(s["file"])[1].lower()) or mimetypes.guess_type(s["file"])[0] or "audio/mpeg"
         return FileResponse(s["file"], media_type=mime, headers={"Cache-Control": "no-store"})
     m = _RANGE.match(request.headers.get("range", "") or "")
@@ -429,6 +462,10 @@ def _stream(u: str, request: Request):
         if s.get("file"):
             return _stream(u, request)
         r = _get(s, start, start + CHUNK - 1 if want_end is None else min(want_end, start + CHUNK - 1))
+        if r.status_code in (403, 410):                     # link mới vẫn bị từ chối → tải tạm cả bài rồi phát file
+            r.close()
+            _resolve(u, no_direct=True)
+            return _stream(u, request)
     if r.status_code == 416:
         r.close()
         raise HTTPException(416, "Vượt quá cuối bài.")
@@ -444,7 +481,7 @@ def _stream(u: str, request: Request):
     if mime.startswith("video/"):
         mime = "audio/" + mime.split("/", 1)[1]
 
-    def gen(r=r):
+    def gen(r=r, src=s):
         pos = start
         try:
             while True:
@@ -457,7 +494,17 @@ def _stream(u: str, request: Request):
                 r.close()
                 if pos > end or not total:
                     return
-                r = _get(s, pos, min(end, pos + CHUNK - 1))
+                r = _get(src, pos, min(end, pos + CHUNK - 1))
+                if r.status_code in (403, 410):              # link hết hạn giữa bài → lấy link mới, phát tiếp
+                    r.close()
+                    try:
+                        s2 = _resolve(u, force=True)
+                    except HTTPException:
+                        return
+                    if s2.get("file"):
+                        return
+                    src = s2
+                    r = _get(src, pos, min(end, pos + CHUNK - 1))
                 if r.status_code not in (200, 206):
                     return
         finally:
