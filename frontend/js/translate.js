@@ -836,13 +836,13 @@ function steamSelect(targets) {
 }
 
 /* ---------------------------------------------------------------- tìm file chữ (chạy nền, có thanh tiến độ) */
-async function startScan(path) {
+async function startScan(path, aes) {
   if (T.scan && T.scan.timer) clearInterval(T.scan.timer);
   if (T.scan && T.scan.job && T.scan.state === 'running') api(`/api/translate/games/scan/${T.scan.job}/cancel`, {method: 'POST'}).catch(() => {});
-  T.scan = {path, job: null, state: 'running', last: {phase: 'start', text: 'Đang bắt đầu…', done: 0, total: 0, found: 0, strings: 0}};
+  T.scan = {path, aes: aes || null, job: null, state: 'running', last: {phase: 'start', text: 'Đang bắt đầu…', done: 0, total: 0, found: 0, strings: 0}};
   paintScan(T.scan.last);
   try {
-    const r = await api('/api/translate/games/scan', {method: 'POST', body: {path}});
+    const r = await api('/api/translate/games/scan', {method: 'POST', body: {path, aes: aes || null}});
     T.scan.job = r.job;
     pollScan();
   } catch (err) { T.scan.state = 'error'; paintScan({state: 'error', error: err.message}); }
@@ -899,7 +899,38 @@ function paintScan(j) {
   });
 }
 
-const SRC_KIND = {renpy: "Kịch bản Ren'Py", rpg: 'RPG Maker', 'unity-loc': 'Unity Localization', file: 'File chữ', textasset: 'Unity TextAsset'};
+const SRC_KIND = {renpy: "Kịch bản Ren'Py", rpg: 'RPG Maker', 'unity-loc': 'Unity Localization', file: 'File chữ', textasset: 'Unity TextAsset',
+  mono: 'Unity MonoBehaviour', locres: 'Unreal .locres'};
+/* Thêm cho kết quả tìm: khóa AES (Unreal) và cách "dịch khi chơi" bằng XUnity.AutoTranslator (Unity). */
+function extraCards(r, none) {
+  let h = '';
+  if (r.unreal && (r.need_key || none)) h += `<div class="box pcard vh-extra">
+      <h3>Game Unreal Engine${r.need_key ? ' – file .pak bị mã hóa' : ''}</h3>
+      <p class="hint">${r.need_key ? 'Bảng chữ nằm trong file .pak đã mã hóa AES. Nhập khóa AES của game (cộng đồng mod thường chia sẻ trên diễn đàn, dạng 0x + 64 ký tự) rồi tìm lại.'
+        : 'App đọc bảng chữ .locres trong file .pak (UE4/UE5). Pak mã hóa thì cần khóa AES; pak nén Oodle hiện chưa mở được.'}</p>
+      <div class="paste-row"><input type="text" id="ueKey" class="mono" placeholder="0x0123…ABCD (khóa AES 64 ký tự hex)" aria-label="Khóa AES" value="${esc(T.scan && T.scan.aes || '')}">
+        <button class="btn yellow" type="button" id="ueRescan">TÌM LẠI VỚI KHÓA</button></div>
+    </div>`;
+  if (r.unity) h += `<div class="box pcard vh-extra">
+      <h3>${none ? 'Không thấy chữ trong file? ' : 'Còn câu chưa dịch khi chơi? '}Dịch khi chơi bằng XUnity.AutoTranslator</h3>
+      <p class="hint">Cách cộng đồng hay dùng nhất cho game Unity: app cài <b>BepInEx</b> + <b>XUnity.AutoTranslator</b> (mã nguồn mở, tải từ GitHub) vào thư mục game.
+        Khi chơi, câu nào hiện trên màn hình cũng được gửi về CircleVault: dịch ngay (Google) và lưu vào dự án để bạn sửa hoặc gửi Claude chat dịch lại cho hay;
+        bấm Áp dụng là game dùng bản dịch mới. Gỡ sạch được bất cứ lúc nào. Không dùng cho game online có chống gian lận.</p>
+      <div class="btn-row"><button class="btn green" type="button" id="xuSetup">CÀI XUNITY &amp; TẠO DỰ ÁN “DỊCH KHI CHƠI”</button></div>
+    </div>`;
+  return h;
+}
+function bindExtra(el) {
+  $('#ueRescan', el)?.addEventListener('click', () => { const k = $('#ueKey').value.trim(); if (!k) return toast('Nhập khóa AES trước.', 'err'); startScan(T.scan.path, k); });
+  $('#xuSetup', el)?.addEventListener('click', async e => {
+    const b = e.currentTarget; b.disabled = true; b.textContent = 'Đang tải BepInEx + XUnity từ GitHub…';
+    try {
+      const g = await api('/api/translate/games/xunity-setup', {method: 'POST', body: {path: T.scan.path, lang: (T.scan.last && T.scan.last.result && T.scan.last.result.lang) || 'en'}});
+      toast(`Đã cài XUnity.AutoTranslator (${g.installed} file). Mở game và chơi – câu mới tự hiện trong dự án.`);
+      T.scan = null; T.gp = g.id; T.gq = {filter: 'all', q: '', offset: 0}; render();
+    } catch (err) { toast(err.message, 'err'); b.disabled = false; b.textContent = 'CÀI XUNITY & TẠO DỰ ÁN “DỊCH KHI CHƠI”'; }
+  });
+}
 const LANG_VI = {en: 'Tiếng Anh', ja: 'Tiếng Nhật', zh: 'Tiếng Trung', ko: 'Tiếng Hàn', fr: 'Tiếng Pháp', de: 'Tiếng Đức', es: 'Tiếng TBN',
   pt: 'Tiếng BĐN', it: 'Tiếng Ý', ru: 'Tiếng Nga', pl: 'Tiếng Ba Lan', tr: 'Tiếng Thổ', latin: 'Chữ Latin'};
 function paintFound(r) {
@@ -908,9 +939,11 @@ function paintFound(r) {
   if (!src.length) {
     el.innerHTML = `<div class="box pcard"><h3>Không tìm thấy file chữ nào</h3>
       ${(r.hints || []).map(h => `<p>${esc(h)}</p>`).join('') || '<p>Game có thể lưu chữ trong file đóng gói hoặc mã hóa.</p>'}
+      ${(r.warn || []).map(h => `<p class="hint">${esc(h)}</p>`).join('')}
       <div class="btn-row"><button class="btn sm yellow" type="button" data-go="vp">Có gói Việt hóa? Cài gói</button>
-        <button class="btn sm plain" type="button" data-go="game">Dùng Dịch màn hình game</button></div></div>`;
+        <button class="btn sm plain" type="button" data-go="game">Dùng Dịch màn hình game</button></div></div>${extraCards(r, true)}`;
     el.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => goSub(b.dataset.go)));
+    bindExtra(el);
     return;
   }
   const rows = src.map((s, i) => `<label class="vp-row src-row${s.on ? '' : ' off'}">
@@ -918,7 +951,7 @@ function paintFound(r) {
       <span class="src-main"><span class="mono">${esc(s.label || s.rel || '')}</span>
         <span class="src-sample">${(s.sample || []).map(t => `“${esc(t)}”`).join(' · ')}</span>
         ${s.why ? `<span class="hint">${esc(s.why)}</span>` : ''}</span>
-      <span class="badge" style="background:${s.kind === 'file' ? 'var(--cyan)' : s.kind === 'textasset' ? 'var(--pink)' : 'var(--violet)'}">${SRC_KIND[s.kind] || s.kind}</span>
+      <span class="badge" style="background:${s.kind === 'file' ? 'var(--cyan)' : s.kind === 'textasset' || s.kind === 'mono' ? 'var(--pink)' : 'var(--violet)'}">${SRC_KIND[s.kind] || s.kind}</span>
       <span class="badge" style="background:${s.on ? 'var(--green)' : 'var(--surface-2)'};${s.on ? '' : 'color:var(--text)'}">${LANG_VI[s.lang] || esc(s.lang || '?')}</span>
       <span class="hint src-n">${s.count.toLocaleString('vi-VN')} câu</span></label>`).join('');
   el.innerHTML = `<div class="box pcard scan-done">
@@ -928,7 +961,9 @@ function paintFound(r) {
     <p class="hint">App đã chọn sẵn file ngôn ngữ gốc. Bản dịch tiếng Việt sẽ ghi thay chỗ ngôn ngữ đó (game không có tiếng Việt), nên trong game hãy chọn ngôn ngữ này.</p>
     <div class="vp-list">${rows}</div>
     <div class="btn-row"><button class="btn green" type="button" id="scanMake">TẠO DỰ ÁN DỊCH</button>
-      <button class="btn plain" type="button" id="scanAgain">Tìm lại</button><span class="hint" id="scanSum"></span></div></div>`;
+      <button class="btn plain" type="button" id="scanAgain">Tìm lại</button><span class="hint" id="scanSum"></span></div>
+    ${(r.warn || []).length ? `<details class="hint"><summary>${r.warn.length} cảnh báo khi đọc</summary>${r.warn.map(h => `<div>${esc(h)}</div>`).join('')}</details>` : ''}</div>${extraCards(r, false)}`;
+  bindExtra(el);
   const sum = () => {
     const on = [...el.querySelectorAll('[data-src]')].filter(x => x.checked);
     const n = on.reduce((a, x) => a + (src.find(s => s.id === x.dataset.src) || {count: 0}).count, 0);
@@ -1124,12 +1159,114 @@ async function gameAct(e, id) {
   if (T.gp) refreshProject(); else loadGames();
 }
 
+/* ---------------------------------------------------------------- Việt hóa game: dịch bằng Claude chat (không cần API key) */
+const PACK_SIZES = [['small', 'Nhỏ', 'dán thẳng vào ô chat'], ['medium', 'Vừa', 'khuyên dùng'], ['large', 'Lớn', 'gửi dạng file, ít lượt hơn']];
+let packCopied = {};
+try { packCopied = JSON.parse(localStorage.getItem('cv-vh-copied') || '{}'); } catch (e) { packCopied = {}; }
+async function paintClaude(state) {
+  const el = $('#vhClaude');
+  if (!el) return;
+  let st = state;
+  if (!st) { try { st = await api(`/api/translate/games/${T.gp}/claude`); } catch (e) { return; } }
+  const pk = st.pack, g = T.gstate || {};
+  const todo = g.total ? g.total - g.done + (g.bad || 0) : 0;
+  const size = (pk && pk.size) || 'medium';
+  const copied = packCopied[T.gp] || {};
+  const allDone = pk && pk.parts.length && pk.parts.every(x => x.done >= x.count);
+  el.innerHTML = `
+    <div class="row-between"><h3>Dịch bằng Claude chat <span class="badge" style="background:var(--green)">Không cần API key</span></h3>
+      <a class="btn sm plain" href="https://claude.ai/new" target="_blank" rel="noopener">Mở Claude ↗</a></div>
+    <p class="hint">App gom chữ của game thành từng phần kèm bối cảnh và thuật ngữ ở trên. Bạn gửi từng phần cho Claude (claude.ai hoặc app Claude),
+      dán câu trả lời vào đây – app tự đưa bản dịch vào đúng câu, đúng file. Xong thì bấm <b>Áp dụng vào game</b>.</p>
+    <ol class="vh-cl">
+      <li><b>Tạo gói</b>
+        <div class="btn-row vh-packrow">
+          <span class="hint">Cỡ mỗi phần:</span><div class="tr-seg" role="group" aria-label="Cỡ mỗi phần">${PACK_SIZES.map(([k, n, h]) => `<button type="button" class="chip${size === k ? ' on' : ''}" data-ps="${k}" title="${h}">${n}</button>`).join('')}</div>
+          <button class="btn sm yellow" type="button" id="vhPack">${pk ? 'Tạo lại gói (câu chưa dịch)' : 'TẠO GÓI CHO CLAUDE'}</button>
+          ${pk && window.cvDesktop ? '<button class="btn sm plain" type="button" id="vhPackDir">Mở thư mục gói</button>' : ''}
+        </div>
+        <span class="hint">${pk ? `${pk.parts.length} phần · ${pk.count.toLocaleString('vi-VN')} câu · thư mục <code>${esc(pk.dir)}</code>` : `${todo.toLocaleString('vi-VN')} câu chưa dịch. Cỡ “Vừa” ≈ 30.000 ký tự mỗi phần.`}</span></li>
+      <li><b>Gửi từng phần cho Claude</b><span class="hint">Bấm <b>Chép</b> rồi dán vào ô chat của Claude (hoặc kéo file <code>phan-xx.txt</code> vào) và gửi, không cần gõ thêm gì. Sau 3–4 phần nên mở cuộc trò chuyện mới.</span>
+        ${pk ? `<div class="vh-parts">${pk.parts.map(x => {
+          const pct = x.count ? Math.round(x.done / x.count * 100) : 0;
+          const ok = x.done >= x.count;
+          return `<div class="vh-part${ok ? ' ok' : ''}" data-no="${x.no}">
+            <b>Phần ${x.no}</b><small>${x.count} câu · ${(x.chars / 1000).toFixed(1)}k ký tự</small>
+            <div class="bar" aria-hidden="true"><i class="${pct ? '' : 'w0'}" style="width:${pct}%;background:var(--green)"></i></div>
+            <small>${ok ? '✓ Đã nhập đủ' : x.done ? `Đã nhập ${x.done}/${x.count}` : copied[x.no] ? 'Đã chép – chờ câu trả lời' : 'Chưa gửi'}${x.bad ? ` · ${x.bad} mất mã` : ''}</small>
+            <span class="btn-row"><button class="btn sm ${ok ? 'plain' : 'cyan'}" type="button" data-pc="${x.no}">📋 Chép</button>
+              <a class="btn sm plain" href="/api/translate/games/${T.gp}/claude/parts/${x.no}?dl=1" download="phan-${String(x.no).padStart(2, '0')}.txt" aria-label="Tải file phần ${x.no}">⬇</a></span></div>`;
+        }).join('')}</div>` : '<p class="hint">Tạo gói ở bước 1 trước.</p>'}</li>
+      <li><b>Dán câu trả lời của Claude</b><span class="hint">Bấm Copy ở khối JSON Claude trả về rồi dán vào đây – dán là tự nhập. Nhiều phần, nhiều lần đều được.</span>
+        <div class="vh-drop" id="vhDrop">
+          <textarea id="vhImport" rows="4" placeholder='Dán câu trả lời của Claude, dạng {"12": "Bắt đầu", "13": "Tùy chọn"} – hoặc kéo file .json/.txt Claude tạo vào đây'></textarea>
+          <div class="btn-row"><button class="btn sm green" type="button" id="vhImportGo">NHẬP BẢN DỊCH</button>
+            <label class="btn sm plain">Chọn file trả lời…<input type="file" id="vhImportFile" accept=".json,.txt,.md" multiple hidden></label>
+            ${pk ? '<button class="btn sm plain" type="button" id="vhImportDir" title="Đọc mọi file trong thư mục tra-loi của gói">Nhập từ thư mục tra-loi</button>' : ''}</div>
+        </div></li>
+    </ol>
+    ${allDone ? '<div class="notice box ok"><b>Đã đủ bản dịch cho mọi phần.</b><span>Bấm “Áp dụng vào game” ở trên để ghi vào game.</span></div>' : ''}`;
+  el.querySelectorAll('[data-ps]').forEach(b => b.addEventListener('click', () => { el.querySelectorAll('[data-ps]').forEach(x => x.classList.toggle('on', x === b)); }));
+  $('#vhPack').addEventListener('click', async e => {
+    const b = e.currentTarget, sz = (el.querySelector('[data-ps].on') || {}).dataset?.ps || 'medium';
+    b.disabled = true; b.textContent = 'Đang tạo…';
+    try { const r = await api(`/api/translate/games/${T.gp}/claude/pack`, {method: 'POST', body: {size: sz, only: 'todo'}}); packCopied[T.gp] = {}; saveCopied(); toast(`Đã chia thành ${r.pack.parts.length} phần.`); paintClaude(r); }
+    catch (err) { toast(err.message, 'err'); b.disabled = false; b.textContent = 'TẠO GÓI CHO CLAUDE'; }
+  });
+  $('#vhPackDir')?.addEventListener('click', () => api(`/api/translate/games/${T.gp}/claude/open`, {method: 'POST'}).catch(err => toast(err.message, 'err')));
+  el.querySelectorAll('[data-pc]').forEach(b => b.addEventListener('click', async () => {
+    const no = +b.dataset.pc;
+    try {
+      const r = await fetch(`/api/translate/games/${T.gp}/claude/parts/${no}`);
+      if (!r.ok) throw new Error('Không lấy được phần này.');
+      const text = await r.text();
+      await copyText(text);
+      (packCopied[T.gp] = packCopied[T.gp] || {})[no] = Date.now(); saveCopied();
+      toast(`Đã chép phần ${no} (${text.length.toLocaleString('vi-VN')} ký tự). Dán vào ô chat của Claude rồi gửi.`);
+      b.textContent = '✓ Đã chép';
+      const s = b.closest('.vh-part').querySelectorAll('small')[1];
+      if (s && !s.textContent.startsWith('✓') && !s.textContent.startsWith('Đã nhập')) s.textContent = 'Đã chép – chờ câu trả lời';
+    } catch (err) { toast(err.message, 'err'); }
+  }));
+  const doImport = async (text, label) => {
+    if (!text.trim()) return;
+    try {
+      const r = await api(`/api/translate/games/${T.gp}/import`, {method: 'POST', body: {text}});
+      toast(`${label || 'Đã nhập'} ${r.imported} câu${r.bad ? `, ${r.bad} câu mất mã (lọc “Cần xem lại” để sửa)` : ''}${r.unknown ? `, bỏ ${r.unknown} số không có trong game` : ''}.`);
+      $('#vhImport').value = '';
+      paintClaude(r); refreshProject(); loadRows();
+    } catch (err) { toast(err.message, 'err'); }
+  };
+  $('#vhImportGo').addEventListener('click', () => doImport($('#vhImport').value));
+  $('#vhImport').addEventListener('paste', () => setTimeout(() => { const v = $('#vhImport').value; if (/"\d+"\s*:/.test(v) && v.length > 20) doImport(v, 'Đã tự nhập'); }, 50));
+  const readFiles = async files => { const texts = await Promise.all([...files].map(f => f.text())); doImport(texts.join('\n'), `Đã nhập ${files.length} file:`); };
+  $('#vhImportFile').addEventListener('change', e => { if (e.target.files.length) readFiles(e.target.files); e.target.value = ''; });
+  const drop = $('#vhDrop');
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files.length) readFiles(e.dataTransfer.files); });
+  $('#vhImportDir')?.addEventListener('click', async () => {
+    try { const r = await api(`/api/translate/games/${T.gp}/claude/import-folder`, {method: 'POST'}); toast(`Đọc ${r.files} file: nhập ${r.imported} câu${r.bad ? `, ${r.bad} mất mã` : ''}.`); paintClaude(r); refreshProject(); loadRows(); }
+    catch (err) { toast(err.message, 'err'); }
+  });
+}
+function saveCopied() { try { localStorage.setItem('cv-vh-copied', JSON.stringify(packCopied)); } catch (e) { /* bỏ qua */ } }
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return; } catch (e) { /* thử cách cũ */ }
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  const ok = document.execCommand('copy'); ta.remove();
+  if (!ok) throw new Error('Không chép được vào bộ nhớ tạm. Bấm ⬇ để tải file rồi kéo vào Claude.');
+}
+
 async function renderProject() {
   const el = $('#trSub');
   el.innerHTML = '<div class="loading"><span class="spin"></span>Đang mở…</div>';
   let g;
   try { g = await api(`/api/translate/games/${T.gp}?limit=1`); } catch (e) { T.gp = null; toast(e.message, 'err'); return render(); }
-  const unity = g.engine === 'unity', files = g.engine === 'files', rpg = g.engine !== 'renpy' && !unity && !files;
+  const unity = g.engine === 'unity', files = g.engine === 'files', xu = g.engine === 'xunity', ue = g.engine === 'unreal';
+  const rpg = !['renpy', 'unity', 'files', 'xunity', 'unreal'].includes(g.engine);
   el.innerHTML = `
     <div class="box tr-bar">
       <button class="btn sm plain" type="button" id="vhBack">← Danh sách game</button>
@@ -1148,20 +1285,20 @@ async function renderProject() {
         <label class="field">Thuật ngữ riêng của game
           <textarea id="vhGloss" rows="7" placeholder="Mỗi dòng: chữ gốc = chữ dịch&#10;Space Credits = Tín dụng vũ trụ&#10;Mira = Mira">${esc(g.glossary || '')}</textarea></label>
       </div>
-      <details class="tr-help"><summary>Không có API key? Nhờ Claude (chat) dịch giúp</summary>
-        <ol class="steps">
-          <li>Bấm <b>Tải file cho Claude</b> (mỗi file tối đa 400 câu chưa dịch, kèm bối cảnh và thuật ngữ ở trên).</li>
-          <li>Mở Claude (claude.ai hoặc app Claude), gửi file đó và nhắn “Dịch giúp mình”.</li>
-          <li>Copy câu trả lời JSON của Claude, dán vào ô dưới rồi bấm <b>Nhập bản dịch</b>. Lặp lại cho tới khi hết câu.</li>
-        </ol>
-        <div class="btn-row"><button class="btn sm cyan" type="button" id="vhExport">Tải file cho Claude</button></div>
-        <textarea id="vhImport" rows="4" placeholder='Dán câu trả lời của Claude, dạng {"12": "Bắt đầu", "13": "Tùy chọn"}'></textarea>
-        <div class="btn-row"><button class="btn sm green" type="button" id="vhImportGo">Nhập bản dịch</button></div>
-      </details>
     </div>
+    <div class="box pcard vh-claude" id="vhClaude"></div>
+    ${xu ? `<div class="box pcard vh-xu"><div class="row-between"><h3>Dịch khi chơi (XUnity.AutoTranslator)</h3>
+        <span class="badge" style="background:${g.xunity && g.xunity.installed ? 'var(--green)' : 'var(--red)'}">${g.xunity && g.xunity.installed ? 'Đã cài vào game' : 'Chưa cài'}</span></div>
+      <ol class="steps"><li>Giữ CircleVault đang mở, rồi mở game và chơi bình thường (lần đầu BepInEx mất vài giây để khởi động).</li>
+        <li>Câu nào hiện trên màn hình sẽ được dịch ngay bằng Google và hiện ở danh sách bên dưới${g.seen_at ? ` (câu mới nhất lúc ${new Date(g.seen_at * 1000).toLocaleTimeString('vi')})` : ''}.</li>
+        <li>Muốn dịch hay hơn: dùng <b>Dịch bằng Claude chat</b> ở dưới hoặc sửa tay, rồi bấm <b>Áp dụng vào game</b> – game dùng bản mới ngay lần mở sau.</li></ol>
+      <p class="hint">${g.xunity && g.xunity.il2cpp ? 'Game IL2CPP (BepInEx 6).' : 'Game Mono (BepInEx 5).'} Phím trong game: Alt+0 mở bảng của XUnity, Alt+T bật/tắt bản dịch.</p>
+      <div class="btn-row"><button class="btn sm green" type="button" id="xuInstall">${g.xunity && g.xunity.installed ? 'Cài lại / cập nhật' : 'Cài vào game'}</button>
+        <button class="btn sm plain" type="button" id="xuRemove">Gỡ BepInEx + XUnity khỏi game</button></div></div>` : ''}
+    ${ue ? `<div class="box pcard"><h3>Khi áp dụng</h3><p class="hint">App tạo file mod <code>Content/Paks/~mods/zz_CircleVault_VI_P.pak</code> chứa bảng chữ đã dịch (không sửa file .pak gốc). Trong game chọn ngôn ngữ gốc (thường là English). Chữ hiện ô vuông là phông của game thiếu dấu tiếng Việt. Game kiểm tra chữ ký pak (có file .sig) có thể không nhận mod. Khôi phục bản gốc = xóa file mod.</p></div>` : ''}
     ${unity ? `<div class="box pcard"><h3>Khi áp dụng</h3><p class="hint">Tiếng Việt được ghi thay chỗ tiếng Anh trong bảng chữ của game (chọn English trong cài đặt ngôn ngữ của game). Chữ hiện ô vuông nghĩa là phông của game thiếu dấu tiếng Việt. Steam cập nhật game thì bấm Áp dụng lại.</p></div>` : ''}
     ${files ? `<div class="box pcard"><h3>Khi áp dụng</h3><p class="hint">Tiếng Việt được ghi thay chỗ chữ gốc trong ${g.sources.length} file (${esc(g.sources.slice(0, 3).map(x => x.label).join(', '))}${g.sources.length > 3 ? '…' : ''}), bản gốc sao lưu trong <code>CircleVault-ban-goc</code>. Trong game chọn ngôn ngữ gốc (thường là English). Chữ hiện ô vuông là do phông của game thiếu dấu tiếng Việt.</p></div>` : ''}
-    <div class="box pcard" ${unity || files ? 'hidden' : ''}>
+    <div class="box pcard" ${unity || files || xu || ue ? 'hidden' : ''}>
       <div class="row-between"><h3>Tùy chọn khi áp dụng</h3></div>
       <label class="check"><input type="checkbox" id="vhFont" ${g.opts.font !== false ? 'checked' : ''}> Đổi phông chữ của game sang phông có dấu tiếng Việt</label>
       <p class="hint">${rpg ? 'Phông gốc của RPG Maker thường không có dấu tiếng Việt (hiện ô vuông). App chép phông Arial của Windows vào game.' : 'Nhiều game Ren\'Py dùng phông riêng không có dấu tiếng Việt. App đổi sang phông DejaVuSans có sẵn trong Ren\'Py.'}</p>
@@ -1192,15 +1329,16 @@ async function renderProject() {
     } catch (err) { toast(err.message, 'err'); }
     finally { b.disabled = false; b.textContent = 'Để Claude tìm hiểu game'; }
   });
-  $('#vhExport').addEventListener('click', () => { location.href = `/api/translate/games/${T.gp}/export?only=todo&limit=400`; });
-  $('#vhImportGo').addEventListener('click', async () => {
-    const text = $('#vhImport').value.trim();
-    if (!text) return;
-    try {
-      const r = await api(`/api/translate/games/${T.gp}/import`, {method: 'POST', body: {text}});
-      toast(`Đã nhập ${r.imported} câu${r.bad ? `, ${r.bad} câu mất mã cần xem lại` : ''}.`);
-      $('#vhImport').value = ''; refreshProject(); loadRows();
-    } catch (err) { toast(err.message, 'err'); }
+  $('#xuInstall')?.addEventListener('click', async e => {
+    const b = e.currentTarget; b.disabled = true; b.textContent = 'Đang tải từ GitHub…';
+    try { const r = await api('/api/translate/games/xunity-setup', {method: 'POST', body: {path: g.path, lang: g.lang}}); toast(`Đã cài (${r.installed} file mới).`); renderProject(); }
+    catch (err) { toast(err.message, 'err'); b.disabled = false; b.textContent = 'Cài vào game'; }
+  });
+  $('#xuRemove')?.addEventListener('click', async e => {
+    const b = e.currentTarget;
+    if (b.dataset.ok !== '1') { b.dataset.ok = '1'; b.textContent = 'Bấm lần nữa để gỡ (tắt game trước)'; return; }
+    try { const r = await api(`/api/translate/games/${T.gp}/xunity/uninstall`, {method: 'POST'}); toast(`Đã gỡ ${r.files} file khỏi game.`); renderProject(); }
+    catch (err) { toast(err.message, 'err'); }
   });
   $('#vhFont').addEventListener('change', e => api(`/api/translate/games/${T.gp}`, {method: 'PATCH', body: {font: e.target.checked}}).catch(err => toast(err.message, 'err')));
   if (rpg) ['vhW', 'vhWF'].forEach(id => $('#' + id).addEventListener('change', e => api(`/api/translate/games/${T.gp}`, {method: 'PATCH',
@@ -1210,6 +1348,7 @@ async function renderProject() {
   let qt = 0;
   $('#vhQ').addEventListener('input', e => { clearTimeout(qt); qt = setTimeout(() => { T.gq.q = e.target.value; T.gq.offset = 0; loadRows(); }, 300); });
   paintHead(g);
+  paintClaude();
   await loadRows();
   T.poll = setInterval(() => { if ($('#vhRows') && T.gp) refreshProject(); else clearInterval(T.poll); }, 3000);
 }
@@ -1218,7 +1357,8 @@ function paintHead(g) {
   const working = g.running || g.status === 'queued';
   $('#vhStat').textContent = `${g.done.toLocaleString('vi-VN')}/${g.total.toLocaleString('vi-VN')} câu đã dịch` + (working ? ' · đang dịch…' : '');
   const s = T.settings;
-  $('#vhHead').innerHTML = `${g.error ? `<div class="notice box err"><b>Dịch bị dừng</b><span>${esc(g.error)}</span></div>` : ''}
+  $('#vhHead').innerHTML = `${g.error ? `<div class="notice box err"><b>Dịch bị dừng</b><span>${esc(g.error)}${/Google/.test(g.error) ? ' Hoặc dùng <b>Dịch bằng Claude chat</b> bên dưới (không cần API key).' : ''}</span></div>` : ''}
+    ${g.note ? `<div class="notice box"><b>Đang chờ</b><span>${esc(g.note)}</span></div>` : ''}
     <div class="box tr-book" data-gid="${g.id}">
       <div class="tr-book-main">
         <span class="hint">${g.total.toLocaleString('vi-VN')} câu · ${g.chars.toLocaleString('vi-VN')} ký tự. Ước tính nếu dịch bằng Claude: Opus 5.5 ${usd(g.estimate['claude-opus-5-5'])}, Sonnet 5.5 ${usd(g.estimate['claude-sonnet-5-5'])}, Haiku 5.5 ${usd(g.estimate['claude-haiku-5-5'])}. Bộ dịch đang chọn: <b>${esc(engineName(s))}</b>.</span>

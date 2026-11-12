@@ -858,3 +858,19 @@ div.ln-ti{cursor:default}
 .dc-moods .chip:nth-child(5n){background:var(--violet);color:var(--on-accent)}
 @media (max-width:640px){.dc-shelf{grid-auto-columns:132px}.dc-cover{width:132px;height:132px}.dc-ava{width:108px;height:108px}}
 .tracklist.disc-on{max-height:none;overflow:visible}
+/* Việt hóa game – dịch bằng Claude chat */
+.vh-claude{border-color:var(--ink);background:color-mix(in srgb,var(--green) 7%,var(--surface))}
+.vh-cl{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:14px}
+.vh-cl>li{display:flex;flex-direction:column;gap:7px}
+.vh-cl>li::marker{font:900 15px var(--f-mono)}
+.vh-cl>li>b{font-size:15px}
+.vh-parts{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:4px}
+.vh-part{display:flex;flex-direction:column;gap:4px;padding:10px;border:2px solid var(--ink);border-radius:5px;background:var(--surface);box-shadow:var(--sh-sm)}
+.vh-part b{font-size:14.5px}
+.vh-part small{font-size:12px;color:var(--muted);font-weight:600}
+.vh-part .bar{height:8px}
+.vh-part.ok{background:color-mix(in srgb,var(--green) 22%,var(--surface))}
+.vh-drop{display:flex;flex-direction:column;gap:8px;padding:8px;border:2px dashed var(--grid);border-radius:6px;transition:background .1s}
+.vh-drop.over{background:color-mix(in srgb,var(--cyan) 20%,var(--surface));border-color:var(--ink)}
+.notice.ok{border-left-color:var(--green)}
+.vh-packrow{justify-content:flex-start;align-items:center}.vh-packrow .tr-seg{margin-left:0}

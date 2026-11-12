@@ -502,7 +502,8 @@ def texts_of(ents) -> list[tuple[str, str]]:
 def _engine_markers(root: Path, names: set[str], exts: Counter, dirs: set[str]) -> list[str]:
     hints = []
     if exts[".pak"] or exts[".utoc"]:
-        hints.append("Unreal Engine: chữ nằm trong file .pak (thường đóng gói/mã hóa) – app không mở được. Dùng Dịch màn hình game.")
+        hints.append("Unreal Engine: không tìm thấy bảng chữ .locres đọc được trong file .pak (pak mã hóa thì nhập khóa AES, "
+                     "nén Oodle thì app chưa mở được). Dùng Dịch màn hình game.")
     if exts[".pck"]:
         hints.append("Godot: chữ nằm trong file .pck – app chưa mở được. Dùng Dịch màn hình game.")
     if "data.win" in names:
@@ -527,10 +528,11 @@ def game_root(path: Path) -> Path:
     return path
 
 
-def new_job(path: str, prefer: str, specials) -> str:
+def new_job(path: str, prefer: str, specials, aes: str | None = None) -> str:
     jid = uuid.uuid4().hex[:12]
     job = {"id": jid, "path": path, "phase": "start", "text": "Đang bắt đầu…", "done": 0, "total": 0, "current": "",
-           "found": 0, "strings": 0, "state": "running", "started": time.time(), "result": None, "error": None, "_items": {}}
+           "found": 0, "strings": 0, "state": "running", "started": time.time(), "result": None, "error": None, "_items": {},
+           "_aes": aes}
     with _jobs_lock:
         for k in [k for k, j in _jobs.items() if time.time() - j["started"] > 6 * 3600]:
             _jobs.pop(k, None)
@@ -644,6 +646,8 @@ def scan_folder(path: Path, job: dict, prefer: str = "en", specials=None) -> dic
         except (OSError, ValueError, UnicodeError, csv.Error, MemoryError):
             continue
     _choose(sources, prefer)
+    if any(s["kind"] == "locres" for s in sources):
+        hints = [h for h in hints if not h.startswith("Unreal")]
     langs = Counter()
     for s in sources:
         if s.get("on"):
@@ -651,14 +655,16 @@ def scan_folder(path: Path, job: dict, prefer: str = "en", specials=None) -> dic
     name = root.name
     job.update(phase="done", text="Xong", current="")
     return {"root": str(root), "name": name, "sources": sources, "hints": hints if not any(s.get("on") for s in sources) else hints[:1],
-            "lang": langs.most_common(1)[0][0] if langs else prefer, "files": len(files)}
+            "lang": langs.most_common(1)[0][0] if langs else prefer, "files": len(files), "unity": unity,
+            "warn": [w for w in job.get("_warn", []) if isinstance(w, str)][:6], "need_key": bool(job.get("need_key")),
+            "unreal": any(s["kind"] == "locres" for s in sources) or bool(_ue_root(root))}
 
 
 def _choose(sources: list[dict], prefer: str):
     """Bật sẵn file của ngôn ngữ gốc (ưu tiên ngôn ngữ trong cài đặt, rồi tiếng Anh) và chỉ file đáng tin là file ngôn ngữ."""
-    if any(s["kind"] in ("renpy", "rpg", "unity-loc") for s in sources):
+    if any(s["kind"] in ("renpy", "rpg", "unity-loc", "locres") for s in sources):
         for s in sources:
-            s["on"] = s["kind"] in ("renpy", "rpg", "unity-loc")
+            s["on"] = s["kind"] in ("renpy", "rpg", "unity-loc", "locres")
             if not s["on"] and not s.get("why"):
                 s["why"] = "Thêm nếu chữ này chưa có trong phần kịch bản chính"
         return
@@ -725,8 +731,31 @@ def _scan_unity_asset(root: Path, p: Path, rel: str, prefer: str, job: dict) -> 
     out = []
     try:
         objs = [o for o in env.objects if o.type.name == "TextAsset"]
+        monos = [o for o in env.objects if o.type.name == "MonoBehaviour" and 40 < o.byte_size < MB_MAX]
     except Exception:
         return []
+    for o in monos:
+        if job.get("cancel"):
+            break
+        try:
+            raw = o.get_raw_data()
+            strs = mb_strings(raw)
+        except Exception:
+            continue
+        if len(strs) < 4:
+            continue
+        sentences = mb_pick(strs, prefer, False)
+        if len(sentences) < 3:
+            continue
+        af = getattr(o, "assets_file", None)
+        label = _mb_label(af, o, raw)
+        rich = len(sentences) >= 20 or bool(MB_HINT.search(label))
+        texts = list(dict.fromkeys(mb_pick(strs, prefer, rich)))
+        lang = lang_of_texts(texts)
+        out.append({"kind": "mono", "rel": rel, "path_id": int(o.path_id), "asset": label, "fmt": "mono", "count": len(texts),
+                    "lang": prefer if lang == "latin" else lang, "loc": rich, "loose": rich, "label": f"{rel} → {label}",
+                    "sample": [t[:120] for t in texts[:3]], "size": len(raw),
+                    "_items": [{"t": t, "kind": "ui" if len(t) < 30 and " " not in t.strip() else "say", "ctx": label[:80]} for t in texts]})
     for o in objs:
         if job.get("cancel"):
             break
@@ -757,6 +786,113 @@ def _scan_unity_asset(root: Path, p: Path, rel: str, prefer: str, job: dict) -> 
             src["col"] = ents["col"]
         out.append(src)
     return out
+
+
+# ---------------------------------------------------------------- Unity MonoBehaviour (I2 Localization, hội thoại, ScriptableObject…)
+# Không cần typetree: chuỗi Unity lưu dạng int32 độ dài + UTF-8 + đệm 0 cho tròn 4 byte. Dò mọi vị trí chia hết cho 4 có dạng đó
+# (đệm phải là 0, chữ phải là câu), rồi ghi lại cả đối tượng với chuỗi mới (đổi độ dài + đệm lại) – các trường khác giữ nguyên.
+_MB_CAND = re.compile(rb"(?=[\x02-\xff][\x00-\x4e]\x00\x00[\x09\x0a\x20-\x7e\xc2-\xf4])", re.S)
+MB_MAX = 40 * 1024 * 1024
+MB_HINT = re.compile(r"(?i)(i2|languag|locali[sz]|translat|dialog|dialogue|conversation|quest|story|text|string|subtitle|"
+                     r"message|tutorial|item|lore|journal|book|codex|mail|chat|talk|scenario|script|naninovel|yarn|ink|fungus|lang)")
+
+
+def mb_strings(raw: bytes, base: int = 0) -> list[tuple[int, int, str]]:
+    """(vị trí, số byte, chuỗi) của các chuỗi Unity hợp lệ trong dữ liệu thô của một đối tượng."""
+    out, end_prev, n = [], -1, len(raw)
+    for m in _MB_CAND.finditer(raw):
+        i = m.start()
+        if (i - base) % 4 or i < end_prev:
+            continue
+        ln = int.from_bytes(raw[i:i + 4], "little")
+        j = i + 4 + ln
+        pad = (-(4 + ln)) % 4
+        if j + pad > n or raw[j:j + pad].strip(b"\x00"):
+            continue
+        try:
+            s = raw[i + 4:j].decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f�]", s):
+            continue
+        out.append((i, ln, s))
+        end_prev = j + pad
+    return out
+
+
+def mb_pick(strs: list[tuple[int, int, str]], prefer: str, loose: bool) -> list[str]:
+    """Chuỗi là câu chữ hiển thị, đúng ngôn ngữ gốc (bỏ tên trường, khóa, đường dẫn, ngôn ngữ khác)."""
+    keep = []
+    for _, _, s in strs:
+        if not textlike(s, loose):
+            continue
+        sl = script_lang(s)
+        if prefer in ("ja", "zh", "ko"):
+            if sl != prefer:
+                continue
+        elif sl != "latin" or (prefer == "en" and not _maybe_en(s)) or (len(s) > 25 and guess_latin([s]) not in ("en", prefer)):
+            continue
+        keep.append(s)
+    return keep
+
+
+_ACCENT = re.compile(r"[àâçéèêëîïôûùüÿñæœäößãõíóúìåøąęłńśźżčřšžőű¿¡]", re.I)
+
+
+def _maybe_en(s: str) -> bool:
+    """Câu có thể là tiếng Anh: không dấu của Pháp/Đức/Tây Ban Nha…, từ thông dụng tiếng Anh không ít hơn ngôn ngữ khác."""
+    if _ACCENT.search(s):
+        return False
+    words = re.findall(r"[a-z']+", s.lower())
+    en = sum(w in STOP["en"] for w in words)
+    other = max(sum(w in st for w in words) for k, st in STOP.items() if k != "en")
+    return en >= other or other < 1
+
+
+def mb_rewrite(raw: bytes, tr: dict[str, str], base: int = 0) -> tuple[bytes, int]:
+    out, pos, n = bytearray(), 0, 0
+    for i, ln, s in mb_strings(raw, base):
+        v = tr.get(s)
+        if not v:
+            continue
+        b = v.encode("utf-8")
+        out += raw[pos:i] + len(b).to_bytes(4, "little") + b + b"\x00" * ((-(4 + len(b))) % 4)
+        pos = i + 4 + ln + (-(4 + ln)) % 4
+        n += 1
+    out += raw[pos:]
+    return bytes(out), n
+
+
+def _mb_label(env_file, o, raw: bytes) -> str:
+    name = ""
+    try:
+        name = o.peek_name() or ""
+    except Exception:
+        name = ""
+    if not name and len(raw) > 32:
+        ln = int.from_bytes(raw[28:32], "little")
+        if 0 < ln < 200:
+            name = raw[32:32 + ln].decode("utf-8", "replace")
+    cls = ""
+    try:                                       # m_Script → MonoScript.m_ClassName (cùng file)
+        fid = int.from_bytes(raw[16:20], "little")
+        pid = int.from_bytes(raw[20:28], "little", signed=True)
+        if fid == 0 and env_file is not None:
+            ms = env_file.objects.get(pid)
+            if ms is not None and ms.type.name == "MonoScript":
+                d = ms.read()
+                cls = ".".join(x for x in (getattr(d, "m_Namespace", ""), getattr(d, "m_ClassName", "")) if x)
+    except Exception:
+        cls = ""
+    return " · ".join(x for x in (name, cls) if x) or f"MonoBehaviour #{o.path_id}"
+
+
+def _ue_root(root: Path) -> Path | None:
+    """Thư mục <Tên game>/Content/Paks của game Unreal Engine (nếu có)."""
+    for d in [root, *[x for x in root.iterdir() if x.is_dir()]]:
+        if (d / "Content" / "Paks").is_dir():
+            return d
+    return None
 
 
 # ================================================================== áp dụng / khôi phục
@@ -792,7 +928,7 @@ def apply(root: Path, items: list[dict], sources: list[dict], prefer: str = "en"
     errors = []
     by_asset: dict[str, list[dict]] = {}
     for s in sources:
-        if s["kind"] == "textasset":
+        if s["kind"] in ("textasset", "mono"):
             by_asset.setdefault(s["rel"], []).append(s)
             continue
         if s["kind"] != "file":
@@ -823,9 +959,17 @@ def apply(root: Path, items: list[dict], sources: list[dict], prefer: str = "en"
             want = {s["path_id"]: s for s in lst}
             hit = 0
             for o in env.objects:
-                if o.path_id not in want or o.type.name != "TextAsset":
+                if o.path_id not in want:
                     continue
                 s = want[o.path_id]
+                if s["kind"] == "mono" and o.type.name == "MonoBehaviour":
+                    raw, n = mb_rewrite(o.get_raw_data(), tr)
+                    if n:
+                        o.set_raw_data(raw)
+                        hit += n
+                    continue
+                if o.type.name != "TextAsset":
+                    continue
                 d = o.read()
                 ents = entries(d.m_Script, s["fmt"], bool(s.get("loose")), prefer, s.get("col"))
                 new, n = replace(d.m_Script, ents, tr, s["fmt"])

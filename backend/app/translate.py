@@ -179,16 +179,43 @@ def _google_one(text: str, source: str) -> str:
 
 
 def _google(texts: list[str], s: dict) -> list[str]:
+    """Google Dịch: câu một dòng được gộp nhiều câu vào một lượt gọi (mỗi câu một dòng) để ít bị chặn vì gọi quá nhiều."""
     terms = glossary(s)
 
-    def one(t: str) -> str:
+    def prep(t: str) -> str:
         src = _sentence_case(t)
         for a, b in terms:                                     # tên riêng: thay trước khi dịch
             src = re.sub(r"\b" + re.escape(a) + r"\b", b, src, flags=re.I)
-        return _google_one(src, s["source"])
+        return src
 
-    with ThreadPoolExecutor(4) as ex:
-        return list(ex.map(one, texts))
+    srcs = [prep(t) for t in texts]
+    groups, cur, size = [], [], 0
+    for i, t in enumerate(srcs):
+        n = len(urllib.parse.quote(t)) + 3
+        if "\n" in t or "\r" in t or n > 1800:
+            groups.append([i])
+            continue
+        if cur and (size + n > 4500 or len(cur) >= 40):
+            groups.append(cur)
+            cur, size = [], 0
+        cur.append(i)
+        size += n
+    if cur:
+        groups.append(cur)
+
+    def run(g: list[int]) -> dict[int, str]:
+        if len(g) == 1:
+            return {g[0]: _google_one(srcs[g[0]], s["source"])}
+        res = _google_one("\n".join(srcs[i] for i in g), s["source"]).split("\n")
+        if len(res) == len(g):
+            return dict(zip(g, (r.strip() for r in res)))
+        return {i: _google_one(srcs[i], s["source"]) for i in g}      # Google gộp/tách dòng: dịch lại từng câu
+
+    out: dict[int, str] = {}
+    with ThreadPoolExecutor(3) as ex:
+        for r in ex.map(run, groups):
+            out.update(r)
+    return [out.get(i, "") for i in range(len(texts))]
 
 
 # ------------------------------------------------------------------ Claude
