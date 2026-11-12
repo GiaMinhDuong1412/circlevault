@@ -98,7 +98,8 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     đánh dấu bài đã có trên máy theo `[id]` trong tên file; nghe trực tiếp = `prepare` (yt-dlp lấy link bestaudio) + `stream`
     (chuyển tiếp googlevideo theo Range, mỗi lần 4 MB, link hết hạn thì lấy lại). Nguồn online chung (`ONLINE_HOSTS`: YouTube,
     SoundCloud, Bandcamp): bài có `ou` (link), `GET /search?q=&site=yt|sc`, `POST /prepare?u=` + `GET /stream?u=`; chỉ có HLS thì
-    tải tạm vào `DATA/cache/nghe-online` (tối đa 600 MB) rồi phát file; bỏ định dạng mã hóa (`NO_DRM`) – Spotify/Apple Music có DRM, không làm.
+    tải tạm vào `DATA/cache/nghe-online` (tối đa 600 MB) rồi phát file; nút "＋ Playlist" (`#pbAdd`) trên thanh phát: bài online
+    → `pickPlaylist({ou})` tạo tác vụ MP3 có `music_playlist` (tải xong tự vào playlist); bỏ định dạng mã hóa (`NO_DRM`) – Spotify/Apple Music có DRM, không làm.
   - `discover.py`: Khám phá nhạc (`/api/music/discover/*`, chỉ máy này, thư viện ytmusicapi): `home` (Gợi ý cho bạn = trộn radio của
     bài trên máy hay nghe/mới tải có [id], Mix, trang chủ YouTube Music khi đã đăng nhập – cookie `YT_COOKIES` → header SAPISIDHASH,
     bảng xếp hạng + ca sĩ theo `config.music_country` (mặc định VN), chip tâm trạng = tìm kiếm), `radio?v=` (bài tương tự; nút ≈ và tự
@@ -111,7 +112,9 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     (trình duyệt Android không cho trang chọn ổ lưu, http trong mạng nhà không chạy offline được – người dùng đã chọn cách này):
     chọn bộ nhớ máy/thẻ nhớ trong cài đặt Tải xuống của Chrome, phát bằng app của điện thoại/VLC, xóa bằng app Files.
     Playlist = gói .zip không nén ghi thẳng ra luồng (thư mục `<tên>/` + .m3u8, Content-Length tính bằng lượt chạy thử, zip64 khi >4 GB)
-    hoặc tải từng bài `?n=` + `.m3u8`. API chỉ đọc.
+    hoặc tải từng bài `?n=` + `.m3u8`. API chỉ đọc. `GET /api/phone/playlists` trả kèm `ids` (bài còn file, đúng thứ tự) để app
+    Android so với bài đã tải: nút "Cập nhật +N" / "Cập nhật tất cả" (`MainVM.plSync`, `downloadPlaylist` lấy lại danh sách,
+    giữ bài id âm của điện thoại, không xóa file).
   - `devices.py`: ghép thiết bị cho chế độ Wi-Fi – middleware `Guard` (máy tính 127.0.0.1 luôn qua; thiết bị khác cần cookie `cv_dev`,
     lưu băm SHA-256 ở `DATA/devices.json`; quyền `phone` = chỉ /dt + /api/phone/*, `full` = như máy tính). Mã ghép 8 ký tự, 10 phút,
     dùng một lần, sai 20 lần/10 phút thì khóa. Tab Lưu Trữ: danh sách thiết bị (đổi quyền, đổi tên, thu hồi) + nút Thêm thiết bị (QR). Thử tên file tiếng Việt bằng Playwright trên Linux cần `LANG=C.UTF-8`.

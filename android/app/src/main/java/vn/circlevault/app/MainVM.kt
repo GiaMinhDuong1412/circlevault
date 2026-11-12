@@ -225,7 +225,7 @@ class MainVM(app: Application) : AndroidViewModel(app) {
         return true
     }
 
-    fun downloadTracks(list: List<RTrack>, label: String? = null) {
+    fun downloadTracks(list: List<RTrack>, label: String? = null, update: Boolean = false) {
         val have = Store.lib.value.tracks.keys
         val need = list.filter { it.id !in have }
         if (need.isEmpty()) {
@@ -233,17 +233,54 @@ class MainVM(app: Application) : AndroidViewModel(app) {
         }
         if (!enoughSpace(need.sumOf { it.size })) return
         val n = Downloads.enqueue(ctx, need.map { Downloads.trackJob(it) })
-        toast(if (n == 0) "Đang tải rồi." else "Đang tải $n bài${label?.let { " của \"$it\"" } ?: ""} (${fmtBytes(need.sumOf { it.size })}). Xem ở tab Điện thoại.")
+        val what = if (update) "$n bài mới" else "$n bài"
+        toast(if (n == 0) "Đang tải rồi." else "Đang tải $what${label?.let { " của \"$it\"" } ?: ""} (${fmtBytes(need.sumOf { it.size })}). Xem ở tab Điện thoại.")
     }
 
-    fun downloadPlaylist(p: RPlaylist) = viewModelScope.launch {
+    /** So playlist trên máy tính với bản trên điện thoại: bài chưa tải (missing), bài máy tính đã bỏ khỏi playlist (removed).
+     *  local = null: điện thoại chưa tải playlist này. */
+    data class PlSync(val local: OPlaylist?, val missing: Int, val missingBytes: Long, val removed: Int)
+
+    fun plSync(p: RPlaylist, lib: Library): PlSync {
+        val local = lib.playlists.find { it.id == p.id } ?: return PlSync(null, p.count, p.size, 0)
+        if (p.ids.isEmpty() && p.count > 0) {   // máy tính bản cũ chưa gửi danh sách id: so theo số bài
+            val haveN = local.trackIds.count { it > 0 && it in lib.tracks }
+            return PlSync(local, maxOf(0, p.count - haveN), 0, 0)
+        }
+        val miss = p.ids.filter { it !in lib.tracks }
+        val avg = if (p.count > 0) p.size / p.count else 0
+        val ids = p.ids.toSet()
+        return PlSync(local, miss.size, miss.size * avg, local.trackIds.count { it > 0 && it !in ids })
+    }
+
+    /** Tải playlist lần đầu hoặc cập nhật: lấy danh sách MỚI từ máy tính, đổi thứ tự/bài theo máy tính
+     *  (giữ bài điện thoại tự thêm – id âm), rồi tải các bài còn thiếu. Không xóa file nào. */
+    fun downloadPlaylist(p: RPlaylist, quiet: Boolean = false) = viewModelScope.launch {
         try {
-            val d = opened[p.id] ?: Api.playlist(p.id)
-            Store.savePlaylist(OPlaylist(d.id, d.name, d.tracks.map { it.id }))
-            downloadTracks(d.tracks, d.name)
+            val d = Api.playlist(p.id)
+            if (opened.containsKey(p.id)) opened[p.id] = d
+            val old = Store.lib.value.playlists.find { it.id == p.id }
+            val pcIds = d.tracks.map { it.id }
+            val ids = pcIds + (old?.trackIds?.filter { it < 0 && it !in pcIds } ?: emptyList())
+            val removed = old?.trackIds?.count { it > 0 && it !in pcIds } ?: 0
+            Store.savePlaylist(OPlaylist(d.id, d.name, ids))
+            val have = Store.lib.value.tracks.keys
+            if (old != null && d.tracks.all { it.id in have }) {
+                if (!quiet) toast("\"${d.name}\" đã đủ ${d.tracks.size} bài" + if (removed > 0) " (bỏ $removed bài máy tính đã xóa khỏi playlist)." else ".")
+                return@launch
+            }
+            downloadTracks(d.tracks, d.name, update = old != null)
         } catch (e: Exception) {
             fail(e); toast(remoteErr ?: "Lỗi")
         }
+    }
+
+    /** Cập nhật mọi playlist đã tải về điện thoại mà máy tính có bài mới. */
+    fun syncAllPlaylists() {
+        val lib = Store.lib.value
+        val todo = (playlists ?: return).filter { p -> plSync(p, lib).let { it.local != null && (it.missing > 0 || it.removed > 0) } }
+        if (todo.isEmpty()) { toast("Các playlist trên điện thoại đã khớp với máy tính."); return }
+        todo.forEach { downloadPlaylist(it, quiet = true) }
     }
 
     fun downloadVideo(v: RVideo) {

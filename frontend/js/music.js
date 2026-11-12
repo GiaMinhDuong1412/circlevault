@@ -104,7 +104,7 @@ const curPl = () => typeof M.list === 'number' ? M.playlists.find(p => p.id === 
 async function addTask(url, playlist, label, extra = {}) {
   try {
     await api('/api/tasks', {method: 'POST', body: {url, quality: 'audio', playlist, ...extra}});
-    const into = extra.music_playlist_name || (extra.music_playlist && curPl()?.name);
+    const into = extra.music_playlist_name || (extra.music_playlist && (M.playlists.find(p => p.id === +extra.music_playlist) || curPl())?.name);
     toast(`Đã thêm ${label} vào hàng đợi tải. Tải xong bài sẽ ${into ? `tự vào playlist "${into}"` : 'có trong Tất cả bài hát'} và phát từ máy.`);
     window.CV.refreshStatus && window.CV.refreshStatus();
   } catch (e) { toast(e.message, 'err'); }
@@ -459,12 +459,16 @@ $('#trackList').addEventListener('click', async e => {
 
 function pickPlaylist(track) {
   const dlg = $('#plPick');
-  $('#plPickTitle').textContent = `Thêm "${track.title}" vào playlist`;
+  $('#plPickTitle').textContent = !track.id && track.ou ? `Tải "${track.title}" về và thêm vào playlist` : `Thêm "${track.title}" vào playlist`;
   $('#plPickList').innerHTML = (M.playlists.length
     ? M.playlists.map(p => `<button type="button" class="btn plain" data-pp="${p.id}">${esc(p.name)} <span class="hint">(${p.count})</span></button>`).join('')
     : '<p class="hint">Chưa có playlist nào.</p>')
     + `<form class="mini-form" id="plPickNew"><input type="text" placeholder="Hoặc tạo playlist mới…" maxlength="80" aria-label="Tên playlist mới"><button class="btn sm yellow" type="submit">Tạo &amp; thêm</button></form>`;
   const addTo = async pid => {
+    if (!track.id && track.ou) {   // bài online chưa có trên máy: tải MP3 về, tải xong tự vào playlist
+      dlg.close();
+      return addTask(track.ou, false, `"${track.title}"`, {music_playlist: +pid});
+    }
     try {
       await api(`/api/music/playlists/${pid}/tracks`, {method: 'POST', body: {track_ids: [track.id]}});
       toast('Đã thêm vào playlist.'); dlg.close(); loadPlaylists();
@@ -474,7 +478,7 @@ function pickPlaylist(track) {
   $('#plPickNew').onsubmit = async e => {
     e.preventDefault();
     const name = e.target.querySelector('input').value.trim(); if (!name) return;
-    try { const p = await api('/api/music/playlists', {method: 'POST', body: {name}}); addTo(p.id); } catch (err) { toast(err.message, 'err'); }
+    try { const p = await api('/api/music/playlists', {method: 'POST', body: {name}}); await loadPlaylists(); addTo(p.id); } catch (err) { toast(err.message, 'err'); }
   };
   dlg.showModal();
 }
@@ -673,6 +677,11 @@ function initBar() {
   $('#pbRepeat').addEventListener('click', () => { M.repeat = {off: 'all', all: 'one', one: 'off'}[M.repeat]; renderBar(); saveSettings(); });
   $('#pbSeek').addEventListener('input', e => { audio.currentTime = +e.target.value; });
   $('#pbVol').addEventListener('input', e => { audio.volume = +e.target.value; $('#pbVol').style.setProperty('--p', audio.volume * 100 + '%'); saveSettings(); });
+  $('#pbAdd').addEventListener('click', () => {
+    const t = M.queue[M.qi]; if (!t) return;
+    const id = t.ou ? t.local : t.id;
+    pickPlaylist(id ? {id, title: t.title} : {ou: t.ou, title: t.title});
+  });
   $('#pbEq').addEventListener('click', () => {
     if (location.hash !== '#music') location.hash = '#music';
     setTimeout(() => $('#eqPanel').scrollIntoView({behavior: 'smooth', block: 'start'}), 80);

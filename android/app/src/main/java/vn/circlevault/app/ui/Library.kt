@@ -170,7 +170,8 @@ fun LibraryTab(vm: MainVM) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         row.forEach { p ->
                             val tr = p.trackIds.mapNotNull { lib.tracks[it] }
-                            PlaylistTile(p.name, "${tr.size} bài", tr.firstNotNullOfOrNull { it.cover }, Modifier.weight(1f)) { openPl = p.id }
+                            val newN = vm.playlists?.find { it.id == p.id }?.let { vm.plSync(it, lib).missing } ?: 0
+                            PlaylistTile(p.name, "${tr.size} bài" + if (newN > 0) " · +$newN mới" else "", tr.firstNotNullOfOrNull { it.cover }, Modifier.weight(1f)) { openPl = p.id }
                         }
                         if (row.size == 1) Spacer(Modifier.weight(1f))
                     }
@@ -186,6 +187,13 @@ fun LibraryTab(vm: MainVM) {
                                 Text(open.name, color = c.text, fontWeight = FontWeight.Black, fontSize = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 Hint("${tracks.size}/${open.trackIds.size} bài đã tải · ${fmtBytes(tracks.sumOf { it.size })}")
                             }
+                        }
+                        val remote = vm.playlists?.find { it.id == open.id }
+                        if (remote != null) {
+                            val sync = vm.plSync(remote, lib)
+                            if (sync.missing > 0) Text("Máy tính có ${sync.missing} bài mới trong playlist này.", color = c.red, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            BButton(if (sync.missing > 0) "Cập nhật từ máy tính +${sync.missing}" else "Cập nhật từ máy tính", { vm.downloadPlaylist(remote) },
+                                Modifier.fillMaxWidth(), color = if (sync.missing > 0) c.green else c.surface, icon = Ic.refresh)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             BButton("Phát", { PlayerConn.play(tracks, 0) }, Modifier.weight(1f), icon = Ic.play, enabled = tracks.isNotEmpty())

@@ -317,6 +317,14 @@ private fun RemoteTab(vm: MainVM) {
             val pls = vm.playlists
             if (pls != null) {
                 item { H("Playlist") }
+                val behind = pls.map { vm.plSync(it, lib) }.filter { it.local != null && it.missing > 0 }
+                if (behind.isNotEmpty()) item {
+                    Card(color = c.surface2) {
+                        Text("Máy tính có ${behind.sumOf { it.missing }} bài mới trong ${behind.size} playlist bạn đã tải.",
+                            color = c.text, fontWeight = FontWeight.Bold)
+                        BButton("Cập nhật tất cả", { vm.syncAllPlaylists() }, Modifier.fillMaxWidth(), icon = Ic.download)
+                    }
+                }
                 if (pls.isEmpty()) item { Hint("Máy tính chưa có playlist nào. Tạo ở tab Nghe Nhạc trên máy tính, hoặc tìm bài lẻ bên dưới.") }
                 items(pls, key = { "p" + it.id }) { p -> RemotePlaylistCard(vm, p, lib, jobMap) }
                 item {
@@ -378,8 +386,9 @@ private fun RemotePlaylistCard(vm: MainVM, p: RPlaylist, lib: vn.circlevault.app
     val c = cv
     val open = vm.opened.containsKey(p.id)
     val detail = vm.opened[p.id]
-    val local = lib.playlists.find { it.id == p.id }
-    val haveAll = local != null && local.trackIds.size == p.count && local.trackIds.all { it in lib.tracks }
+    val sync = vm.plSync(p, lib)
+    val local = sync.local
+    val haveAll = local != null && sync.missing == 0
     Card {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.brutal(c.yellow, c.ink, shadow = 0.dp, border = 2.dp).size(48.dp), contentAlignment = Alignment.Center) {
@@ -387,12 +396,22 @@ private fun RemotePlaylistCard(vm: MainVM, p: RPlaylist, lib: vn.circlevault.app
             }
             Column(Modifier.weight(1f)) {
                 Text(p.name, color = c.text, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Hint("${p.count} bài · ${fmtBytes(p.size)}" + if (haveAll) " · ✓ đã có trên điện thoại" else "")
+                Hint("${p.count} bài · ${fmtBytes(p.size)}" + if (haveAll) " · ✓ đã đủ trên điện thoại" else "")
+                if (local != null && sync.missing > 0) {
+                    Text("Máy tính có ${sync.missing} bài mới chưa có trên điện thoại" + (if (sync.missingBytes > 0) " (~${fmtBytes(sync.missingBytes)})" else ""),
+                        color = c.red, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                } else if (local != null && sync.removed > 0) {
+                    Hint("Máy tính đã bỏ ${sync.removed} bài khỏi playlist – bấm Cập nhật để khớp.")
+                }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (p.count > 0) {
-                BButton(if (haveAll) "Cập nhật" else "Tải playlist", { vm.downloadPlaylist(p) }, Modifier.weight(1f), icon = Ic.download)
+            if (p.count > 0 || local != null) {
+                when {
+                    local == null -> BButton("Tải playlist", { vm.downloadPlaylist(p) }, Modifier.weight(1f), icon = Ic.download)
+                    sync.missing > 0 -> BButton("Cập nhật +${sync.missing}", { vm.downloadPlaylist(p) }, Modifier.weight(1f), icon = Ic.download)
+                    else -> BButton("Cập nhật", { vm.downloadPlaylist(p) }, Modifier.weight(1f), color = c.surface, icon = Ic.refresh)
+                }
             }
             BButton(if (open) "Ẩn bài" else "Xem bài", { vm.toggle(p.id) }, Modifier.weight(1f), color = c.surface, icon = if (open) Ic.up else Ic.down)
         }

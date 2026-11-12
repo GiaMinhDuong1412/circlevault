@@ -151,9 +151,11 @@ def playlists():
     out = []
     for pl in db.query("SELECT * FROM playlists ORDER BY name COLLATE NOCASE"):
         ids = json.loads(pl["track_ids"] or "[]")
-        rows = db.query(f"SELECT path, size FROM tracks WHERE id IN ({','.join('?' * len(ids))})", tuple(ids)) if ids else []
-        out.append({"id": pl["id"], "name": pl["name"], "count": len(rows),
-                    "size": sum(r["size"] or 0 for r in rows)})
+        rows = db.query(f"SELECT id, path, size FROM tracks WHERE id IN ({','.join('?' * len(ids))})", tuple(ids)) if ids else []
+        by = {r["id"]: r for r in rows if r["path"] and os.path.exists(r["path"])}
+        have = [i for i in ids if i in by]        # đúng thứ tự playlist, chỉ bài còn file – điện thoại so với bài đã tải để biết bài mới
+        out.append({"id": pl["id"], "name": pl["name"], "count": len(have),
+                    "size": sum(by[i]["size"] or 0 for i in have), "ids": have})
     return out
 
 

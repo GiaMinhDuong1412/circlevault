@@ -87,7 +87,8 @@ object Prefs {
 
 /* ------------------------------------------------------------------ dữ liệu từ máy tính */
 data class RTrack(val id: Int, val title: String, val artist: String?, val duration: Double, val size: Long, val ext: String)
-data class RPlaylist(val id: Int, val name: String, val count: Int, val size: Long)
+/** ids = id bài trong playlist trên máy tính (đúng thứ tự, chỉ bài còn file) – để biết bài nào điện thoại chưa có */
+data class RPlaylist(val id: Int, val name: String, val count: Int, val size: Long, val ids: List<Int> = emptyList())
 data class RPlaylistDetail(val id: Int, val name: String, val tracks: List<RTrack>)
 data class RVideo(
     val id: Int, val title: String, val duration: Double, val height: Int, val size: Long, val ext: String, val thumb: String?,
@@ -146,7 +147,11 @@ object Api {
     private inline fun <T> JSONArray.map(f: (JSONObject) -> T): List<T> = (0 until length()).map { f(getJSONObject(it)) }
 
     suspend fun playlists(): List<RPlaylist> = JSONArray(get("/api/phone/playlists"))
-        .map { RPlaylist(it.getInt("id"), it.optString("name"), it.optInt("count"), it.optLong("size")) }
+        .map { j ->
+            val a = j.optJSONArray("ids")
+            RPlaylist(j.getInt("id"), j.optString("name"), j.optInt("count"), j.optLong("size"),
+                if (a == null) emptyList() else (0 until a.length()).map { a.getInt(it) })
+        }
 
     suspend fun playlist(id: Int): RPlaylistDetail = JSONObject(get("/api/phone/playlists/$id")).let { j ->
         RPlaylistDetail(j.getInt("id"), j.optString("name"), j.getJSONArray("tracks").map { it.track() })
