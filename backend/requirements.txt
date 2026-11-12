@@ -5,6 +5,7 @@ yt-dlp[default]>=2026.10.26
 mutagen>=1.47
 segno>=1.6   # mã QR mở trang Mang theo điện thoại
 requests>=2.31   # nghe nhạc YouTube online (chuyển tiếp luồng âm thanh)
+ytmusicapi>=1.10   # Khám phá nhạc: gợi ý, radio bài tương tự, bảng xếp hạng (YouTube Music)
 rapidocr_onnxruntime>=1.4.4   # nhận diện chữ trên ảnh (tab Dịch)
 anthropic>=0.80   # Claude AI (bộ dịch tùy chọn)
 Pillow>=10

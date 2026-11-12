@@ -42,7 +42,7 @@ SUBJECTS = {
     "ko": {"name": "Tiếng Hàn", "lang": "ko-KR", "sections": [
         ["hangul", "Bảng chữ Hangul"], ["vocab", "Từ vựng"], ["grammar", "Ngữ pháp"]]},
 }
-DEFAULTS = {"new_per_day": 15, "review_limit": 200, "auto_speak": True}
+DEFAULTS = {"new_per_day": 15, "review_limit": 200, "auto_speak": True, "remind": True, "remind_at": "20:00", "paths": {}}
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS learn_decks (
   id INTEGER PRIMARY KEY AUTOINCREMENT, subject TEXT NOT NULL, section TEXT NOT NULL, name TEXT NOT NULL,
@@ -58,6 +58,13 @@ CREATE TABLE IF NOT EXISTS learn_log (
   day TEXT NOT NULL, subject TEXT NOT NULL, reviews INTEGER NOT NULL DEFAULT 0, news INTEGER NOT NULL DEFAULT 0,
   correct INTEGER NOT NULL DEFAULT 0, seconds INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, subject)
 );
+CREATE TABLE IF NOT EXISTS learn_tests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, subject TEXT NOT NULL, kind TEXT NOT NULL, deck_id INTEGER, level TEXT, day TEXT NOT NULL,
+  total INTEGER NOT NULL, correct INTEGER NOT NULL, pct INTEGER NOT NULL, passed INTEGER NOT NULL DEFAULT 0,
+  seconds INTEGER NOT NULL DEFAULT 0, at REAL NOT NULL, detail TEXT
+);
+CREATE TABLE IF NOT EXISTS learn_plan (day TEXT PRIMARY KEY, items TEXT NOT NULL, at REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_learn_tests_subj ON learn_tests(subject, at);
 CREATE INDEX IF NOT EXISTS idx_learn_cards_deck ON learn_cards(deck_id);
 CREATE INDEX IF NOT EXISTS idx_learn_cards_due ON learn_cards(due);
 """
@@ -145,6 +152,8 @@ def ensure():
             return
         c = db.conn()
         c.executescript(SCHEMA)
+        if "en" not in {r[1] for r in c.execute("PRAGMA table_info(learn_cards)")}:   # bản 2026.11.19: nghĩa tiếng Anh gốc (lộ trình chuẩn)
+            c.execute("ALTER TABLE learn_cards ADD COLUMN en TEXT")
         have = {r["builtin"] for r in db.query("SELECT builtin FROM learn_decks WHERE builtin IS NOT NULL")}
         for i, d in enumerate(_builtin()):
             if d["key"] in have:
@@ -219,9 +228,20 @@ def _stats(subject: str, deck: int | None = None) -> dict:
     return {k: int(row[k] or 0) for k in ("total", "new", "learned", "due", "mature")}
 
 
+def per_day(subject: str) -> int:
+    """Số thẻ mới mỗi ngày của môn: kế hoạch hôm nay (nếu đã chọn) > lộ trình của môn > cài đặt chung."""
+    plan = db.one("SELECT items FROM learn_plan WHERE day=?", (_today(),))
+    if plan:
+        for it in json.loads(plan["items"]):
+            if it.get("kind") == "new" and it.get("subject") == subject:
+                return int(it.get("n") or 0)
+    p = (settings().get("paths") or {}).get(subject) or {}
+    return int(p.get("per_day") or settings()["new_per_day"])
+
+
 def _new_left(subject: str) -> int:
     log = db.one("SELECT news FROM learn_log WHERE day=? AND subject=?", (_today(), subject))
-    return max(0, int(settings()["new_per_day"]) - int(log["news"] if log else 0))
+    return max(0, per_day(subject) - int(log["news"] if log else 0))
 
 
 # ================================================================== API
@@ -310,6 +330,8 @@ def reset_deck(did: int):
 
 def _card(r: dict) -> dict:
     r = dict(r)
+    if not r.get("meaning") and r.get("en"):
+        r["meaning"], r["meaning_en"] = r["en"], True
     try:
         r["extra"] = json.loads(r["extra"]) if r.get("extra") else {}
     except ValueError:
@@ -460,8 +482,13 @@ def study(subject: str, deck: int | None = None, mode: str = "mix", limit: int =
     if mode in ("mix", "new"):
         room = min(limit - len(cards), _new_left(subject))
         if room > 0:
-            cards += db.query(f"SELECT c.*, d.name AS deck_name FROM learn_cards c JOIN learn_decks d ON d.id=c.deck_id "
-                              f"WHERE {where} AND c.state='new' ORDER BY d.ord, d.id, c.ord, c.id LIMIT ?", (*args, room))
+            active = "path:%s:%s" % (subject, ((settings().get("paths") or {}).get(subject) or {}).get("level"))
+            new = db.query(f"SELECT c.*, d.name AS deck_name FROM learn_cards c JOIN learn_decks d ON d.id=c.deck_id "
+                           f"WHERE {where} AND c.state='new' ORDER BY d.builtin IS NOT ? , d.ord, d.id, c.ord, c.id LIMIT ?",
+                           (*args, active, room))
+            from . import learnplan
+            learnplan.gloss_cards(subject, new)
+            cards += new
     if mode == "all":
         cards = db.query(f"SELECT c.*, d.name AS deck_name FROM learn_cards c JOIN learn_decks d ON d.id=c.deck_id "
                          f"WHERE {where} ORDER BY RANDOM() LIMIT ?", (*args, limit))
@@ -470,8 +497,11 @@ def study(subject: str, deck: int | None = None, mode: str = "mix", limit: int =
     pools: dict[int, list[str]] = {}
     for c in out:
         if c["deck_id"] not in pools:
-            pools[c["deck_id"]] = [r["meaning"] for r in db.query(
-                "SELECT DISTINCT meaning FROM learn_cards WHERE deck_id=? AND meaning IS NOT NULL ORDER BY RANDOM() LIMIT 60", (c["deck_id"],))]
+            pools[c["deck_id"]] = [r["m"] for r in db.query(
+                "SELECT DISTINCT COALESCE(meaning, en) AS m FROM learn_cards WHERE deck_id=? AND COALESCE(meaning, en) IS NOT NULL "
+                "ORDER BY state='new', RANDOM() LIMIT 60", (c["deck_id"],))]
+        if not c.get("meaning") and c.get("en"):
+            c["meaning"], c["meaning_en"] = c["en"], True        # chưa dịch được nghĩa tiếng Việt: tạm hiện nghĩa tiếng Anh
         others = [m for m in pools[c["deck_id"]] if m and m != c.get("meaning")]
         random.shuffle(others)
         c["choices"] = others[:3]
@@ -553,13 +583,24 @@ class SettingsIn(BaseModel):
     new_per_day: int | None = None
     review_limit: int | None = None
     auto_speak: bool | None = None
+    remind: bool | None = None
+    remind_at: str | None = None
 
 
 @router.put("/settings")
 def put_settings(body: SettingsIn):
     s = settings()
     for k, v in body.model_dump(exclude_none=True).items():
+        if k == "remind_at" and not (len(v) == 5 and v[2] == ":" and v[:2].isdigit() and v[3:].isdigit()):
+            raise HTTPException(400, "Giờ nhắc dạng HH:MM, ví dụ 20:00.")
         s[k] = max(0, min(500, v)) if isinstance(v, int) and not isinstance(v, bool) else v
+    return save_settings(s)
+
+
+def save_settings(s: dict) -> dict:
     SETTINGS.parent.mkdir(parents=True, exist_ok=True)
     SETTINGS.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
     return s
+
+
+from . import learnplan  # noqa: E402,F401  (lộ trình chuẩn, bài tập, kiểm tra, kế hoạch hôm nay – thêm route vào router này)

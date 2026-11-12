@@ -12,28 +12,28 @@ const SUBJ = {
 };
 /* Nội dung dự kiến của từng mục (dữ liệu sẽ nhập ở các bản sau). */
 const PLAN = {
-  'ielts/vocab': 'Từ vựng IELTS theo chủ đề (Environment, Education, Technology, Health…) và Academic Word List, kèm phiên âm, ví dụ, collocation.',
+  'ielts/vocab': 'Chọn một cấp trong “Lộ trình chuẩn” ở trên (CEFR A1 → C2) để có bộ từ vựng theo cấp; hoặc tự nhập bộ theo chủ đề.',
   'ielts/listening': 'Luyện nghe Part 1–4: audio, câu hỏi, đáp án và transcript; ghi lại từ hay bị nghe nhầm.',
   'ielts/reading': 'Bài đọc Academic / General với các dạng True/False/Not Given, Matching Headings, Summary completion.',
   'ielts/writing': 'Đề Task 1 (biểu đồ, quy trình, thư) và Task 2 (nghị luận), bài mẫu band 7+, cấu trúc câu, từ nối.',
   'ielts/speaking': 'Câu hỏi Part 1–3 theo chủ đề, cue card, câu trả lời mẫu và từ vựng ăn điểm.',
   'ja/kana': 'Hiragana và Katakana: âm cơ bản, âm đục, âm ghép.',
-  'ja/vocab': 'Từ vựng JLPT N5 → N1 theo bài: kanji, cách đọc kana, nghĩa, Hán Việt, câu ví dụ.',
+  'ja/vocab': 'Chọn một cấp JLPT (N5 → N1) trong “Lộ trình chuẩn” ở trên để có bộ từ vựng theo cấp.',
   'ja/kanji': 'Kanji theo cấp JLPT: âm On / Kun, Hán Việt, bộ thủ, từ ghép thường gặp.',
   'ja/grammar': 'Mẫu ngữ pháp N5 → N1: cấu trúc, cách dùng, ví dụ có dịch.',
   'zh/pinyin': 'Thanh điệu, thanh mẫu, vận mẫu – nghe và đọc theo.',
-  'zh/vocab': 'Từ vựng HSK 1 → 6 (và HSK 3.0): chữ giản thể, pinyin, Hán Việt, nghĩa, ví dụ.',
+  'zh/vocab': 'Chọn một cấp HSK 3.0 (1 → 9) trong “Lộ trình chuẩn” ở trên để có bộ từ vựng theo cấp.',
   'zh/hanzi': 'Chữ Hán: bộ thủ, số nét, Hán Việt, từ ghép.',
   'zh/grammar': 'Ngữ pháp HSK theo cấp: cấu trúc câu, trợ từ, bổ ngữ.',
   'ko/hangul': 'Nguyên âm, phụ âm, phụ âm căng/bật hơi, patchim.',
-  'ko/vocab': 'Từ vựng TOPIK I (cấp 1–2) và TOPIK II (cấp 3–6): nghĩa, Hán Hàn, ví dụ.',
+  'ko/vocab': 'Chọn TOPIK I cấp 1 hoặc 2 trong “Lộ trình chuẩn” ở trên; TOPIK II nhập thêm bằng file.',
   'ko/grammar': 'Ngữ pháp sơ – trung – cao cấp: đuôi câu, tiểu từ, cấu trúc thường thi.',
 };
 const CHART = new Set(['kana', 'hangul', 'pinyin']);
 const MODES = [['card', 'Thẻ ghi nhớ'], ['quiz', 'Trắc nghiệm'], ['type', 'Gõ đáp án']];
 const GRADES = [['Quên', 'red'], ['Khó', 'yellow'], ['Nhớ', 'green'], ['Dễ', 'cyan']];
 
-const L = {subject: null, section: null, deck: null, study: null, mode: 'card', ov: null, sv: null};
+const L = {subject: null, section: null, deck: null, study: null, quiz: null, mode: 'card', ov: null, sv: null, plan: false, editPlan: false};
 try {
   L.subject = localStorage.getItem('cv-ln-subj') || null;
   L.mode = localStorage.getItem('cv-ln-mode') || 'card';
@@ -68,6 +68,7 @@ async function render() {
   const box = $('#lnBox');
   if (!box) return;
   if (L.study) return paintStudy();
+  if (L.quiz) return paintQuiz();
   try { L.ov = await api('/api/learn'); } catch (e) { box.innerHTML = `<div class="notice box err"><b>Không tải được tab Học</b><span>${esc(e.message)}</span></div>`; return; }
   if (L.subject && !SUBJ[L.subject]) L.subject = null;
   const ov = L.ov;
@@ -110,6 +111,7 @@ function renderOverview() {
     return `<i class="l${lv}" title="${d.day}: ${d.reviews} thẻ"></i>`;
   }).join('');
   $('#lnMain').innerHTML = `
+    <div id="lnToday"></div>
     <div class="cols2">
       <div class="box pcard">
         <h3>12 tuần gần đây</h3>
@@ -121,11 +123,13 @@ function renderOverview() {
         <ol class="steps">
           <li>Chọn một môn ở trên.</li>
           <li>Tiếng Nhật / Hàn / Trung: học <b>bảng chữ</b> trước (có sẵn), bấm từng chữ để nghe đọc.</li>
-          <li>Bấm <b>HỌC NGAY</b>: mỗi thẻ tự đánh giá Quên / Khó / Nhớ / Dễ, app tự xếp lịch ôn.</li>
-          <li>Từ vựng, ngữ pháp, đề IELTS: sẽ được nạp ở bản sau; bạn cũng tự tạo bộ thẻ hoặc nhập file JSON/CSV.</li>
+          <li>Chọn <b>Lộ trình chuẩn</b> (CEFR / JLPT / HSK / TOPIK) và số từ mới mỗi ngày.</li>
+          <li>Mỗi sáng chọn <b>Hôm nay học gì</b> ở trên, rồi bấm Bắt đầu. App nhắc học vào giờ bạn chọn.</li>
+          <li>Học thẻ: tự đánh giá Quên / Khó / Nhớ / Dễ, app tự xếp lịch ôn. Học đủ từ thì làm <b>bài tập</b> và <b>kiểm tra tuần</b>.</li>
         </ol>
       </div>
     </div>`;
+  paintToday();
 }
 
 /* ---------------------------------------------------------------- một môn */
@@ -152,6 +156,7 @@ async function renderSubject() {
       </div>
       <p class="hint" id="lnVoice" hidden>Máy chưa có giọng đọc ${{ielts: 'tiếng Anh', ja: 'tiếng Nhật', zh: 'tiếng Trung', ko: 'tiếng Hàn'}[v.id]}: Windows → Cài đặt → Thời gian &amp; ngôn ngữ → Ngôn ngữ → thêm ngôn ngữ này (kèm “Chuyển văn bản thành giọng nói”).</p>
     </div>
+    <div class="cols2 ln-pt"><div class="box pcard" id="lnPath"></div><div class="box pcard" id="lnTests"></div></div>
     <div class="ln-secs" role="tablist">${v.sections.map(([k, n]) => {
       const c = v.decks.filter(d => d.section === k).reduce((a, d) => a + d.total, 0);
       return `<button type="button" class="ln-sec${L.section === k ? ' on' : ''}" data-sec="${k}" role="tab" aria-selected="${L.section === k}">${n}<small>${c ? c + ' thẻ' : 'trống'}</small></button>`;
@@ -177,6 +182,8 @@ async function renderSubject() {
   $('#lnNew').addEventListener('change', e => api('/api/learn/settings', {method: 'PUT', body: {new_per_day: +e.target.value}}).then(() => render()).catch(err => toast(err.message, 'err')));
   $('#lnSpeak').addEventListener('change', e => api('/api/learn/settings', {method: 'PUT', body: {auto_speak: e.target.checked}}).then(s => { L.sv.settings = s; }).catch(err => toast(err.message, 'err')));
   paintSection();
+  paintPath();
+  paintTests();
 }
 
 function paintSection() {
@@ -362,7 +369,7 @@ async function startStudy(opt) {
   paintStudy();
 }
 
-function quit() { L.study = null; document.removeEventListener('keydown', onKey); render(); }
+function quit() { L.study = null; document.removeEventListener('keydown', onKey); refreshRemind(); render(); }
 
 function paintStudy() {
   const s = L.study, box = $('#lnBox');
@@ -375,8 +382,10 @@ function paintStudy() {
       <span class="ln-mark big" style="background:var(--green)">✓</span>
       <h2>Xong lượt học!</h2>
       <p>${s.done} lượt trả lời · nhớ đúng ${pct}% · ${Math.max(1, Math.round((Date.now() - s.t0) / 60000))} phút</p>
-      <div class="btn-row"><button class="btn green" type="button" id="lnMore">HỌC TIẾP</button><button class="btn plain" type="button" id="lnQuit">Về trang môn học</button></div></div>`;
+      <div class="btn-row"><button class="btn green" type="button" id="lnMore">HỌC TIẾP</button><button class="btn plain" type="button" id="lnQuit">Về trang môn học</button></div>
+      <div id="lnNextPlan"></div></div>`;
     $('#lnQuit').addEventListener('click', quit);
+    paintNextPlan();
     $('#lnMore').addEventListener('click', () => { const o = s.opt; L.study = null; startStudy(o); });
     return;
   }
@@ -502,6 +511,396 @@ function onKey(e) {
 }
 
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+/* ================================================================ hôm nay học gì */
+const KIND_ICON = {review: '↻', new: '＋', practice: '✎', week: '✓', level: '★'};
+const subjName = id => (L.ov && (L.ov.subjects.find(s => s.id === id) || {}).name) || id;
+async function paintToday() {
+  const el = $('#lnToday');
+  if (!el) return;
+  let t;
+  try { t = await api('/api/learn/today'); } catch (e) { el.innerHTML = ''; return; }
+  R.today = t; paintBadge();
+  const remind = `<div class="ln-remind"><label class="check"><input type="checkbox" id="lnRemOn" ${t.remind ? 'checked' : ''}> 🔔 Nhắc học mỗi ngày lúc</label>
+    <input type="time" id="lnRemAt" value="${esc(t.remind_at)}" aria-label="Giờ nhắc học" ${t.remind ? '' : 'disabled'}></div>`;
+  if (!t.plan || L.editPlan) {
+    const chosen = new Map((t.plan || []).map(it => [it.key, it]));
+    const items = t.suggest.slice();
+    (t.plan || []).forEach(it => { if (!items.some(x => x.key === it.key)) items.push(it); });
+    el.innerHTML = `<div class="box pcard ln-plan">
+      <div class="row-between"><h3>Hôm nay học gì?</h3>${remind}</div>
+      ${items.length ? `<p class="hint">Chọn việc muốn làm hôm nay (đổi được số từ mới), rồi lưu kế hoạch. App nhắc nếu chưa làm xong.</p>
+      <div class="ln-todo">${items.map(it => {
+        const on = t.plan ? chosen.has(it.key) : true;
+        const n = (chosen.get(it.key) || it).n;
+        return `<label class="ln-ti${it.done ? ' done' : ''}"><input type="checkbox" data-pk="${esc(it.key)}" ${on ? 'checked' : ''}>
+          <span class="ln-ki k-${it.kind}">${KIND_ICON[it.kind]}</span>
+          <span class="ln-tt"><b>${it.kind === 'new' ? `Học <input type="number" class="ln-n" data-pn="${esc(it.key)}" min="1" max="100" value="${n}" aria-label="Số từ mới"> từ mới` : esc(it.title)}</b>
+            <small>${esc(it.desc || subjName(it.subject))}${it.done ? ' · đã xong' : ''}</small></span></label>`;
+      }).join('')}</div>
+      <div class="btn-row"><button class="btn yellow" type="button" id="lnPlanSave">LƯU KẾ HOẠCH HÔM NAY</button>
+        ${L.editPlan ? '<button class="btn plain" type="button" id="lnPlanCancel">Hủy</button>' : ''}</div>`
+      : '<p class="hint">Chưa có gì để học: chọn một môn ở trên rồi chọn <b>Lộ trình chuẩn</b> để bắt đầu.</p>'}
+    </div>`;
+    $('#lnPlanSave')?.addEventListener('click', async () => {
+      const pick = items.filter(it => el.querySelector(`[data-pk="${CSS.escape(it.key)}"]`).checked).map(it => {
+        const ni = el.querySelector(`[data-pn="${CSS.escape(it.key)}"]`);
+        return {key: it.key, kind: it.kind, subject: it.subject, deck_id: it.deck_id || null, n: ni ? Math.max(1, +ni.value || 1) : it.n, title: it.title, desc: it.desc || ''};
+      });
+      if (!pick.length) return toast('Chọn ít nhất một việc.', 'err');
+      try { await api('/api/learn/today', {method: 'PUT', body: {items: pick}}); L.editPlan = false; toast('Đã lưu kế hoạch hôm nay.'); render(); }
+      catch (e) { toast(e.message, 'err'); }
+    });
+    $('#lnPlanCancel')?.addEventListener('click', () => { L.editPlan = false; paintToday(); });
+  } else {
+    const done = t.plan.filter(it => it.done).length, total = t.plan.length;
+    const next = t.plan.find(it => !it.done);
+    el.innerHTML = `<div class="box pcard ln-plan">
+      <div class="row-between"><h3>Kế hoạch hôm nay <span class="hint">${done}/${total} việc</span></h3>${remind}</div>
+      <div class="bar ln-pbar" aria-hidden="true"><i class="${done ? '' : 'w0'}" style="width:${Math.round(done / total * 100)}%;background:var(--green)"></i></div>
+      <div class="ln-todo">${t.plan.map((it, i) => `<div class="ln-ti${it.done ? ' done' : ''}">
+          <span class="ln-ki k-${it.kind}">${it.done ? '✓' : KIND_ICON[it.kind]}</span>
+          <span class="ln-tt"><b>${esc(it.title)}</b><small>${esc(subjName(it.subject))}${it.kind === 'new' ? ` · đã học ${it.got || 0}/${it.n}` : ''}${it.kind === 'review' && !it.done ? ` · còn ${it.left}` : ''}${it.pct != null ? ` · ${it.pct}%` : ''}</small></span>
+          ${it.done ? '<span class="badge" style="background:var(--green)">Xong</span>' : `<button class="btn sm green" type="button" data-run="${i}">Bắt đầu</button>`}</div>`).join('')}</div>
+      <div class="btn-row">${next ? `<button class="btn green ln-start" type="button" data-run="${t.plan.indexOf(next)}">${done ? 'LÀM TIẾP' : 'BẮT ĐẦU'}: ${esc(next.title)}</button>` : '<b class="ln-alldone">🎉 Xong kế hoạch hôm nay!</b>'}
+        <button class="btn plain" type="button" id="lnPlanEdit">Sửa kế hoạch</button></div>
+    </div>`;
+    el.querySelectorAll('[data-run]').forEach(b => b.addEventListener('click', () => runPlan(t.plan[+b.dataset.run])));
+    $('#lnPlanEdit').addEventListener('click', () => { L.editPlan = true; paintToday(); });
+  }
+  const on = $('#lnRemOn'), at = $('#lnRemAt');
+  const saveRem = () => api('/api/learn/settings', {method: 'PUT', body: {remind: on.checked, remind_at: at.value || '20:00'}})
+    .then(() => { at.disabled = !on.checked; refreshRemind(); if (on.checked) askNotify(); }).catch(e => toast(e.message, 'err'));
+  on.addEventListener('change', saveRem); at.addEventListener('change', saveRem);
+}
+
+function runPlan(it) {
+  L.plan = true;
+  if (it.kind === 'review') return startStudy({subject: it.subject, mode: 'review', limit: 200});
+  if (it.kind === 'new') return startStudy({subject: it.subject, mode: 'new', limit: Math.max(1, (it.n || 10) - (it.got || 0))});
+  return startQuiz({subject: it.subject, kind: it.kind, deck: it.deck_id});
+}
+
+async function paintNextPlan() {
+  const el = $('#lnNextPlan');
+  if (!el || !L.plan) return;
+  try {
+    const t = await api('/api/learn/today');
+    R.today = t; paintBadge();
+    const next = (t.plan || []).find(it => !it.done);
+    el.innerHTML = next ? `<p class="hint">Tiếp theo trong kế hoạch hôm nay:</p><button class="btn yellow" type="button" id="lnGoNext">${esc(next.title)} · ${esc(subjName(next.subject))} →</button>`
+      : t.plan ? '<p class="ln-alldone">🎉 Xong kế hoạch hôm nay!</p>' : '';
+    $('#lnGoNext')?.addEventListener('click', () => { L.study = null; L.quiz = null; runPlan(next); });
+  } catch (e) { /* bỏ qua */ }
+}
+
+/* ================================================================ lộ trình chuẩn */
+async function paintPath() {
+  const el = $('#lnPath');
+  if (!el) return;
+  let p;
+  try { p = await api(`/api/learn/paths/${L.subject}`); } catch (e) { el.innerHTML = `<h3>Lộ trình chuẩn</h3><p class="hint">${esc(e.message)}</p>`; return; }
+  const color = SUBJ[L.subject].color;
+  const act = p.levels.find(l => l.id === p.active);
+  el.innerHTML = `<div class="row-between"><h3>Lộ trình chuẩn · ${esc(p.short)}</h3>
+      <label class="ln-pd">Từ mới/ngày <input type="number" id="lnPerDay" min="1" max="100" value="${p.per_day}" aria-label="Số từ mới mỗi ngày"></label></div>
+    <p class="hint">${esc(p.about)}</p>
+    <ol class="ln-levels">${p.levels.map((l, i) => {
+      const pct = l.count ? Math.round(l.seen / l.count * 100) : 0;
+      const on = l.id === p.active;
+      return `<li class="ln-lvl${on ? ' on' : ''}${l.passed ? ' passed' : ''}">
+        <span class="ln-lvl-id" style="${on || l.passed ? `background:${color}` : ''}">${esc(l.id.replace('HSK', '').replace('TOPIK', ''))}</span>
+        <span class="ln-lvl-t"><b>${esc(l.name)}</b><small>${l.count} từ${l.target ? ' · ' + esc(l.target) : ''}${l.deck_id ? ` · đã học ${l.seen}` : ''}${l.passed ? ` · đã qua kiểm tra ${l.best}%` : ''}</small>
+          ${l.deck_id ? `<span class="bar" aria-hidden="true"><i class="${pct ? '' : 'w0'}" style="width:${pct}%;background:${color}"></i></span>` : ''}</span>
+        ${on ? '<span class="badge" style="background:var(--yellow)">Đang học</span>' : `<button class="btn sm ${l.deck_id ? 'plain' : 'green'}" type="button" data-lv="${esc(l.id)}">${l.deck_id ? 'Học tiếp cấp này' : i === 0 && !act ? 'Bắt đầu từ đây' : 'Học cấp này'}</button>`}
+      </li>`;
+    }).join('')}</ol>
+    ${act && act.deck_id ? `<div class="ln-gloss" id="lnGloss"></div>` : ''}
+    <details class="hint"><summary>Nguồn dữ liệu</summary>${esc(p.credit)}</details>`;
+  el.querySelectorAll('[data-lv]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = 'Đang chuẩn bị…';
+    try { await api(`/api/learn/paths/${L.subject}/${encodeURIComponent(b.dataset.lv)}`, {method: 'POST', body: {}}); toast(`Đã chọn ${b.dataset.lv}. Mỗi ngày học ${p.per_day} từ mới – từ hay gặp học trước.`); refreshRemind(); render(); }
+    catch (e) { toast(e.message, 'err'); b.disabled = false; }
+  }));
+  $('#lnPerDay').addEventListener('change', e => api(`/api/learn/paths/${L.subject}`, {method: 'PUT', body: {per_day: Math.max(1, +e.target.value || 10)}})
+    .then(() => { toast('Đã đổi số từ mới mỗi ngày.'); render(); }).catch(err => toast(err.message, 'err')));
+  if (act && act.deck_id) paintGloss(act.deck_id);
+}
+
+async function paintGloss(did, poll) {
+  const el = $('#lnGloss');
+  if (!el) return;
+  let g;
+  try { g = await api(`/api/learn/decks/${did}/gloss`); } catch (e) { return; }
+  if (!g.left && !g.running) { el.innerHTML = '<span class="hint">✓ Cả cấp đã có nghĩa tiếng Việt.</span>'; return; }
+  el.innerHTML = g.running
+    ? `<span class="hint">Đang dịch nghĩa tiếng Việt… còn ${g.left} từ</span><button class="btn sm plain" type="button" id="lnGlossStop">Dừng</button>`
+    : `<span class="hint">${g.left} từ chưa có nghĩa tiếng Việt (app tự dịch khi tới lượt học; trong lúc chờ hiện nghĩa tiếng Anh).${g.error ? ` <b class="err">${esc(g.error)}</b>` : ''}</span>
+       <button class="btn sm cyan" type="button" id="lnGlossGo" title="Dùng bộ dịch đang chọn ở tab Dịch → Cài đặt (Claude viết thêm câu ví dụ)">Dịch sẵn cả cấp</button>`;
+  $('#lnGlossGo')?.addEventListener('click', () => api(`/api/learn/decks/${did}/gloss`, {method: 'POST'}).then(() => paintGloss(did, true)).catch(e => toast(e.message, 'err')));
+  $('#lnGlossStop')?.addEventListener('click', () => api(`/api/learn/decks/${did}/gloss/stop`, {method: 'POST'}).then(() => paintGloss(did)));
+  if (g.running) setTimeout(() => { if ($('#lnGloss')) paintGloss(did, true); }, 2500);
+  else if (poll && !g.running) paintGloss(did);
+}
+
+/* ================================================================ bài tập + kiểm tra định kỳ */
+async function paintTests() {
+  const el = $('#lnTests');
+  if (!el) return;
+  let t;
+  try { t = await api(`/api/learn/tests?subject=${L.subject}`); } catch (e) { el.innerHTML = ''; return; }
+  const w = t.week;
+  const hist = t.items.slice(0, 12).reverse();
+  el.innerHTML = `<h3>Luyện tập &amp; kiểm tra</h3>
+    <div class="ln-tbtns">
+      <button class="ln-tb" type="button" data-q="practice"><b>✎ Bài tập nhanh</b><small>12 câu: nghĩa, nghe, ghép cặp, điền từ… chấm ngay từng câu</small></button>
+      <button class="ln-tb${w.due ? ' due' : ''}" type="button" data-q="week"><b>✓ Kiểm tra tuần</b><small>20 câu · 12 phút · đạt từ ${t.pass}%${w.due ? ' · <em>đã đến hạn</em>' : w.next_in ? ` · lần tới sau ${w.next_in} ngày` : w.seen < 20 ? ` · nên học ≥ 20 từ (đang ${w.seen})` : ''}</small></button>
+      ${t.levels.map(l => `<button class="ln-tb due" type="button" data-q="level" data-deck="${l.deck_id}"><b>★ Kiểm tra cuối cấp ${esc(l.level)}</b><small>40 câu · 25 phút · qua thì lên cấp tiếp theo</small></button>`).join('')}
+    </div>
+    ${hist.length ? `<div class="ln-hist" role="img" aria-label="Điểm các bài gần đây">${hist.map(h => `<i class="${h.kind}${h.pct >= t.pass ? ' ok' : ''}" style="height:${Math.max(6, h.pct)}%" title="${esc(h.day)} · ${h.kind === 'practice' ? 'Bài tập' : h.kind === 'week' ? 'Kiểm tra tuần' : 'Cuối cấp ' + (h.level || '')}: ${h.pct}%"></i>`).join('')}</div>
+      <ul class="ln-hlist">${t.items.slice(0, 4).map(h => `<li><span>${h.kind === 'practice' ? 'Bài tập' : h.kind === 'week' ? 'Kiểm tra tuần' : 'Cuối cấp ' + esc(h.level || '')}</span><span class="hint">${esc(h.day.slice(5).split('-').reverse().join('/'))}</span>
+        <b class="${h.kind !== 'practice' ? (h.passed ? 'ok' : 'no') : ''}">${h.correct}/${h.total} · ${h.pct}%</b></li>`).join('')}</ul>`
+      : '<p class="hint">Chưa làm bài nào. Học vài từ rồi làm bài tập để nhớ chắc hơn; mỗi tuần một bài kiểm tra.</p>'}`;
+  el.querySelectorAll('[data-q]').forEach(b => b.addEventListener('click', () => startQuiz({subject: L.subject, kind: b.dataset.q, deck: b.dataset.deck ? +b.dataset.deck : null})));
+}
+
+async function startQuiz(opt) {
+  const p = new URLSearchParams({subject: opt.subject, kind: opt.kind});
+  if (opt.deck) p.set('deck', opt.deck);
+  let r;
+  try { r = await api(`/api/learn/quiz?${p}`); } catch (e) { return toast(e.message, 'err'); }
+  if (!r.questions.length) return toast('Chưa đủ từ để ra đề.', 'err');
+  L.study = null;
+  L.quiz = {...r, opt, i: 0, res: [], t0: Date.now(), test: r.kind !== 'practice', answered: false};
+  clearInterval(R.timer);
+  if (r.time_limit) R.timer = setInterval(tickQuiz, 1000);
+  paintQuiz();
+}
+
+function quitQuiz() { clearInterval(R.timer); L.quiz = null; document.removeEventListener('keydown', onQuizKey); refreshRemind(); render(); }
+
+function tickQuiz() {
+  const q = L.quiz;
+  if (!q || q.finished) return clearInterval(R.timer);
+  const left = q.time_limit - Math.floor((Date.now() - q.t0) / 1000);
+  const el = $('#lnTimer');
+  if (el) { el.textContent = `${Math.floor(Math.max(0, left) / 60)}:${String(Math.max(0, left) % 60).padStart(2, '0')}`; el.classList.toggle('low', left <= 60); }
+  if (left <= 0) { toast('Hết giờ – nộp bài.'); finishQuiz(); }
+}
+
+function paintQuiz() {
+  const z = L.quiz, box = $('#lnBox');
+  document.removeEventListener('keydown', onQuizKey);
+  document.addEventListener('keydown', onQuizKey);
+  if (z.finished) return paintQuizResult();
+  if (z.i >= z.questions.length) return finishQuiz();
+  const q = z.questions[z.i];
+  z.answered = false; z.shown = Date.now();
+  const head = `<div class="ln-study-top">
+      <button class="btn sm plain" type="button" id="lnQQuit">✕ ${z.test ? 'Bỏ bài' : 'Dừng'}</button>
+      <div class="bar ln-sbar" aria-hidden="true"><i style="width:${Math.round(z.i / z.questions.length * 100)}%;background:${z.test ? 'var(--violet)' : 'var(--cyan)'}"></i></div>
+      ${z.time_limit ? '<span class="ln-timer mono" id="lnTimer">--:--</span>' : ''}<span class="hint mono">${z.i + 1}/${z.questions.length}</span></div>`;
+  let body = '';
+  const bigLang = ['mean', 'tf', 'read', 'cloze'].includes(q.type);
+  if (q.type === 'match') {
+    z.match = {left: null, done: new Set(), miss: 0};
+    body = `<div class="ln-match"><div>${q.pairs.map(p => `<button type="button" class="ln-mt" data-ml="${p.id}" lang="${z.lang}">${esc(p.front)}</button>`).join('')}</div>
+      <div>${q.right.map((m, i) => `<button type="button" class="ln-mt" data-mr="${i}">${esc(m)}</button>`).join('')}</div></div>`;
+  } else if (q.type === 'tf') {
+    body = `<div class="ln-shown">“${esc(q.shown)}”</div><div class="ln-quiz two"><button type="button" class="ln-opt" data-tf="1"><b>1</b>Đúng</button><button type="button" class="ln-opt" data-tf="0"><b>2</b>Sai</button></div>`;
+  } else if (q.type === 'spell') {
+    body = `<form id="lnSpellF" class="paste-row"><input type="text" id="lnSpell" lang="${z.lang}" placeholder="Gõ từ ${z.subject === 'ielts' ? 'tiếng Anh' : '(hoặc cách đọc)'}…" autocomplete="off" aria-label="Đáp án">
+      <button class="btn yellow" type="submit">KIỂM TRA</button></form>`;
+  } else {
+    body = `<div class="ln-quiz">${q.options.map((o, i) => `<button type="button" class="ln-opt" data-qo="${i}" ${q.type === 'mean' ? '' : `lang="${z.lang}"`}><b>${i + 1}</b>${esc(o)}</button>`).join('')}</div>`;
+  }
+  box.innerHTML = `<div class="ln-study">${head}
+    <div class="box ln-card ln-qcard ${z.test ? 'test' : ''}">
+      <span class="badge" style="background:${z.test ? 'var(--violet)' : 'var(--cyan)'}">${esc(z.title)}${z.level ? ' ' + esc(z.level) : ''}</span>
+      ${q.type === 'listen' ? '<button type="button" class="ln-bigsay" id="lnQSay" aria-label="Nghe lại">🔊</button>'
+        : q.type === 'match' ? '' : `<div class="${bigLang ? 'ln-front-big' : 'ln-qprompt'}${q.type === 'cloze' ? ' cloze' : ''}" ${bigLang ? `lang="${z.lang}"` : ''}>${esc(q.prompt)}</div>`}
+      <p class="ln-qsub">${esc(q.sub || '')}${q.say && q.type !== 'listen' && q.type !== 'match' ? ' <button type="button" class="ln-say" id="lnQSay" aria-label="Nghe">🔊</button>' : ''}</p>
+      <div id="lnQBody">${body}</div><div id="lnQFb"></div></div></div>`;
+  if (z.time_limit) tickQuiz();
+  $('#lnQQuit').addEventListener('click', () => { if (!z.test || z.i === 0 || confirm('Bỏ bài kiểm tra? Kết quả sẽ không được lưu.')) quitQuiz(); });
+  $('#lnQSay')?.addEventListener('click', () => speak(q.say, z.lang));
+  if (q.type === 'listen' || q.type === 'spell') setTimeout(() => speak(q.say, z.lang), 150);
+  box.querySelectorAll('[data-qo]').forEach(b => b.addEventListener('click', () => answer(+b.dataset.qo)));
+  box.querySelectorAll('[data-tf]').forEach(b => b.addEventListener('click', () => answer(b.dataset.tf === '1')));
+  $('#lnSpellF')?.addEventListener('submit', e => { e.preventDefault(); answer($('#lnSpell').value); });
+  $('#lnSpell')?.focus();
+  box.querySelectorAll('[data-ml],[data-mr]').forEach(b => b.addEventListener('click', () => matchPick(b)));
+}
+
+const noTone = t => plain(t).replace(/\s+/g, '');
+function answer(v) {
+  const z = L.quiz, q = z.questions[z.i];
+  if (z.answered) return;
+  let ok, yours, right;
+  if (q.type === 'tf') { ok = v === q.answer; yours = v ? 'Đúng' : 'Sai'; right = `${q.answer ? 'Đúng' : 'Sai'} – nghĩa: ${q.truth}`; }
+  else if (q.type === 'spell') {
+    if (!String(v).trim()) return;
+    const got = noTone(v);
+    ok = [q.answer, ...(q.alt || [])].some(a => noTone(a) === got);
+    yours = v; right = q.answer;
+    $('#lnSpell').disabled = true;
+  } else { ok = v === q.answer; yours = q.options[v]; right = q.options[q.answer]; }
+  z.answered = true;
+  z.res.push({n: q.n, ok, card_ids: q.card_ids, q: q.type === 'listen' ? q.say : q.prompt, a: right, your: yours, type: q.type});
+  if (z.test) { z.i++; return paintQuiz(); }          // kiểm tra: không báo đúng/sai từng câu
+  document.querySelectorAll('[data-qo],[data-tf]').forEach(b => {
+    b.disabled = true;
+    const k = b.dataset.qo != null ? +b.dataset.qo : b.dataset.tf === '1';
+    if (k === q.answer) b.classList.add('ok'); else if (k === v) b.classList.add('no');
+  });
+  showFeedback(q, ok);
+}
+
+function showFeedback(q, ok) {
+  const z = L.quiz;
+  if (!ok || q.type !== 'match') speak(q.front || q.say, z.lang);
+  $('#lnQFb').innerHTML = `<div class="ln-verdict ${ok ? 'ok' : 'no'}">${ok ? 'Đúng rồi!' : 'Chưa đúng'}</div>
+    ${q.type !== 'match' ? `<div class="ln-qans"><b lang="${z.lang}">${esc(q.front)}</b>${q.reading ? ` <span lang="${z.lang}">${esc(q.reading)}</span>` : ''} – ${esc(q.meaning)}</div>` : ''}
+    <button class="btn green" type="button" id="lnQNext">TIẾP <span class="ui-k">Space</span></button>`;
+  $('#lnQNext').addEventListener('click', () => { z.i++; paintQuiz(); });
+  $('#lnQNext').focus();
+}
+
+function matchPick(b) {
+  const z = L.quiz, q = z.questions[z.i], m = z.match;
+  if (z.answered || b.disabled) return;
+  if (b.dataset.ml) {
+    document.querySelectorAll('[data-ml]').forEach(x => x.classList.toggle('sel', x === b));
+    m.left = +b.dataset.ml;
+    speak(q.pairs.find(p => p.id === m.left).front, z.lang);
+    return;
+  }
+  if (m.left == null) return;
+  const pair = q.pairs.find(p => p.id === m.left);
+  const lb = document.querySelector(`[data-ml="${m.left}"]`);
+  if (q.right[+b.dataset.mr] === pair.meaning) {
+    [lb, b].forEach(x => { x.classList.remove('sel'); x.classList.add('ok'); x.disabled = true; });
+    m.done.add(m.left); m.left = null;
+    if (m.done.size === q.pairs.length) {
+      const ok = m.miss <= 1;
+      z.answered = true;
+      z.res.push({n: q.n, ok, card_ids: q.card_ids, q: 'Ghép cặp', a: q.pairs.map(p => `${p.front} = ${p.meaning}`).join('; '), your: `${m.miss} lần ghép sai`, type: 'match'});
+      showFeedback(q, ok);
+    }
+  } else {
+    m.miss++;
+    b.classList.add('no'); setTimeout(() => b.classList.remove('no'), 450);
+  }
+}
+
+async function finishQuiz() {
+  const z = L.quiz;
+  if (z.finished) return;
+  z.finished = true;
+  clearInterval(R.timer);
+  const answered = new Set(z.res.map(r => r.n));
+  z.questions.forEach(q => { if (!answered.has(q.n)) z.res.push({n: q.n, ok: false, card_ids: q.card_ids, q: q.prompt || q.say, a: q.type === 'tf' ? (q.answer ? 'Đúng' : 'Sai') : q.options ? q.options[q.answer] : q.answer, your: '(chưa làm)', type: q.type}); });
+  const correct = z.res.filter(r => r.ok).length;
+  const wrong = z.res.filter(r => !r.ok).flatMap(r => r.card_ids);
+  z.secs = Math.round((Date.now() - z.t0) / 1000);
+  try {
+    z.out = await api('/api/learn/quiz/result', {method: 'POST', body: {subject: z.subject, kind: z.kind, deck_id: z.deck_id, level: z.level,
+      total: z.res.length, correct, seconds: z.secs, wrong, detail: z.res.filter(r => !r.ok).map(({q, a, your, type}) => ({q, a, your, type}))}});
+  } catch (e) { toast(e.message, 'err'); z.out = {pct: Math.round(correct / z.res.length * 100), passed: false, pass: z.pass}; }
+  z.correct = correct;
+  paintQuiz();
+}
+
+function paintQuizResult() {
+  const z = L.quiz, o = z.out, box = $('#lnBox');
+  const wrong = z.res.filter(r => !r.ok);
+  const good = z.test ? o.passed : o.pct >= 80;
+  box.innerHTML = `<div class="ln-study"><div class="box pcard ln-finish">
+    <span class="ln-mark big pct" style="background:${good ? 'var(--green)' : 'var(--yellow)'}">${o.pct}%</span>
+    <h2>${z.test ? (o.passed ? 'Đạt! 🎉' : 'Chưa đạt') : good ? 'Làm tốt lắm!' : 'Cố thêm chút nữa!'}</h2>
+    <p>${z.title}${z.level ? ' ' + esc(z.level) : ''}: đúng ${z.correct}/${z.res.length} câu · ${Math.max(1, Math.round(z.secs / 60))} phút${z.test ? ` · cần ${o.pass}% để đạt` : ''}</p>
+    ${o.next_level ? `<p><b>Đã qua cấp ${esc(z.level)}.</b> Lên cấp tiếp theo?</p>` : ''}
+    <div class="btn-row">
+      ${o.next_level ? `<button class="btn green" type="button" id="lnNextLv">HỌC ${esc(o.next_level)}</button>` : ''}
+      ${wrong.length ? `<button class="btn yellow" type="button" id="lnRedo">ÔN ${wrong.length} TỪ SAI</button>` : ''}
+      <button class="btn plain" type="button" id="lnAgain">${z.test ? 'Làm lại' : 'Bài khác'}</button>
+      <button class="btn plain" type="button" id="lnQBack">Về trang môn học</button></div>
+    ${wrong.length ? `<div class="ln-wrong"><h3>Câu sai</h3>${wrong.map(r => `<div><span lang="${z.lang}">${esc(r.q || '')}</span><b>→ ${esc(r.a || '')}</b><small>Bạn chọn: ${esc(String(r.your ?? ''))}</small></div>`).join('')}</div>` : ''}
+    <div id="lnNextPlan"></div></div></div>`;
+  $('#lnQBack').addEventListener('click', () => { if (!L.subject) L.subject = z.subject; quitQuiz(); });
+  $('#lnAgain').addEventListener('click', () => startQuiz(z.opt));
+  $('#lnRedo')?.addEventListener('click', () => { L.quiz = null; startStudy({subject: z.subject, mode: 'review', limit: 100}); });
+  $('#lnNextLv')?.addEventListener('click', async () => {
+    try { await api(`/api/learn/paths/${z.subject}/${encodeURIComponent(o.next_level)}`, {method: 'POST', body: {}}); toast(`Đã chuyển sang ${o.next_level}.`); L.subject = z.subject; quitQuiz(); }
+    catch (e) { toast(e.message, 'err'); }
+  });
+  paintNextPlan();
+}
+
+function onQuizKey(e) {
+  const z = L.quiz;
+  if (!z || location.hash !== '#learn') return;
+  if (e.target.closest('input,textarea') && e.key !== 'Escape') return;
+  if (e.key === 'Escape') { if (!z.test || z.finished) quitQuiz(); return; }
+  if (z.finished) return;
+  if ((e.key === ' ' || e.key === 'Enter') && $('#lnQNext')) { e.preventDefault(); return $('#lnQNext').click(); }
+  const n = +e.key;
+  if (n >= 1 && n <= 4 && !z.answered) {
+    const q = z.questions[z.i];
+    if (q.type === 'tf' && n <= 2) return answer(n === 1);
+    if (q.options && n <= q.options.length) return answer(n - 1);
+  }
+}
+
+/* ================================================================ nhắc học hằng ngày */
+const R = {today: null, at: 0, timer: 0};
+function paintBadge() {
+  const tab = document.querySelector('a[data-view="learn"]');
+  if (!tab || !R.today) return;
+  let b = tab.querySelector('.nbadge');
+  const t = R.today;
+  const left = t.plan ? t.plan.filter(it => !it.done).length : null;
+  const due = left == null && !t.studied && t.suggest.some(it => !it.done) && pastRemind(t);
+  const txt = left ? String(left) : due ? '!' : '';
+  if (!txt) { b && b.remove(); return; }
+  if (!b) { b = document.createElement('span'); b.className = 'nbadge'; tab.appendChild(b); }
+  b.textContent = txt;
+  b.title = left ? `Còn ${left} việc trong kế hoạch học hôm nay` : 'Hôm nay chưa học';
+}
+function pastRemind(t) {
+  const [h, m] = (t.remind_at || '20:00').split(':').map(Number);
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes() >= h * 60 + m;
+}
+function askNotify() {
+  if (window.Notification && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
+}
+async function refreshRemind() {
+  try { R.today = await api('/api/learn/today'); R.at = Date.now(); } catch (e) { return; }
+  paintBadge();
+}
+async function remindTick() {
+  if (!R.today || Date.now() - R.at > 10 * 60 * 1000) await refreshRemind();
+  const t = R.today;
+  if (!t || !t.remind || !pastRemind(t)) return;
+  let seen = '';
+  try { seen = localStorage.getItem('cv-ln-notified') || ''; } catch (e) { /* bỏ qua */ }
+  if (seen === t.day) return;
+  const left = t.plan ? t.plan.filter(it => !it.done) : t.suggest.filter(it => !it.done);
+  if (!left.length || (!t.plan && t.studied)) return;
+  keep('cv-ln-notified', t.day);
+  const msg = left.slice(0, 3).map(it => `${it.title} (${subjName(it.subject)})`).join(' · ');
+  const title = t.plan ? `Còn ${left.length} việc học hôm nay` : 'Đến giờ học rồi!';
+  try {
+    if (window.Notification && Notification.permission === 'granted') {
+      const n = new Notification('CircleVault – ' + title, {body: msg, tag: 'cv-learn', silent: false});
+      n.onclick = () => { window.focus(); location.hash = '#learn'; n.close(); };
+    }
+  } catch (e) { /* bỏ qua */ }
+  toast(`📚 ${title}: ${msg}`);
+}
+setTimeout(() => { remindTick(); setInterval(remindTick, 60 * 1000); }, 4000);
+window.addEventListener('focus', () => { if (Date.now() - R.at > 60 * 1000) refreshRemind(); });
 
 window.CV.views.learn = render;
 })();

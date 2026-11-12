@@ -41,6 +41,14 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     (`_builtin`). Dữ liệu khác nhập bằng `POST /api/learn/import` (JSON {"decks":[{subject,section,name,level,cards:[{front,reading,
     meaning,example,example_vi,extra}]}]} hoặc CSV/TSV) – định dạng ở docstring đầu file. Giao diện `frontend/js/learn.js`
     (thẻ ghi nhớ / trắc nghiệm / gõ đáp án, phím Space 1–4 Esc, đọc phát âm bằng speechSynthesis).
+  - `learnplan.py` (thêm route vào `learn.router`): **Lộ trình chuẩn** = `backend/app/lotrinh/<môn>.json.gz` (dựng bằng
+    `tools/lap_lo_trinh.py <nguồn>`: CEFR A1–C2 từ CEFR-J/Octanove cho IELTS, JLPT N5–N1, HSK 3.0 cấp 1–9, TOPIK I soạn sẵn; xếp theo
+    tần suất wordfreq), chọn cấp → bộ thẻ `builtin = path:<môn>:<cấp>`, `settings.paths[môn] = {level, per_day}`. Nghĩa tiếng Việt
+    thiếu thì dịch lúc học (`gloss_cards`, tối đa 8 giây; Google từng từ hoặc Claude viết nghĩa + câu ví dụ), cột `en` = nghĩa tiếng Anh
+    gốc hiện tạm. Bài tập/kiểm tra: `GET /quiz?kind=practice|week|level` (mean/rev/listen/read/tf/cloze/spell/match), kết quả
+    `POST /quiz/result` → bảng `learn_tests`, từ sai đưa về ôn ngay; kiểm tra tuần 7 ngày/lần, cuối cấp khi đã học 80% cấp, đạt 80%.
+    "Hôm nay học gì": `GET/PUT/DELETE /today` (bảng `learn_plan`, số từ mới trong kế hoạch ghi đè `per_day`). Nhắc học: learn.js hỏi
+    `/today` mỗi phút → huy hiệu trên tab Học + Notification lúc `remind_at` (một lần mỗi ngày).
   - `party.py`: phòng xem chung. `router` /api/party (chỉ app chính dùng) + `party_app` chạy cổng app+1 (chỉ có /r/<mã>,
     /r/<mã>/ws, /r/<mã>/media, tĩnh /p = frontend). Bạn bè/đường hầm chỉ chạm party_app, không thấy API chính.
     Đồng bộ: máy chủ giữ {playing,pos,rate,at}, client tự tính theo đồng hồ máy chủ (ping/pong).
@@ -76,6 +84,10 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     (chuyển tiếp googlevideo theo Range, mỗi lần 4 MB, link hết hạn thì lấy lại). Nguồn online chung (`ONLINE_HOSTS`: YouTube,
     SoundCloud, Bandcamp): bài có `ou` (link), `GET /search?q=&site=yt|sc`, `POST /prepare?u=` + `GET /stream?u=`; chỉ có HLS thì
     tải tạm vào `DATA/cache/nghe-online` (tối đa 600 MB) rồi phát file; bỏ định dạng mã hóa (`NO_DRM`) – Spotify/Apple Music có DRM, không làm.
+  - `discover.py`: Khám phá nhạc (`/api/music/discover/*`, chỉ máy này, thư viện ytmusicapi): `home` (Gợi ý cho bạn = trộn radio của
+    bài trên máy hay nghe/mới tải có [id], Mix, trang chủ YouTube Music khi đã đăng nhập – cookie `YT_COOKIES` → header SAPISIDHASH,
+    bảng xếp hạng + ca sĩ theo `config.music_country` (mặc định VN), chip tâm trạng = tìm kiếm), `radio?v=` (bài tương tự; nút ≈ và tự
+    phát khi hết danh sách – `settings.autoplay`), `suggest?q=` (gợi ý từ khóa), `artist?b=`. Nhớ 3 giờ ở `DATA/cache/kham-pha.json`.
   - `edit.py`: router `/api/edit/*` – cắt đoạn (`POST /{item|track}/{id}/cut` {start,end,accurate}) và chuyển MP4 (`/mp4`) bằng ffmpeg
     trong thread, tiến độ `GET /jobs/{id}`. Luôn ghi FILE MỚI cạnh file gốc (không ghi đè/xóa gốc) rồi thêm vào thư viện/Nghe Nhạc.
     Cắt nhanh = `-c copy` (lệch theo keyframe), chính xác = H.264/AAC. Giao diện: `openCutter` trong app.js (hộp #player).

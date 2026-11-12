@@ -35,7 +35,9 @@ async function loadPlaylists() {
   renderSide();
 }
 async function loadTracks() {
+  if (M.list === 'disc') return renderTracks();
   if (M.list === 'yt:@search') { if (M.search) { M.online = M.search; M.tracks = filterQ(M.search.entries); } return renderTracks(); }
+  if (M.list === 'yt:@radio' || M.list === 'yt:@artist') { if (M.special) { M.online = M.special; M.tracks = filterQ(M.special.entries); } return renderTracks(); }
   if (isYt(M.list)) return loadOnline(false);
   M.online = null;
   const p = new URLSearchParams();
@@ -114,7 +116,7 @@ function renderSide() {
   const folders = (window.CV.S.config?.music_folders || []);
   $('#mSide').innerHTML = `
     <div><h4>Thư viện nhạc</h4><ul>
-      ${item('all', 'Tất cả bài hát')}${item('plays', 'Nghe nhiều nhất')}</ul></div>
+      ${item('disc', '✨ Khám phá')}${item('all', 'Tất cả bài hát')}${item('plays', 'Nghe nhiều nhất')}</ul></div>
     <div><h4>Playlist</h4><ul>
       ${M.playlists.map(p => item(p.id, esc(p.name), p.count)).join('') || '<li class="hint">Chưa có playlist.</li>'}</ul>
       <form class="mini-form" id="newPl"><input type="text" id="newPlName" placeholder="Tên playlist mới" maxlength="80" aria-label="Tên playlist mới"><button class="btn sm yellow" type="submit">Tạo</button></form></div>
@@ -145,7 +147,7 @@ function ytSide(item) {
   const saved = (y.saved || []).filter(s => !y.items.some(p => p.id === s.id));
   let open = false;
   try { open = localStorage.getItem('cv-yt-open') === '1'; } catch (e) { /* bỏ qua */ }
-  if (isYt(M.list) && M.list !== 'yt:@search') open = true;        // đang mở một playlist online thì luôn hiện
+  if (isYt(M.list) && !M.list.startsWith('yt:@')) open = true;        // đang mở một playlist online thì luôn hiện
   const count = (y.logged_in ? y.items.length : 0) + saved.length;
   return `<div class="yt-side"><h4>Tìm nhạc online</h4>
     <form class="ol-search" id="olSearch">
@@ -155,6 +157,7 @@ function ytSide(item) {
       </select><button class="btn sm green" type="submit">Tìm</button></div>
     </form>
     ${M.list === 'yt:@search' ? `<ul>${item('yt:@search', '🔎 Kết quả tìm vừa rồi')}</ul>` : ''}
+    ${M.list === 'yt:@radio' || M.list === 'yt:@artist' ? `<ul>${item(M.list, (M.list === 'yt:@radio' ? '≈ ' : '♪ ') + esc((M.special || {}).title || 'Đang mở'))}</ul>` : ''}
     <h4 class="row-h"><button type="button" class="fold" id="ytFold" aria-expanded="${open}">${open ? '▾' : '▸'} Playlist online${count ? ` <span class="n">${count}</span>` : ''}</button>${y.logged_in && open ? `<button type="button" class="chip-x" id="ytRefresh" title="Tải lại danh sách playlist" aria-label="Tải lại">${y.loading ? '…' : '⟳'}</button>` : ''}</h4>
     <div class="fold-body" ${open ? '' : 'hidden'}>
     <h4>YouTube của tôi</h4>
@@ -221,7 +224,7 @@ document.addEventListener('click', async e => {
   if (e.target.closest('#ytFold')) {
     const open = e.target.closest('#ytFold').getAttribute('aria-expanded') !== 'true';
     try { localStorage.setItem('cv-yt-open', open ? '1' : '0'); } catch (err) { /* bỏ qua */ }
-    if (!open && isYt(M.list) && M.list !== 'yt:@search') { M.list = 'all'; loadTracks(); }
+    if (!open && isYt(M.list) && !M.list.startsWith('yt:@')) { M.list = 'all'; loadTracks(); }
     return renderSide();
   }
   if (e.target.id === 'ytLogin') return window.CV.ytLogin ? window.CV.ytLogin() : window.cvDesktop?.openBrowser('youtube');
@@ -243,6 +246,134 @@ document.addEventListener('click', async e => {
   }
 });
 
+/* ------------------------------------------------------------ Khám phá (gợi ý kiểu YouTube Music / Spotify) */
+const ytOf = t => t ? (t.yt || ((t.path || '').match(/\[([\w-]{11})\]\.\w+$/) || [])[1] || null) : null;
+async function loadDiscover(refresh) {
+  const my = ++M.seq;
+  if (!M.disc || refresh) $('#trackList').innerHTML = `<div class="disc-load"><span class="spin"></span><b>Đang tìm nhạc hợp gu bạn…</b><span class="hint">Dựa trên bài bạn hay nghe, bảng xếp hạng và YouTube Music.</span></div>`;
+  try {
+    const d = await api('/api/music/discover/home' + (refresh ? '?refresh=1' : ''));
+    if (my !== M.seq) return;
+    M.disc = d;
+  } catch (e) {
+    if (my !== M.seq) return;
+    M.disc = {sections: [], error: e.message};
+  }
+  if (M.list === 'disc') renderDiscover();
+}
+const songCard = (t, si, i) => `<div class="dc-song${t.local ? ' local' : ''}" data-ds="${si}:${i}" tabindex="0" role="button" aria-label="Phát ${esc(t.title)}">
+  <span class="dc-cover">${coverEl(t)}<span class="dc-play" aria-hidden="true">▶</span></span>
+  <b title="${esc(t.title)}">${esc(t.title)}</b><span>${esc(t.artist || '')}</span>
+  <span class="dc-act">${t.local ? '<span class="tag green">Trên máy</span>' : `<button type="button" class="btn sm plain" data-dsdl="${si}:${i}" title="Tải về máy (MP3)" aria-label="Tải về máy">⬇</button>`}
+    <button type="button" class="btn sm plain" data-radio="${esc(t.yt || t.id)}" data-rt="${esc(t.title)}" title="Bài tương tự (radio)" aria-label="Bài tương tự">≈</button></span></div>`;
+function renderDiscover() {
+  const box = $('#trackList'), d = M.disc;
+  $('#mTitle').textContent = 'Khám phá';
+  box.classList.add('disc-on');
+  const picks = d && d.sections.find(s => s.kind === 'songs');
+  M.tracks = picks ? picks.items : [];                 // nút PHÁT TẤT CẢ / Trộn bài phát mục gợi ý đầu tiên
+  $('#plTools').hidden = true; $('#mSort').hidden = true;
+  const tools = $('#ytTools');
+  tools.hidden = false;
+  tools.innerHTML = `<span class="hint">${d && d.at ? `Cập nhật ${new Date(d.at * 1000).toLocaleTimeString('vi', {hour: '2-digit', minute: '2-digit'})}${d.logged_in ? ' · theo tài khoản YouTube của bạn' : ''}` : ''}</span>
+    <button class="btn sm plain" type="button" id="discRefresh">⟳ Làm mới gợi ý</button>
+    <label class="check"><input type="checkbox" id="autoOn" ${M.settings.autoplay !== false ? 'checked' : ''}> Hết danh sách thì tự phát bài tương tự</label>`;
+  if (!d) return loadDiscover(false);
+  if (!d.sections.length || d.error && d.sections.every(s => s.kind === 'moods')) {
+    box.innerHTML = `<div class="empty"><h3>Chưa lấy được gợi ý</h3><p>${esc(d.error || 'Kiểm tra mạng rồi bấm Làm mới gợi ý.')}</p></div>` + (d.sections.length ? discSections(d) : '');
+  } else box.innerHTML = discSections(d);
+}
+function discSections(d) {
+  return `<div class="disc">${d.sections.map((s, si) => {
+    let body = '';
+    if (s.kind === 'songs') body = `<div class="dc-shelf">${s.items.map((t, i) => songCard(t, si, i)).join('')}</div>`;
+    else if (s.kind === 'mixes') body = `<div class="dc-shelf">${s.items.map(m => `<button type="button" class="dc-mix" data-radio="${esc(m.yt)}" data-rt="${esc(m.title)}">
+        <span class="dc-cover">${m.thumb ? `<img src="${esc(m.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}<span class="dc-mixtag">MIX</span></span>
+        <b>${esc(m.artist || m.title)} Mix</b><span>Từ “${esc(m.title)}” và bài tương tự</span></button>`).join('')}</div>`;
+    else if (s.kind === 'lists') body = `<div class="dc-shelf">${s.items.map(p => `<button type="button" class="dc-list" data-pl="${esc(p.id)}">
+        <span class="dc-cover">${p.thumb ? `<img src="${esc(p.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}</span>
+        <b>${esc(p.title)}</b><span>${esc(p.sub || '')}</span></button>`).join('')}</div>`;
+    else if (s.kind === 'artists') body = `<div class="dc-shelf">${s.items.map(a => `<button type="button" class="dc-artist" data-art="${esc(a.browse || '')}" data-an="${esc(a.name)}">
+        <span class="dc-ava">${a.thumb ? `<img src="${esc(a.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}</span>
+        <b>${esc(a.name)}</b><span>${a.trend === 'up' ? '▲ ' : a.trend === 'down' ? '▼ ' : ''}${esc(a.sub || '')}</span></button>`).join('')}</div>`;
+    else if (s.kind === 'moods') body = `<div class="dc-moods">${s.items.map(q => `<button type="button" class="chip" data-mood="${esc(q)}">${esc(q)}</button>`).join('')}</div>`;
+    return `<section class="dc-sec"><div class="dc-head"><div><h3>${esc(s.title)}</h3>${s.sub ? `<span class="hint">${esc(s.sub)}</span>` : ''}</div>
+      ${s.kind === 'songs' ? `<button class="btn sm green" type="button" data-dplay="${si}">▶ Phát tất cả</button>` : ''}</div>${body}</section>`;
+  }).join('')}
+  ${d.seeds && !d.seeds.length ? '<p class="hint">Mẹo: tải và nghe vài bài từ YouTube, mục “Gợi ý cho bạn” sẽ dựa trên gu của bạn. Đăng nhập YouTube để có gợi ý theo tài khoản.</p>' : ''}</div>`;
+}
+async function openSpecial(key, url, label) {
+  const my = ++M.seq;
+  M.list = key; M.q = ''; $('#mSearch').value = '';
+  renderSide();
+  $('#trackList').innerHTML = `<div class="empty"><h3>Đang mở ${esc(label)}…</h3></div>`;
+  $('#plTools').hidden = true; $('#ytTools').hidden = true;
+  try {
+    const data = await api(url);
+    if (my !== M.seq) return;
+    M.online = M.special = {...data, key: key.slice(3)}; M.tracks = data.entries;
+  } catch (e) {
+    if (my !== M.seq) return;
+    M.online = M.special = {key: key.slice(3), title: label, entries: [], error: e.message, search: true}; M.tracks = [];
+  }
+  renderSide(); renderTracks();
+}
+const openRadio = (v, title) => openSpecial('yt:@radio', `/api/music/discover/radio?v=${enc(v)}&title=${enc(title || '')}`, `radio “${title || v}”`);
+async function autoplaySimilar() {
+  const seed = [...M.queue].reverse().map(ytOf).find(Boolean);
+  if (!seed || M.settings.autoplay === false || M._auto) return false;
+  M._auto = true;
+  try {
+    const r = await api(`/api/music/discover/radio?v=${enc(seed)}`);
+    const have = new Set(M.queue.map(keyOf).concat(M.queue.map(ytOf).filter(Boolean).map(id => 'o:' + id)));
+    const add = r.entries.filter(e => !have.has(keyOf(e))).slice(0, 25);
+    if (!add.length) return false;
+    const at = M.queue.length;
+    M.queue.push(...add);
+    toast(`Hết danh sách – tự phát ${add.length} bài tương tự (tắt ở mục Khám phá).`);
+    playAt(at);
+    return true;
+  } catch (e) { return false; } finally { M._auto = false; }
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#trackList, #ytTools, #mSide')) return;
+  const rd = e.target.closest('[data-radio]');
+  if (rd) { e.stopPropagation(); return openRadio(rd.dataset.radio, rd.dataset.rt); }
+  if (e.target.id === 'discRefresh') return loadDiscover(true);
+  if (e.target.id === 'autoOn') { M.settings.autoplay = e.target.checked; return saveSettings(); }
+  const pl = e.target.closest('[data-pl]');
+  if (pl) { M.list = 'yt:?'; M.q = ''; $('#mSearch').value = ''; renderSide(); return loadOnline(false, pl.dataset.pl); }
+  const ar = e.target.closest('[data-art]');
+  if (ar) return ar.dataset.art ? openSpecial('yt:@artist', `/api/music/discover/artist?b=${enc(ar.dataset.art)}&name=${enc(ar.dataset.an)}`, ar.dataset.an) : searchOnline(ar.dataset.an, 'yt');
+  const mood = e.target.closest('[data-mood]');
+  if (mood) { M.olq = mood.dataset.mood; return searchOnline(mood.dataset.mood, 'yt'); }
+  const dp = e.target.closest('[data-dplay]');
+  if (dp && M.disc) return playList(M.disc.sections[+dp.dataset.dplay].items, 0);
+  const dl = e.target.closest('[data-dsdl]');
+  if (dl && M.disc) { e.stopPropagation(); const [si, i] = dl.dataset.dsdl.split(':').map(Number); const t = M.disc.sections[si].items[i]; return addTask(t.ou, false, `"${t.title}"`); }
+  const ds = e.target.closest('[data-ds]');
+  if (ds && M.disc) { const [si, i] = ds.dataset.ds.split(':').map(Number); return playList(M.disc.sections[si].items, i); }
+}, true);
+document.addEventListener('keydown', e => {
+  const ds = e.target.closest && e.target.closest('[data-ds]');
+  if (ds && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); ds.click(); }
+});
+/* gợi ý từ khóa khi gõ tìm nhạc online */
+document.addEventListener('input', e => {
+  if (e.target.id !== 'olQ') return;
+  clearTimeout(M._st);
+  const q = e.target.value.trim();
+  if (q.length < 2 || $('#olSite')?.value === 'sc') return;
+  M._st = setTimeout(async () => {
+    let list = [];
+    try { list = await api(`/api/music/discover/suggest?q=${enc(q)}`); } catch (err) { return; }
+    let dl = $('#olSug');
+    if (!dl) { dl = document.createElement('datalist'); dl.id = 'olSug'; document.body.appendChild(dl); }
+    dl.innerHTML = list.map(s => `<option value="${esc(s)}">`).join('');
+    const inp = $('#olQ'); if (inp) inp.setAttribute('list', 'olSug');
+  }, 220);
+});
+
 /* ------------------------------------------------------------ danh sách bài */
 const coverUrl = t => t.ou ? (t.thumb || (t.yt ? `https://i.ytimg.com/vi/${t.yt}/mqdefault.jpg` : '')) : t.has_cover ? `/api/music/${t.id}/cover` : '';
 const absUrl = u => u && u.startsWith('/') ? location.origin + u : u;
@@ -258,7 +389,7 @@ function renderOnline() {
   tools.hidden = !!o.error;
   const missing = o.entries.length - (o.local_count || 0);
   tools.innerHTML = `<span class="hint">${o.entries.length} bài · ${o.local_count || 0} bài đã có trên máy${o.owner ? ' · ' + esc(o.owner) : ''}</span>
-    ${!o.search && o.url ? `<button class="btn sm yellow" type="button" data-yta="dlall" title="Tạo playlist &quot;${esc(o.title)}&quot; trên máy, bài nào đã có thì chỉ thêm vào">${missing > 0 ? `Tải ${missing} bài về máy (MP3)` : 'Tạo playlist trên máy'}</button>` : ''}
+    ${o.url ? `<button class="btn sm yellow" type="button" data-yta="dlall" title="Tạo playlist &quot;${esc(o.title)}&quot; trên máy, bài nào đã có thì chỉ thêm vào">${missing > 0 ? `Tải ${missing} bài về máy (MP3)` : 'Tạo playlist trên máy'}</button>` : ''}
     ${o.search ? '' : '<button class="btn sm plain" type="button" data-yta="reload">Tải lại danh sách</button>'}`;
   if (o.error) {
     box.innerHTML = `<div class="empty"><h3>${o.search ? 'Không tìm được' : 'Không mở được playlist'}</h3><p>${esc(o.error)}</p></div>`; return;
@@ -271,7 +402,7 @@ function renderOnline() {
       <td><div class="tcell">${coverEl(t)}<div><b>${esc(t.title)}</b><span>${esc(t.artist || '')}</span></div></div></td>
       <td class="hide-sm">${t.local ? '<span class="tag green">Trên máy</span>' : `<span class="tag">${esc(srcName(t))}</span>`}</td>
       <td class="tnum">${fmtDur(t.duration)}</td>
-      <td class="act">${t.local ? `<button type="button" class="btn sm plain" data-addl="${i}" title="Thêm vào playlist" aria-label="Thêm vào playlist">+</button>`
+      <td class="act">${t.yt ? `<button type="button" class="btn sm plain" data-radio="${esc(t.yt)}" data-rt="${esc(t.title)}" title="Bài tương tự (radio)" aria-label="Bài tương tự">≈</button>` : ''}${t.local ? `<button type="button" class="btn sm plain" data-addl="${i}" title="Thêm vào playlist" aria-label="Thêm vào playlist">+</button>`
         : `<button type="button" class="btn sm plain" data-dl="${i}" title="Tải bài này về máy (MP3) – tải xong thì thêm vào playlist được" aria-label="Tải về máy">⬇</button>`}</td>
     </tr>`; }).join('')}</tbody></table>`;
 }
@@ -283,6 +414,8 @@ function paintDlHint() {
 }
 function renderTracks() {
   paintDlHint();
+  if (M.list === 'disc') return renderDiscover();
+  $('#trackList').classList.remove('disc-on');
   if (isYt(M.list)) return renderOnline();
   $('#ytTools').hidden = true; $('#mSort').hidden = false;
   const box = $('#trackList');
@@ -302,7 +435,7 @@ function renderTracks() {
       <td class="hide-sm">${esc(t.album || '')}</td>
       <td class="tnum">${fmtDur(t.duration)}</td>
       <td class="tnum hide-sm">${t.play_count || ''}</td>
-      <td class="act"><button type="button" class="btn sm plain" data-cutt="${i}" title="Cắt đoạn bài này" aria-label="Cắt đoạn">✂</button><button type="button" class="btn sm plain" data-add="${i}" title="Thêm vào playlist" aria-label="Thêm vào playlist">+</button>${pl ? `<button type="button" class="btn sm plain" data-rmt="${t.id}" title="Bỏ khỏi playlist" aria-label="Bỏ khỏi playlist">×</button>` : ''}</td>
+      <td class="act">${ytOf(t) ? `<button type="button" class="btn sm plain" data-radio="${esc(ytOf(t))}" data-rt="${esc(t.title || '')}" title="Bài tương tự (radio)" aria-label="Bài tương tự">≈</button>` : ''}<button type="button" class="btn sm plain" data-cutt="${i}" title="Cắt đoạn bài này" aria-label="Cắt đoạn">✂</button><button type="button" class="btn sm plain" data-add="${i}" title="Thêm vào playlist" aria-label="Thêm vào playlist">+</button>${pl ? `<button type="button" class="btn sm plain" data-rmt="${t.id}" title="Bỏ khỏi playlist" aria-label="Bỏ khỏi playlist">×</button>` : ''}</td>
     </tr>`).join('')}</tbody></table>`;
 }
 $('#trackList').addEventListener('click', async e => {
@@ -398,8 +531,8 @@ function next(auto) {
   if (!M.queue.length) return;
   if (auto && M.repeat === 'one') { audio.currentTime = 0; audio.play(); return; }
   if (M.qi + 1 < M.queue.length) playAt(M.qi + 1);
-  else if (M.repeat === 'all' || !auto) playAt(0);
-  else { renderBar(); renderTracks(); }
+  else if (M.repeat === 'all') playAt(0);
+  else autoplaySimilar().then(ok => { if (!ok) { if (!auto) playAt(0); else { renderBar(); renderTracks(); } } });
 }
 function prev() {
   if (audio.currentTime > 3) { audio.currentTime = 0; return; }
