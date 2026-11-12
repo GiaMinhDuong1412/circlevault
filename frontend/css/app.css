@@ -524,3 +524,20 @@ dialog.pl-add{max-width:720px}
 .gd-job{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border:2px dashed var(--ink);border-radius:4px}
 .gd-job .bar{height:10px;border:2px solid var(--ink);border-radius:3px;background:var(--surface-2);overflow:hidden}
 .gd-job .bar i{display:block;height:100%;background:var(--cyan)}
+/* gói Việt hóa có sẵn */
+.vp-list{display:flex;flex-direction:column;gap:4px;max-height:320px;overflow-y:auto;border:2px solid var(--ink);border-radius:6px;padding:8px;margin:6px 0 10px;background:var(--surface)}
+.vp-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 6px;border-radius:4px;cursor:pointer}
+.vp-row:hover{background:var(--surface-2)}
+.vp-row .mono{font-size:12.5px;overflow-wrap:anywhere;flex:1 1 280px}
+.vp-row.off .mono{color:var(--muted)}
+/* trình duyệt / phòng xem chung nằm ngay trong cửa sổ (app đặt trang web đè lên #dockArea) */
+body.view-dock{overflow:hidden}
+body.view-dock .app-body{grid-template-columns:1fr}
+body.view-dock .app-body > .side{display:none}
+body.view-dock [data-panel] > .sec-title{display:none}
+.dock-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dock-head .sp{flex:1}
+.dock-head .chip{cursor:pointer}
+.dock-title{font-size:17px;font-weight:900}
+.dock-area{border:var(--bw) solid var(--ink);border-radius:var(--radius,6px);box-shadow:var(--shadow,4px 4px 0 var(--ink));background:var(--surface);min-height:240px;display:grid;place-items:center;overflow:hidden}
+.dock-again{display:flex;flex-direction:row;gap:10px;align-items:center;flex-wrap:wrap}

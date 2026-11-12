@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 import json
 
-from . import config, db, detect, devices, downloader, edit, gametr, gdrive, music, party, phone, storage, translate, ytdlp_update, ytmusic
+from . import config, db, detect, devices, downloader, edit, gametr, gdrive, music, party, phone, storage, translate, unitygame, ytdlp_update, ytmusic
 from .manager import manager
 
 WEB = config.WEB
@@ -48,6 +48,7 @@ app.include_router(gdrive.router)
 app.include_router(party.router)
 app.include_router(translate.router)
 app.include_router(gametr.router)
+app.include_router(unitygame.router)
 
 
 # ------------------------------------------------------------------ status / config

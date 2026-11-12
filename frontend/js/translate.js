@@ -518,7 +518,8 @@ async function renderGames() {
     <div class="box pcard">
       <h3>Việt hóa game từ file</h3>
       <p>Lấy toàn bộ câu chữ trong file game, dịch cả lượt theo đúng thứ tự kịch bản, cho bạn xem và sửa, rồi ghi vào game. Chơi như bản tiếng Việt, không cần khung dịch nổi.</p>
-      <div class="vh-engines"><span class="chip">Ren'Py</span><span class="chip">RPG Maker MV</span><span class="chip">RPG Maker MZ</span></div>
+      <div class="vh-engines"><span class="chip">Ren'Py</span><span class="chip">RPG Maker MV</span><span class="chip">RPG Maker MZ</span><span class="chip">Unity (Unity Localization)</span></div>
+      <label class="field" id="vhSteamRow" hidden>Game Steam trên máy này<select id="vhSteam"><option value="">— Chọn game —</option></select></label>
       <form class="paste-row" id="vhForm">
         <input type="text" id="vhPath" placeholder="Thư mục game, ví dụ D:\\Games\\TenGame" aria-label="Thư mục game">
         ${desk && desk.pickFolder ? '<button class="btn plain" type="button" id="vhPick">Chọn thư mục…</button>' : ''}
@@ -531,12 +532,37 @@ async function renderGames() {
           <li><b>RPG Maker MV/MZ</b>: app sửa các file trong <code>data</code>, nhưng sao lưu bản gốc vào thư mục <code>CircleVault-ban-goc</code> trước. Bấm <b>Khôi phục bản gốc</b> là về như cũ.</li>
           <li>Tắt game trước khi bấm Áp dụng. Game nằm trong <code>Program Files</code> thì chép ra ổ khác trước (Windows không cho ghi vào đó).</li>
           <li>Chỉ dùng với game bạn sở hữu, để chơi cá nhân. Nếu chia sẻ, chỉ chia sẻ phần dịch, không chia sẻ file game đã sửa.</li>
-          <li>Game Unity, Unreal hay game có mã hóa dữ liệu: dùng <b>Dịch màn hình game</b>.</li>
+          <li><b>Unity</b>: game lưu chữ bằng Unity Localization (như các game Steam mới) thì app ghi tiếng Việt thay chỗ tiếng Anh trong bảng chữ và tắt kiểm tra CRC trong <code>catalog.json</code>, giống cách các nhóm Việt hóa làm. Bản gốc sao lưu vào <code>CircleVault-ban-goc</code>. Phông của game không có dấu thì chữ có thể hiện ô vuông.</li>
+          <li>Steam cập nhật game hoặc bạn bấm "Verify integrity" thì Steam ghi lại file gốc: bấm Áp dụng lại.</li>
+          <li>Unreal hay game có mã hóa dữ liệu: dùng <b>Dịch màn hình game</b>.</li>
         </ul>
       </details>
     </div>
+    <div class="box pcard" id="vpBox">
+      <h3>Cài gói Việt hóa có sẵn</h3>
+      <p>Có bản Việt hóa của nhóm dịch (file .zip kiểu "chép đè vào thư mục game")? App tự tìm đúng chỗ đặt file, sao lưu file gốc, gỡ được bất cứ lúc nào, và báo khi Steam cập nhật game làm mất Việt hóa.</p>
+      <label class="field">Thư mục game<input type="text" id="vpGame" placeholder="Thư mục chứa file .exe của game" aria-label="Thư mục game"></label>
+      <div class="paste-row">
+        <input type="text" id="vpSrc" placeholder="File .zip Việt hóa, hoặc thư mục đã giải nén" aria-label="Gói Việt hóa">
+        ${desk && desk.pickFile ? '<button class="btn plain" type="button" id="vpPickZip">Chọn file .zip…</button>' : ''}
+        ${desk && desk.pickFolder ? '<button class="btn plain" type="button" id="vpPickDir">Thư mục…</button>' : ''}
+        <button class="btn yellow" type="button" id="vpPreview">XEM TRƯỚC</button>
+      </div>
+      <p class="hint" id="vpMsg">File .rar / .7z: giải nén ra một thư mục rồi chọn thư mục đó.</p>
+      <div id="vpPlan"></div>
+    </div>
+    <div id="vpList" class="main"></div>
     <div class="sec-title">Game đã quét</div>
     <div id="vhList" class="main"><div class="loading"><span class="spin"></span>Đang tải…</div></div>`;
+  api('/api/translate/vh/steam').then(d => {
+    if (!d.games.length || !$('#vhSteam')) return;
+    const tag = {unity: ' · Unity', rpg: ' · RPG Maker', renpy: " · Ren'Py"};
+    $('#vhSteam').innerHTML += d.games.map(g => `<option value="${esc(g.path)}">${esc(g.name)}${tag[g.kind] || ''}</option>`).join('');
+    $('#vhSteamRow').hidden = false;
+    $('#vhSteam').addEventListener('change', e => { if (e.target.value) { $('#vhPath').value = e.target.value; $('#vpGame').value = e.target.value; } });
+  }).catch(() => {});
+  $('#vhPath').addEventListener('change', e => { if (!$('#vpGame').value) $('#vpGame').value = e.target.value; });
+  bindPatch();
   if ($('#vhPick')) $('#vhPick').addEventListener('click', async () => {
     const f = await desk.pickFolder('Chọn thư mục game');
     if (f) { $('#vhPath').value = f; $('#vhForm').requestSubmit(); }
@@ -556,7 +582,75 @@ async function renderGames() {
     finally { btn.disabled = false; }
   });
   await loadGames();
-  T.poll = setInterval(() => { if (!document.hidden && $('#vhList')) loadGames(); else if (!$('#vhList')) clearInterval(T.poll); }, 3000);
+  T.poll = setInterval(() => { if (!document.hidden && $('#vhList')) { loadGames(); loadPatches(); } else if (!$('#vhList')) clearInterval(T.poll); }, 3000);
+}
+
+/* ---------------------------------------------------------------- gói Việt hóa có sẵn */
+function bindPatch() {
+  const msg = (t, err) => { $('#vpMsg').innerHTML = err ? `<span class="tr-err">${esc(t)}</span>` : esc(t); };
+  $('#vpPickZip')?.addEventListener('click', async () => { const f = await desk.pickFile('Chọn file Việt hóa (.zip)', ['zip']); if (f) $('#vpSrc').value = f; });
+  $('#vpPickDir')?.addEventListener('click', async () => { const f = await desk.pickFolder('Chọn thư mục Việt hóa đã giải nén'); if (f) $('#vpSrc').value = f; });
+  $('#vpPreview').addEventListener('click', async e => {
+    const body = {source: $('#vpSrc').value.trim(), game: $('#vpGame').value.trim() || $('#vhPath').value.trim()};
+    if (!body.game) return msg('Chọn thư mục game trước (ô ở trên, hoặc chọn game Steam).', true);
+    if (!body.source) return msg('Chọn file .zip Việt hóa.', true);
+    const b = e.currentTarget; b.disabled = true; msg('Đang đọc gói…');
+    try {
+      const pl = await api('/api/translate/vh/preview', {method: 'POST', body});
+      $('#vpGame').value = pl.game;
+      msg(`${pl.write} file sẽ được chép vào game (${pl.overwrite} file đè lên file gốc, app sao lưu trước). Bỏ chọn file nào không muốn cài.`);
+      const rows = pl.files.map((f, i) => `<label class="vp-row${f.on ? '' : ' off'}"><input type="checkbox" data-vp="${i}" ${f.on ? 'checked' : ''}>
+        <span class="mono">${esc(f.dst)}</span><span class="badge" style="background:${f.exists ? 'var(--yellow)' : 'var(--cyan)'}">${f.exists ? 'Đè file gốc' : 'Thêm mới'}</span>
+        <span class="hint">${fmtSize(f.size)}${f.why ? ' · ' + esc(f.why) : ''}</span></label>`).join('');
+      $('#vpPlan').innerHTML = `<div class="vp-list">${rows}</div>
+        <div class="btn-row"><button class="btn green" type="button" id="vpInstall">CÀI VÀO GAME</button><span class="hint">Tắt game trước khi cài.</span></div>`;
+      $('#vpInstall').addEventListener('click', async ev => {
+        const files = [...document.querySelectorAll('[data-vp]')].filter(x => x.checked).map(x => pl.files[+x.dataset.vp].dst);
+        if (!files.length) return msg('Chưa chọn file nào.', true);
+        ev.currentTarget.disabled = true; ev.currentTarget.textContent = 'Đang chép…';
+        try {
+          await api('/api/translate/vh/install', {method: 'POST', body: {...body, game: pl.game, files}});
+          toast('Đã cài gói Việt hóa. Mở game để chơi.'); $('#vpPlan').innerHTML = ''; msg('Đã cài xong.'); loadPatches();
+        } catch (err) { msg(err.message, true); ev.currentTarget.disabled = false; ev.currentTarget.textContent = 'CÀI VÀO GAME'; }
+      });
+    } catch (err) { msg(err.message, true); $('#vpPlan').innerHTML = ''; }
+    finally { b.disabled = false; }
+  });
+  loadPatches();
+}
+function fmtSize(n) { return n > 2 ** 30 ? (n / 2 ** 30).toFixed(1) + ' GB' : n > 2 ** 20 ? (n / 2 ** 20).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+async function loadPatches() {
+  const el = $('#vpList');
+  if (!el) return;
+  let d; try { d = await api('/api/translate/vh'); } catch (e) { return; }
+  const key = JSON.stringify(d.patches);
+  if (el.dataset.key === key) return;
+  el.dataset.key = key;
+  el.innerHTML = d.patches.map(p => {
+    const st = {ok: ['var(--green)', 'Đang dùng'], overwritten: ['var(--red)', 'Steam đã ghi đè – cần cài lại'], nogame: ['var(--surface-2)', 'Không thấy thư mục game']}[p.state];
+    return `<div class="box tr-book" data-pid="${p.id}">
+      <div class="tr-book-main">
+        <span><b class="tr-name">${esc(p.game_name)}</b> <span class="badge" style="background:var(--violet)">Gói Việt hóa</span>
+          <span class="badge" style="background:${st[0]};${p.state === 'nogame' ? 'color:var(--text)' : ''}">${st[1]}</span></span>
+        <span class="hint">${esc(p.name)} · ${p.files} file${p.state === 'overwritten' ? ` · ${p.changed + p.missing} file bị thay` : ''}</span>
+        <span class="hint mono tr-path">${esc(p.game)}</span>
+      </div>
+      <div class="btn-row">
+        ${p.state === 'overwritten' ? `<button class="btn sm green" type="button" data-pa="re" ${p.source_ok ? '' : 'disabled title="Không còn file gói ở chỗ cũ"'}>Cài lại</button>` : ''}
+        <button class="btn sm plain" type="button" data-pa="un">Gỡ Việt hóa</button>
+      </div></div>`;
+  }).join('');
+  el.querySelectorAll('[data-pid]').forEach(row => row.addEventListener('click', async e => {
+    const b = e.target.closest('[data-pa]'); if (!b) return;
+    const id = row.dataset.pid;
+    if (b.dataset.pa === 'un' && b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = 'Bấm lần nữa để gỡ (trả file gốc)'; return; }
+    b.disabled = true;
+    try {
+      if (b.dataset.pa === 're') { await api(`/api/translate/vh/${id}/reinstall`, {method: 'POST'}); toast('Đã cài lại Việt hóa.'); }
+      else { const r = await api(`/api/translate/vh/${id}/uninstall`, {method: 'POST'}); toast(`Đã gỡ Việt hóa, trả lại ${r.files} file gốc.`); }
+    } catch (err) { toast(err.message, 'err'); }
+    el.dataset.key = ''; loadPatches();
+  }));
 }
 
 async function loadGames() {
@@ -612,6 +706,7 @@ async function gameAct(e, id) {
       btn.disabled = true; btn.textContent = 'Đang ghi…';
       const r = await api(`/api/translate/games/${id}/apply`, {method: 'POST'});
       toast(r.engine === 'renpy' ? `Đã Việt hóa: ${r.say} câu thoại, ${r.ui} chữ giao diện. Mở game để chơi.` : `Đã Việt hóa ${r.texts} câu trong ${r.files} file. Mở game để chơi.`);
+      if (r.engine === 'unity' && !r.texts) toast('Không câu nào được thay – dịch xong trước rồi Áp dụng.', 'err');
     }
     if (a === 'restore') {
       if (!confirm('Đưa game về bản tiếng Anh gốc?')) return;
@@ -632,7 +727,7 @@ async function renderProject() {
   el.innerHTML = '<div class="loading"><span class="spin"></span>Đang mở…</div>';
   let g;
   try { g = await api(`/api/translate/games/${T.gp}?limit=1`); } catch (e) { T.gp = null; toast(e.message, 'err'); return render(); }
-  const rpg = g.engine !== 'renpy';
+  const unity = g.engine === 'unity', rpg = g.engine !== 'renpy' && !unity;
   el.innerHTML = `
     <div class="box tr-bar">
       <button class="btn sm plain" type="button" id="vhBack">← Danh sách game</button>
@@ -641,7 +736,8 @@ async function renderProject() {
       <span class="hint" id="vhStat"></span>
     </div>
     <div id="vhHead"></div>
-    <div class="box pcard">
+    ${unity ? `<div class="box pcard"><h3>Khi áp dụng</h3><p class="hint">Tiếng Việt được ghi thay chỗ tiếng Anh trong bảng chữ của game (chọn English trong cài đặt ngôn ngữ của game). Chữ hiện ô vuông nghĩa là phông của game thiếu dấu tiếng Việt. Steam cập nhật game thì bấm Áp dụng lại.</p></div>` : ''}
+    <div class="box pcard" ${unity ? 'hidden' : ''}>
       <div class="row-between"><h3>Tùy chọn khi áp dụng</h3></div>
       <label class="check"><input type="checkbox" id="vhFont" ${g.opts.font !== false ? 'checked' : ''}> Đổi phông chữ của game sang phông có dấu tiếng Việt</label>
       <p class="hint">${rpg ? 'Phông gốc của RPG Maker thường không có dấu tiếng Việt (hiện ô vuông). App chép phông Arial của Windows vào game.' : 'Nhiều game Ren\'Py dùng phông riêng không có dấu tiếng Việt. App đổi sang phông DejaVuSans có sẵn trong Ren\'Py.'}</p>

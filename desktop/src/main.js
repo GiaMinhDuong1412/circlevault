@@ -288,8 +288,14 @@ async function init() {
     const r = await dialog.showOpenDialog(win, { title: typeof title === 'string' ? title.slice(0, 80) : 'Chọn thư mục nhạc', properties: ['openDirectory'] });
     return r.canceled ? null : r.filePaths[0];
   });
+  ipcMain.handle('pick-file', async (_e, title, exts) => {
+    const ext = Array.isArray(exts) ? exts.filter((x) => /^[a-z0-9]{1,8}$/i.test(x)).slice(0, 10) : [];
+    const r = await dialog.showOpenDialog(win, { title: typeof title === 'string' ? title.slice(0, 80) : 'Chọn file', properties: ['openFile'],
+      filters: ext.length ? [{ name: ext.join(', ').toUpperCase(), extensions: ext }] : [] });
+    return r.canceled ? null : r.filePaths[0];
+  });
   ipcMain.handle('restart-server', () => restartServer().catch((e) => { log('Lỗi khởi động lại:', e.message); return false; }));
-  browser.setup({ dataDir: DATA, userData: HOME, port: () => port, icon: ICON, log, notifyMain: send });
+  browser.setup({ dataDir: DATA, userData: HOME, port: () => port, icon: ICON, log, notifyMain: send, mainWin: () => win });
   ipcMain.on('open-browser', (_e, mode, url) => browser.openBrowser(mode, url));
   ipcMain.on('open-party', (_e, url) => { if (isLocal(url) || /^http:\/\/127\.0\.0\.1:\d+\/r\//.test(url)) browser.openParty(url); });
   ipcMain.handle('youtube-logout', () => browser.youtubeLogout());

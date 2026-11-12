@@ -9,7 +9,6 @@
   let st = null, editing = false, titleTouched = false;
 
   $(mode === 'youtube' ? '#ytTools' : '#webTools').classList.remove('hide');
-  document.title = mode === 'youtube' ? 'YouTube · CircleVault' : 'Xem phim & bắt link · CircleVault';
 
   window.bshell.onState((s) => {
     st = s;
@@ -17,7 +16,7 @@
     $('#back').disabled = !s.canBack; $('#fwd').disabled = !s.canFwd;
     $('#load').classList.toggle('on', s.loading);
     if (mode === 'youtube') {
-      $('#dlVideo').disabled = !s.isVideo; $('#dlAudio').disabled = !s.isVideo;
+      $('#dlVideo').disabled = !s.isVideo; $('#dlAudio').disabled = !s.isVideo; $('#partyYt').disabled = !s.isVideo;
       $('#loginChip').textContent = s.loggedIn ? 'Đã đăng nhập' : 'Chưa đăng nhập';
       $('#loginChip').classList.toggle('ok', s.loggedIn);
       $('#loginBtn').textContent = s.loggedIn ? 'Đăng xuất' : 'Đăng nhập';
@@ -40,13 +39,15 @@
     $('#list').innerHTML = list.map((s, i) => `<div class="st">
       <div class="top"><span class="t ${esc(s.type)}">${esc(s.type)}</span><span class="h" title="${esc(s.host)}">${esc(s.host)}</span>${s.size && s.type !== 'HLS' && s.type !== 'DASH' ? `<span class="h" style="flex:none">${size(s.size)}</span>` : ''}</div>
       <div class="n">${esc(s.name || s.url.slice(0, 80))}${i === list.length - 1 && list.length > 1 && s.type === 'HLS' ? ' · bắt được đầu tiên' : ''}</div>
-      <div class="row"><button class="btn g" data-dl="${esc(s.id)}">Tải</button><button class="btn" data-copy="${esc(s.url)}">Sao chép link</button></div>
+      <div class="row"><button class="btn g" data-dl="${esc(s.id)}">Tải</button><button class="btn c" data-party="${esc(s.id)}">Xem chung</button><button class="btn" data-copy="${esc(s.url)}">Sao chép link</button></div>
     </div>`).join('');
   }
 
   $('#list').addEventListener('click', (e) => {
     const d = e.target.closest('[data-dl]');
     if (d) { send('dlStream', { id: d.dataset.dl, title: $('#title').value.trim() }); d.disabled = true; d.textContent = 'Đã gửi'; return; }
+    const pt = e.target.closest('[data-party]');
+    if (pt) { send('party', { id: pt.dataset.party, title: $('#title').value.trim() }); return; }
     const c = e.target.closest('[data-copy]');
     if (c) send('copy', { text: c.dataset.copy });
   });
@@ -63,6 +64,7 @@
   $('#home').onclick = () => send('home');
   $('#dlVideo').onclick = () => send('dl', { quality: '1080' });
   $('#dlAudio').onclick = () => send('dl', { quality: 'audio' });
+  $('#partyYt').onclick = () => send('partyYt');
   $('#loginBtn').onclick = () => send(st && st.loggedIn ? 'logout' : 'login');
   $('#panelBtn').onclick = () => send('panel');
   $('#clear').onclick = () => send('clear');

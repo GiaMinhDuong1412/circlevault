@@ -17,7 +17,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .addr{flex:1;min-width:120px;height:36px;border:2.5px solid #121212;border-radius:4px;padding:0 10px;font:500 14px var(--f);background:#fff;color:#121212}
 .addr:focus{outline:3px solid var(--yellow);outline-offset:0}
 .btn{height:36px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border:2px solid #121212;border-radius:4px;background:#fff;color:#121212;font:800 13px var(--f);cursor:pointer;white-space:nowrap;box-shadow:2px 2px 0 #121212;flex:none}
-.btn.g{background:var(--green)} .btn.y{background:var(--yellow)} .btn.p{background:#f7a8ec}
+.btn.g{background:var(--green)} .btn.y{background:var(--yellow)} .btn.p{background:#f7a8ec} .btn.c{background:var(--cyan)}
 .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
 .btn:active:not(:disabled),.ib:active:not(:disabled){transform:translate(2px,2px);box-shadow:none}
 .chip{font:800 11.5px var(--f);letter-spacing:.03em;text-transform:uppercase;border:2px solid #121212;border-radius:3px;padding:4px 7px;background:#fff;color:#121212;white-space:nowrap;flex:none}
@@ -59,6 +59,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   <span id="ytTools" class="hide" style="display:flex;gap:8px;align-items:center">
     <button class="btn g" id="dlVideo" title="Tải video đang xem về ổ cứng">Tải video này</button>
     <button class="btn y" id="dlAudio" title="Chỉ lấy âm thanh MP3">Tải MP3</button>
+    <button class="btn c" id="partyYt" title="Mở phòng xem chung với video đang xem">Xem chung</button>
     <span class="chip" id="loginChip">Chưa đăng nhập</span>
     <button class="btn p" id="loginBtn">Đăng nhập</button>
   </span>
@@ -71,7 +72,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 <aside class="panel" id="panel" hidden>
   <div class="ph">
     <h2>Luồng phim bắt được</h2>
-    <p>Bấm phát phim trên trang, các luồng hiện ở đây. Thường chọn luồng HLS đầu tiên (danh sách chất lượng) hoặc file MP4 lớn nhất.</p>
+    <p>Bấm phát phim trên trang, các luồng hiện ở đây. Thường chọn luồng HLS đầu tiên (danh sách chất lượng) hoặc file MP4 lớn nhất. <b>Xem chung</b> = mở phòng cho bạn bè xem cùng phim này.</p>
     <label>Tên lưu file<input id="title" maxlength="200" placeholder="Tên phim – Tập 1"></label>
   </div>
   <div class="list" id="list"></div>

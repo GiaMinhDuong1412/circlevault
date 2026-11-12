@@ -15,9 +15,22 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   - `music.py`: router `/api/music/*` – tracks, scan thư mục (`music_folders` trong config), cover (mutagen), playlist, settings EQ.
     Tải MP3 khi đang mở playlist: tác vụ có `music_playlist` (hoặc `music_playlist_name` → `playlist_by_name`, so sánh casefold);
     `downloader` ghi id bài (match_filter + dòng log "has already been recorded" cho bài bỏ qua) → `music.link_downloaded`.
+  - `unitygame.py`: game Unity. (1) Việt hóa từ file cho game dùng Unity Localization: UnityPy đọc bảng chữ (MonoBehaviour có
+    `m_TableData` + `m_LocaleId`) trong `<Game>_Data/StreamingAssets/aa/**/*string-tables*.bundle` của ngôn ngữ gốc (ưu tiên en),
+    ghi tiếng Việt thay chỗ đó (lz4), rồi `zero_crc` đặt `m_Crc` = 0 trong `catalog.json` (JSON UTF-16 trong m_ExtraDataString,
+    bù dấu cách để giữ nguyên độ dài/vị trí). Sao lưu `CircleVault-ban-goc/`, áp dụng lại đọc từ bản sao lưu. catalog.bin chưa sửa được.
+    gametr.py gọi qua engine `unity` (mã giữ nguyên: `{…}`, `<…>`, `%s`). (2) Cài gói Việt hóa có sẵn (`/api/translate/vh/*`):
+    .zip hoặc thư mục, tự dò số cấp thư mục cần bỏ cho khớp game, file ngoài thư mục game (công cụ của nhóm dịch) mặc định bỏ chọn,
+    sao lưu `CircleVault-truoc-VH/<mã>/`, nhớ kích thước + mtime để báo "Steam đã ghi đè" → Cài lại; Gỡ trả file gốc.
+    (3) `GET /api/translate/vh/steam`: game Steam đã cài (registry + libraryfolders.vdf + appmanifest). Gói VH mẫu của người dùng là
+    hàng đã mua – KHÔNG đưa nội dung vào repo.
   - `party.py`: phòng xem chung. `router` /api/party (chỉ app chính dùng) + `party_app` chạy cổng app+1 (chỉ có /r/<mã>,
     /r/<mã>/ws, /r/<mã>/media, tĩnh /p = frontend). Bạn bè/đường hầm chỉ chạm party_app, không thấy API chính.
     Đồng bộ: máy chủ giữ {playing,pos,rate,at}, client tự tính theo đồng hồ máy chủ (ping/pong).
+    Nguồn: thư viện (`item_id`), file trên máy (`path`), YouTube, link trang phim (`link` → yt-dlp `resolve_link` chọn định dạng
+    có cả hình + tiếng, mp4 hoặc HLS), luồng bắt được trong trình duyệt app (`stream` {url, kind, headers}). Luồng đi qua
+    `/r/<mã>/media` + `/r/<mã>/x?u=&s=` (HMAC theo `Room.secret`, viết lại .m3u8, chuyển Range); `Room.public()` chỉ gửi
+    `PUBLIC_KEYS` (không lộ link gốc/cookie/đường dẫn). Trang phòng dùng `frontend/vendor/hls.min.js` (hls.js 1.5.20) cho HLS.
   - `tunnel.py`: cloudflared quick tunnel → party_app (tải cloudflared vào DATA/bin lần đầu).
   - Tác vụ có cột `headers` (JSON Referer/Origin/User-Agent/Cookie) cho link phim bắt từ trình duyệt → `http_headers` yt-dlp.
   - Tài khoản YouTube: app desktop ghi `DATA/youtube-cookies.txt`; `downloader._account` dùng bản sao cho link YouTube.
@@ -72,7 +85,10 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
 - `desktop/` – Electron theo mẫu repo `aq-autotest` (`desktop/`): `main.js` chạy `pythonw -m app` bằng Python nhúng
   (`resources/python`, ._pth có `..\app\backend`), mã ở `resources/app/{backend,frontend}`, ffmpeg + Deno ở `resources/bin`
   (thêm vào PATH backend). Cầu nối trang ↔ app: `window.cvDesktop` (onUpdate/getUpdate/updateAct/pickFolder/restartServer).
-  `browser.js`: cửa sổ trình duyệt = thanh công cụ (`browser.html`) + WebContentsView trang web; partition `persist:youtube`
+  `browser.js`: trình duyệt NẰM TRONG cửa sổ chính (người dùng không muốn cửa sổ bật riêng): thanh công cụ (`browser.html`,
+  WebContentsView) + WebContentsView trang web gắn vào `win.contentView`, đè lên `.dock-area` của tab Xem Online / Xem Chung;
+  trang báo vị trí qua `cvDesktop.dockRect(mode, rect|null)` mỗi 200 ms (null khi đổi tab/mở `<dialog>`), chế độ `party` = trang
+  phòng không có thanh công cụ; nút "Xem chung" (video YouTube / luồng bắt được) → `POST /api/party` → trang chuyển #party; partition `persist:youtube`
   (UA Chrome, xuất cookie Netscape khi đăng nhập) và `persist:web` (chặn quảng cáo @ghostery/adblocker-electron, bắt luồng qua
   webRequest.onBeforeSendHeaders + onResponseStarted – không dùng onBeforeRequest/onHeadersReceived vì adblocker đã giữ).
   `screen.js`: khung dịch màn hình game (screen.html luôn trên cùng, `setContentProtection` để không tự chụp mình; region.html

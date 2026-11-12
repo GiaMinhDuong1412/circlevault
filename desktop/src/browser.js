@@ -9,9 +9,11 @@
  *  - 'web' (persist:web): duyệt trang phim bất kỳ, chặn quảng cáo/cửa sổ bật lên, tự bắt link luồng phim
  *    (.m3u8 / .mpd / .mp4…) kèm Referer/Origin/User-Agent/Cookie để backend tải được.
  *
- * Cửa sổ = thanh công cụ (browser.html, có preload riêng) + một WebContentsView chứa trang web (không preload, sandbox).
+ * Không mở cửa sổ riêng: thanh công cụ (browser.html, có preload riêng – WebContentsView) + trang web (WebContentsView,
+ * không preload, sandbox) gắn thẳng vào cửa sổ chính, nằm đè lên vùng .dock-area của trang CircleVault. Trang báo vị trí
+ * vùng đó qua `dock-rect` (null = ẩn: đổi tab, mở hộp thoại…). Chế độ 'party' = trang phòng xem chung, không có thanh công cụ.
  */
-const { BrowserWindow, WebContentsView, session, ipcMain, shell, Menu, clipboard } = require('electron');
+const { WebContentsView, session, ipcMain, shell, Menu, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -24,8 +26,8 @@ const MEDIA_EXT = /\.(m3u8|mpd|mp4|m4v|webm|mkv|mov|flv)(\?|#|$)/i;
 const SEGMENT = /\.(ts|m4s|aac|vtt|srt|jpe?g|png|gif|webp|svg|js|css|woff2?)(\?|#|$)/i;
 const LOGIN_COOKIES = ['SAPISID', '__Secure-3PAPISID', 'LOGIN_INFO'];
 
-let ctx = null;              // {dataDir, port, icon, log, notifyMain}
-const wins = {};             // mode -> {win, view, mode, streams, adblock}
+let ctx = null;              // {dataDir, port, icon, log, notifyMain, mainWin}
+const wins = {};             // mode -> {win (cửa sổ chính), bar, shell, view, mode, streams, adblock, rect, full}
 let sniffing = false;
 let lastLogin = null;
 let exportTimer = 0;
@@ -44,6 +46,16 @@ function setup(options) {
   yt.cookies.on('changed', () => { if (importing) return; clearTimeout(exportTimer); exportTimer = setTimeout(exportYoutubeCookies, 1500); });
   exportYoutubeCookies({ write: false });   // chỉ xem trạng thái: không ghi đè file bằng đăng nhập cũ trong cửa sổ YouTube
   ipcMain.on('bshell', onShellMessage);
+  ipcMain.on('dock-rect', (e, mode, rect) => { const w = wins[mode]; if (w && e.sender === w.win.webContents) { w.rect = sanitize(rect); layout(w); } });
+  ipcMain.on('dock-close', (e, mode) => { const w = wins[mode]; if (w && e.sender === w.win.webContents) closeDock(w); });
+  ipcMain.handle('dock-state', () => Object.fromEntries(Object.values(wins).map((w) => [w.mode, { url: w.view.webContents.getURL(), title: w.view.webContents.getTitle() }])));
+}
+
+function sanitize(r) {
+  if (!r || typeof r !== 'object') return null;
+  const n = (v) => Math.max(0, Math.round(Number(v) || 0));
+  const out = { x: n(r.x), y: n(r.y), width: n(r.width), height: n(r.height) };
+  return out.width > 40 && out.height > 40 ? out : null;
 }
 
 // ---------------------------------------------------------------- cookie YouTube → yt-dlp
@@ -195,10 +207,12 @@ async function enableAdblock(w) {
 }
 
 // ---------------------------------------------------------------- gửi tác vụ cho backend
-function postTask(body) {
+function postTask(body) { return postJson('/api/tasks', body); }
+
+function postJson(apiPath, body) {
   return new Promise((resolve, reject) => {
     const data = Buffer.from(JSON.stringify(body));
-    const r = http.request({ host: '127.0.0.1', port: ctx.port(), path: '/api/tasks', method: 'POST',
+    const r = http.request({ host: '127.0.0.1', port: ctx.port(), path: apiPath, method: 'POST',
       headers: { 'content-type': 'application/json', 'content-length': data.length }, timeout: 15000 }, (res) => {
       let txt = '';
       res.setEncoding('utf8');
@@ -241,33 +255,95 @@ async function downloadCurrent(w, quality) {
 async function downloadStream(w, id, title) {
   const s = w.streams.find((x) => x.id === id);
   if (!s) return;
-  const cookies = await w.view.webContents.session.cookies.get({ url: s.url }).catch(() => []);
-  const headers = { Referer: s.referer, 'User-Agent': s.ua };
-  if (s.origin) headers.Origin = s.origin;
-  if (cookies.length) headers.Cookie = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+  const headers = await streamHeaders(w, s);
   try {
     await postTask({ url: s.url, kind: 'film', title: (title || s.title || s.name).slice(0, 200), headers });
     toastShell(w, 'Đã thêm phim vào hàng đợi. Xem tiến độ ở tab Hàng Đợi.');
   } catch (e) { toastShell(w, e.message, 'err'); }
 }
 
-// ---------------------------------------------------------------- cửa sổ
+// ---------------------------------------------------------------- xem chung từ trình duyệt
+async function streamHeaders(w, s) {
+  const cookies = await w.view.webContents.session.cookies.get({ url: s.url }).catch(() => []);
+  const headers = { Referer: s.referer, 'User-Agent': s.ua };
+  if (s.origin) headers.Origin = s.origin;
+  if (cookies.length) headers.Cookie = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+  return headers;
+}
+
+async function partyStream(w, id, title) {
+  const s = w.streams.find((x) => x.id === id);
+  if (!s) return;
+  try {
+    await postJson('/api/party', { stream: { url: s.url, kind: s.type, headers: await streamHeaders(w, s), page: s.page },
+      title: (title || s.title || s.name || 'Phim').slice(0, 120) });
+    toastShell(w, 'Đã mở phòng xem chung với phim này.');
+    ctx.notifyMain('party-go', true);
+  } catch (e) { toastShell(w, e.message, 'err'); }
+}
+
+async function partyYoutube(w) {
+  const url = youtubeVideoUrl(w.view.webContents.getURL());
+  if (!url || url.includes('/playlist')) return toastShell(w, 'Mở một video YouTube rồi bấm Xem chung.', 'err');
+  try {
+    await postJson('/api/party', { youtube_url: url, title: w.view.webContents.getTitle().replace(/\s*-\s*YouTube$/, '').slice(0, 120) });
+    w.view.webContents.executeJavaScript("document.querySelector('video')?.pause()").catch(() => {});
+    toastShell(w, 'Đã mở phòng xem chung với video này.');
+    ctx.notifyMain('party-go', true);
+  } catch (e) { toastShell(w, e.message, 'err'); }
+}
+
+// ---------------------------------------------------------------- vùng trình duyệt trong cửa sổ chính
 function pushState(w) {
   if (!w.win || w.win.isDestroyed()) return;
   const wc = w.view.webContents;
-  w.win.webContents.send('bstate', {
+  if (w.mode === 'party' || !w.shell || w.shell.isDestroyed()) {
+    ctx.notifyMain('dock-state', { mode: w.mode, url: wc.getURL(), title: wc.getTitle() });
+    return;
+  }
+  w.shell.send('bstate', {
     mode: w.mode, url: wc.getURL(), title: wc.getTitle(), loading: wc.isLoading(),
     canBack: wc.navigationHistory.canGoBack(), canFwd: wc.navigationHistory.canGoForward(),
     loggedIn: !!lastLogin, isVideo: !!youtubeVideoUrl(wc.getURL()),
     streams: w.streams, adblock: w.adblock, panel: w.panel,
   });
 }
-function toastShell(w, text, kind = 'ok') { if (w.win && !w.win.isDestroyed()) w.win.webContents.send('btoast', { text, kind }); }
+function toastShell(w, text, kind = 'ok') { if (w.shell && !w.shell.isDestroyed()) w.shell.send('btoast', { text, kind }); }
 
 function layout(w) {
-  const [width, height] = w.win.getContentSize();
-  w.view.setBounds({ x: 0, y: BAR_H, width: Math.max(200, width - (w.panel ? PANEL_W : 0)), height: Math.max(100, height - BAR_H) });
+  if (!w.win || w.win.isDestroyed()) return;
+  if (w.full) {
+    const [width, height] = w.win.getContentSize();
+    w.view.setBounds({ x: 0, y: 0, width, height });
+    w.view.setVisible(true);
+    return;
+  }
+  const z = w.win.webContents.getZoomFactor();
+  const r = w.rect && { x: Math.round(w.rect.x * z), y: Math.round(w.rect.y * z), width: Math.round(w.rect.width * z), height: Math.round(w.rect.height * z) };
+  if (w.bar) w.bar.setVisible(!!r);
+  w.view.setVisible(!!r);
+  if (!r) return;
+  if (!w.bar) { w.view.setBounds(r); return; }
+  const bh = Math.round(BAR_H * z), pw = w.panel ? Math.round(PANEL_W * z) : 0;
+  if (Math.abs(w.bar.webContents.getZoomFactor() - z) > 0.01) w.bar.webContents.setZoomFactor(z);
+  w.bar.setBounds(r);
+  w.view.setBounds({ x: r.x, y: r.y + bh, width: Math.max(100, r.width - pw), height: Math.max(60, r.height - bh) });
 }
+
+function closeDock(w) {
+  if (wins[w.mode] === w) delete wins[w.mode];
+  for (const v of [w.view, w.bar]) {
+    if (!v) continue;
+    try { w.win.contentView.removeChildView(v); } catch { /* cửa sổ đã đóng */ }
+    try { v.webContents.close(); } catch { /* đã đóng */ }
+  }
+  if (w.full && !w.win.isDestroyed()) w.win.setFullScreen(false);
+  if (w.mode === 'youtube') exportYoutubeCookies();
+  ctx.notifyMain('dock-closed', w.mode);
+}
+
+/** Trang CircleVault vừa tải lại: ẩn hết (trang mới sẽ tự báo vị trí khi người dùng mở lại tab). */
+function hideAll() { for (const w of Object.values(wins)) { w.rect = null; w.full = false; layout(w); } }
 
 function normalizeUrl(input, mode) {
   const v = String(input || '').trim();
@@ -279,34 +355,41 @@ function normalizeUrl(input, mode) {
 }
 
 function openBrowser(mode, url) {
-  mode = mode === 'youtube' ? 'youtube' : 'web';
+  mode = mode === 'youtube' ? 'youtube' : mode === 'party' ? 'party' : 'web';
   if (mode === 'youtube' && fileNewer()) {   // đăng nhập mới từ tiện ích trình duyệt: nạp vào cửa sổ YouTube trước
     importYoutubeCookies().catch((e) => ctx.log('Lỗi nạp cookie YouTube:', e.message)).finally(() => openBrowser(mode, url));
     return;
   }
+  const host = ctx.mainWin();
+  if (!host || host.isDestroyed()) return;
+  ctx.notifyMain('dock-open', mode);          // trang chuyển sang tab có vùng #dockArea và báo vị trí
   const existing = wins[mode];
-  if (existing && !existing.win.isDestroyed()) {
-    if (url) existing.view.webContents.loadURL(normalizeUrl(url, mode));
-    if (existing.win.isMinimized()) existing.win.restore();
-    existing.win.focus();
+  if (existing && existing.win === host) {
+    if (url) existing.view.webContents.loadURL(mode === 'party' ? url : normalizeUrl(url, mode));
     return;
   }
-  const win = new BrowserWindow({
-    width: 1320, height: 860, minWidth: 760, minHeight: 500, icon: ctx.icon, autoHideMenuBar: true, show: false,
-    title: mode === 'youtube' ? 'YouTube · CircleVault' : 'Xem phim & bắt link · CircleVault', backgroundColor: '#fbf9f4',
-    webPreferences: { preload: path.join(__dirname, 'browser-preload.js'), contextIsolation: true, nodeIntegration: false },
-  });
-  win.setMenu(null);
-  const ses = session.fromPartition(mode === 'youtube' ? 'persist:youtube' : 'persist:web');
+  const win = host;
+  // phòng xem chung dùng chung cookie với YouTube: chủ phòng có Premium thì video YouTube trong phòng cũng không quảng cáo
+  const ses = session.fromPartition(mode === 'web' ? 'persist:web' : 'persist:youtube');
   const view = new WebContentsView({ webPreferences: { session: ses, contextIsolation: true, sandbox: true, nodeIntegration: false } });
-  const w = { win, view, mode, streams: [], adblock: false, panel: mode === 'web' };
+  view.setBackgroundColor('#ffffff');
+  let bar = null;
+  if (mode !== 'party') {
+    bar = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'browser-preload.js'), contextIsolation: true, nodeIntegration: false } });
+    bar.setBackgroundColor('#00000000');
+    bar.webContents.loadFile(path.join(__dirname, 'browser.html'), { query: { mode } });
+    win.contentView.addChildView(bar);
+  }
+  const w = { win, bar, shell: bar && bar.webContents, view, mode, streams: [], adblock: false, panel: mode === 'web', rect: null, full: false };
   wins[mode] = w;
   win.contentView.addChildView(view);
-  win.loadFile(path.join(__dirname, 'browser.html'), { query: { mode } });
-  win.once('ready-to-show', () => win.show());
-  win.on('resize', () => layout(w));
-  win.on('closed', () => { if (wins[mode] === w) delete wins[mode]; if (mode === 'youtube') exportYoutubeCookies(); });
   layout(w);
+  if (!win.__cvDock) {          // gắn một lần cho cửa sổ chính
+    win.__cvDock = true;
+    win.on('resize', () => Object.values(wins).forEach(layout));
+    win.webContents.on('did-start-navigation', (_e, _u, inPage, mainFrame) => { if (mainFrame && !inPage) hideAll(); });
+    win.webContents.on('zoom-changed', () => setTimeout(() => Object.values(wins).forEach(layout), 50));
+  }
 
   const wc = view.webContents;
   ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']
@@ -315,6 +398,7 @@ function openBrowser(mode, url) {
     if (mode === 'web') { w.streams = w.streams.filter((s) => s.page === u); pushState(w); }
   });
   wc.setWindowOpenHandler(({ url: u }) => {
+    if (mode === 'party') { if (/^https?:/i.test(u)) shell.openExternal(u); return { action: 'deny' }; }
     let host = '';
     try { host = new URL(u).hostname; } catch { return { action: 'deny' }; }
     if (mode === 'youtube') {
@@ -351,15 +435,21 @@ function openBrowser(mode, url) {
     else if (i.alt && k === 'arrowright') { if (wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward(); e.preventDefault(); }
     else if (k === 'f11') { win.setFullScreen(!win.isFullScreen()); e.preventDefault(); }
   });
-  wc.on('enter-html-full-screen', () => { w.view.setBounds({ x: 0, y: 0, ...(() => { const [a, b] = win.getContentSize(); return { width: a, height: b }; })() }); win.setFullScreen(true); });
-  wc.on('leave-html-full-screen', () => { win.setFullScreen(false); setTimeout(() => layout(w), 50); });
+  wc.on('enter-html-full-screen', () => {
+    w.full = true;
+    win.contentView.addChildView(view);       // lên trên cùng
+    win.setFullScreen(true);
+    layout(w); setTimeout(() => layout(w), 120);
+  });
+  wc.on('leave-html-full-screen', () => { w.full = false; win.setFullScreen(false); setTimeout(() => layout(w), 120); });
+  wc.on('render-process-gone', () => toastShell(w, 'Trang bị lỗi, bấm Tải lại.', 'err'));
 
   if (mode === 'web') { startSniffer(ses); enableAdblock(w); }
-  wc.loadURL(normalizeUrl(url, mode));
+  wc.loadURL(mode === 'party' ? url : normalizeUrl(url, mode));
 }
 
 function onShellMessage(e, m) {
-  const w = Object.values(wins).find((x) => x.win.webContents === e.sender);
+  const w = Object.values(wins).find((x) => x.shell === e.sender);
   if (!w || !m) return;
   const wc = w.view.webContents;
   switch (m.a) {
@@ -377,18 +467,11 @@ function onShellMessage(e, m) {
     case 'clear': w.streams = []; pushState(w); break;
     case 'panel': w.panel = !w.panel; layout(w); pushState(w); break;
     case 'external': shell.openExternal(wc.getURL()); break;
+    case 'party': partyStream(w, m.id, m.title); break;
+    case 'partyYt': partyYoutube(w); break;
   }
 }
 
-function openParty(url) {
-  const win = new BrowserWindow({
-    width: 1360, height: 860, icon: ctx.icon, autoHideMenuBar: true, title: 'Xem chung · CircleVault', backgroundColor: '#fbf9f4',
-    // dùng chung cookie với cửa sổ YouTube: chủ phòng có Premium thì video YouTube trong phòng cũng không quảng cáo
-    webPreferences: { partition: 'persist:youtube', contextIsolation: true, nodeIntegration: false, sandbox: true },
-  });
-  win.setMenu(null);
-  win.webContents.setWindowOpenHandler(({ url: u }) => { if (/^https?:/i.test(u)) shell.openExternal(u); return { action: 'deny' }; });
-  win.loadURL(url);
-}
+function openParty(url) { openBrowser('party', url); }
 
-module.exports = { setup, openBrowser, openParty, youtubeLogout, importYoutubeCookies, exportYoutubeCookies, _windows: () => wins };
+module.exports = { setup, openBrowser, openParty, hideAll, youtubeLogout, importYoutubeCookies, exportYoutubeCookies, _windows: () => wins };

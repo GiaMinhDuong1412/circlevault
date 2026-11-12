@@ -5,6 +5,75 @@ const {api, esc, toast} = window.CV;
 const $ = (s, r = document) => r.querySelector(s);
 const desk = window.cvDesktop;
 
+/* ================================================================ TRÌNH DUYỆT NGAY TRONG APP
+ * YouTube, trang phim và phòng xem chung không mở cửa sổ riêng: app (Electron) đặt trang web đè lên vùng .dock-area của tab.
+ * Trang báo vị trí vùng đó liên tục; đổi tab / mở hộp thoại thì báo null để ẩn. */
+const DOCK_VIEW = {youtube: 'online', web: 'online', party: 'party'};
+const DOCK_NAME = {youtube: 'YouTube', web: 'Trang phim', party: 'Phòng xem chung'};
+const dock = {open: {}, shown: null, last: {}, timer: 0};
+function dockOpen(mode, url) {
+  if (!desk || !desk.dockRect) return desk && desk.openBrowser(mode, url);
+  if (mode === 'party') desk.openParty(url); else desk.openBrowser(mode, url);
+}
+function dockShow(mode) {
+  dock.shown = mode;
+  const v = DOCK_VIEW[mode];
+  if (window.CV.S.view !== v) location.hash = '#' + v; else window.CV.views[v]();
+}
+function dockHtml(view) {
+  const modes = Object.keys(dock.open).filter(m => DOCK_VIEW[m] === view);
+  return `<div class="dock-head">
+      ${view === 'online' ? modes.map(m => `<button class="chip${m === dock.shown ? ' on' : ''}" type="button" data-dock="${m}">${DOCK_NAME[m]}</button>`).join('')
+        + (dock.open.youtube ? '' : '<button class="chip" type="button" data-dock-new="youtube">+ YouTube</button>')
+        + (dock.open.web ? '' : '<button class="chip" type="button" data-dock-new="web">+ Trang phim</button>')
+        : `<b class="dock-title">${esc(dock.last.party || 'Phòng xem chung')}</b>`}
+      <span class="sp"></span>
+      <button class="btn sm plain" type="button" data-dock-back>${view === 'online' ? '← Trang Xem Online' : '← Quản lý phòng'}</button>
+      <button class="btn sm red" type="button" data-dock-close="${dock.shown}">${view === 'online' ? 'Đóng ' + DOCK_NAME[dock.shown] : 'Rời phòng'}</button>
+    </div>
+    <div class="dock-area"><div class="loading"><span class="spin"></span>Đang mở…</div></div>`;
+}
+function bindDock(box) {
+  box.querySelectorAll('[data-dock]').forEach(b => b.addEventListener('click', () => dockShow(b.dataset.dock)));
+  box.querySelectorAll('[data-dock-new]').forEach(b => b.addEventListener('click', () => dockOpen(b.dataset.dockNew)));
+  box.querySelector('[data-dock-back]')?.addEventListener('click', () => { dock.shown = null; lastKey = ''; dockSync(); window.CV.views[window.CV.S.view](); });
+  box.querySelector('[data-dock-close]')?.addEventListener('click', e => desk.dockClose(e.currentTarget.dataset.dockClose));
+}
+const dockArea = view => document.querySelector(`[data-panel="${view}"] .dock-area`);
+function dockSync() {
+  if (!desk || !desk.dockRect) return;
+  const area = dock.shown && dockArea(DOCK_VIEW[dock.shown]);
+  const want = dock.shown && window.CV.S.view === DOCK_VIEW[dock.shown] && area && !document.querySelector('dialog[open]') ? dock.shown : null;
+  document.body.classList.toggle('view-dock', !!want);
+  let rect = null;
+  if (want) {
+    const bar = document.getElementById('playerBar');
+    const bottom = bar && !bar.hidden ? bar.getBoundingClientRect().height : 0;
+    const top = area.getBoundingClientRect().top;
+    area.style.height = Math.max(240, innerHeight - top - bottom - 12) + 'px';
+    const r = area.getBoundingClientRect();
+    rect = {x: r.left, y: r.top, width: r.width, height: r.height};
+  }
+  for (const m of Object.keys(dock.open)) {
+    const r = m === want ? rect : null, key = JSON.stringify(r);
+    if (dock.open[m].sent !== key) { dock.open[m].sent = key; desk.dockRect(m, r); }
+  }
+}
+if (desk && desk.onDock) {
+  desk.onDock((ch, v) => {
+    if (ch === 'dock-open') { dock.open[v] = dock.open[v] || {}; dockShow(v); }
+    else if (ch === 'dock-closed') {
+      delete dock.open[v];
+      lastKey = '';
+      if (dock.shown === v) { dock.shown = null; window.CV.views[window.CV.S.view] && window.CV.views[window.CV.S.view](); }
+    } else if (ch === 'dock-state' && v && v.mode === 'party') dock.last.party = v.title;
+    else if (ch === 'party-go') { if (dock.shown !== 'party') dock.shown = null; dockSync(); lastKey = ''; location.hash = '#party'; }
+  });
+  desk.dockState().then(st => { for (const m of Object.keys(st || {})) dock.open[m] = {}; }).catch(() => {});
+  setInterval(dockSync, 200);
+  window.addEventListener('resize', dockSync);
+}
+
 /* ================================================================ ĐĂNG NHẬP YOUTUBE
  * Google thường chặn đăng nhập trong cửa sổ nhúng của app ("Couldn't sign you in"). Cách chắc ăn: lấy đăng nhập YouTube
  * có sẵn trong trình duyệt của bạn, hoặc nhập file cookies.txt. Cookie chỉ lưu trên máy này. */
@@ -91,7 +160,7 @@ function ytLogin() {
     if (before === null) before = key;
     else if (y.logged_in && key !== before) { clearInterval(ytPoll); ytDone({count: 0}); }
   }, 3000);
-  $('#ytInApp').onclick = () => { dlg.close(); desk.openBrowser('youtube', 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2F'); };
+  $('#ytInApp').onclick = () => { dlg.close(); dockOpen('youtube', 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2F'); };
   dlg.showModal();
 }
 window.CV.ytLogin = ytLogin;
@@ -99,16 +168,23 @@ window.addEventListener('cv-youtube', () => { if (window.CV.S.view === 'online')
 
 /* ================================================================ XEM ONLINE */
 async function renderOnline() {
+  if (dock.shown && DOCK_VIEW[dock.shown] === 'online' && dock.open[dock.shown]) {
+    $('#onlineBox').innerHTML = dockHtml('online');
+    bindDock($('#onlineBox'));
+    return dockSync();
+  }
   let yt = {logged_in: false, use_account: true};
   try { yt = await api('/api/youtube'); } catch (e) { /* bỏ qua */ }
   const appOnly = desk ? '' : `<div class="notice box warn"><b>Chỉ có trong app CircleVault trên Windows</b>
     <span>Bạn đang mở CircleVault bằng trình duyệt nên không mở được cửa sổ YouTube và trình duyệt bắt link. Cài app từ trang Releases để dùng phần này.</span></div>`;
+  const opened = Object.keys(dock.open).filter(m => DOCK_VIEW[m] === 'online');
   $('#onlineBox').innerHTML = `${appOnly}
+  ${opened.length ? `<div class="box pcard dock-again"><b>Đang mở trong app:</b>${opened.map(m => `<button class="btn sm cyan" type="button" data-dock="${m}">${DOCK_NAME[m]}</button>`).join('')}</div>` : ''}
   <div class="cols2">
     <div class="box pcard yt-card">
       <div class="row-between"><h3>YouTube bằng tài khoản của bạn</h3>
         <span class="badge" style="background:${yt.logged_in ? 'var(--green)' : 'var(--surface-2)'};${yt.logged_in ? '' : 'color:var(--text)'}">${yt.logged_in ? 'Đã đăng nhập' : 'Chưa đăng nhập'}</span></div>
-      <p>Xem YouTube ngay trong app. Có <b>YouTube Premium</b> thì xem không quảng cáo như trên Chrome. Đang xem video nào, bấm <span class="ui-k g">Tải video này</span> trên thanh công cụ là xong.</p>
+      <p>Xem YouTube ngay trong cửa sổ app. Có <b>YouTube Premium</b> thì xem không quảng cáo như trên Chrome. Đang xem video nào, bấm <span class="ui-k g">Tải video này</span> trên thanh công cụ là xong.</p>
       <ul class="tick">
         <li>Đăng nhập một lần, app nhớ cho lần sau.</li>
         <li>Tải bằng tài khoản: tải được video giới hạn tuổi, video dành cho hội viên kênh, chất lượng 1080p Premium nếu có.</li>
@@ -155,16 +231,13 @@ async function renderOnline() {
     if (desk) await desk.youtubeLogout(); else await api('/api/youtube', {method: 'DELETE'}).catch(() => {});
     toast('Đã đăng xuất YouTube trong app.'); renderOnline();
   });
-  document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => {
-    const k = b.dataset.open;
-    desk.openBrowser(k === 'youtube-login' ? 'youtube' : k,
-      k === 'youtube-login' ? 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2F' : undefined);
-  }));
+  document.querySelectorAll('#onlineBox [data-open]').forEach(b => b.addEventListener('click', () => dockOpen(b.dataset.open)));
+  bindDock($('#onlineBox'));
   $('#webForm').addEventListener('submit', e => {
     e.preventDefault();
     const v = $('#webUrl').value.trim();
     if (!v) return $('#webUrl').focus();
-    desk.openBrowser('web', v);
+    dockOpen('web', v);
   });
 }
 if (desk && desk.onYoutubeLogin) desk.onYoutubeLogin(() => { if (window.CV.S.view === 'online') renderOnline(); });
@@ -175,16 +248,34 @@ async function loadVideos() {
   try { videos = (await api('/api/library?limit=500')).items.filter(i => i.exists && !/\.(mp3|m4a|opus|ogg|flac|wav)$/i.test(i.filepath)); }
   catch (e) { videos = []; }
 }
+const SRC_NAME = {file: 'Phim trong thư viện', path: 'File trên máy', youtube: 'Video YouTube', link: 'Link trang phim', stream: 'Luồng bắt từ trình duyệt'};
+function srcKind(src) {
+  if (!src) return null;
+  if (src.type === 'youtube') return 'youtube';
+  if (src.type === 'stream') return src.origin === 'link' ? 'link' : 'stream';
+  return src.item_id ? 'file' : 'path';
+}
+function srcLabel(src) {
+  const k = srcKind(src);
+  return SRC_NAME[k] + (src.site ? ' · ' + src.site : '');
+}
 function sourceForm(prefix, room) {
+  const cur = room ? srcKind(room.source) : null;
   const opts = videos.map(v => `<option value="${v.id}" ${room && room.source.item_id === v.id ? 'selected' : ''}>${esc(v.title)}</option>`).join('');
-  const isYt = room ? room.source.type === 'youtube' : !videos.length;
+  const sel = cur || (videos.length ? 'file' : 'youtube');
+  const kinds = [...(room ? ['keep'] : []), 'file', 'path', 'youtube', 'link'];
+  const label = k => k === 'keep' ? `Giữ phim đang chiếu (${esc(srcLabel(room.source))})` : SRC_NAME[k];
+  const on = k => (room ? k === 'keep' : k === sel);
   return `
-    <div class="src-tabs">
-      <label class="check"><input type="radio" name="${prefix}Src" value="file" ${isYt ? '' : 'checked'} ${videos.length ? '' : 'disabled'}> Phim trong thư viện</label>
-      <label class="check"><input type="radio" name="${prefix}Src" value="youtube" ${isYt ? 'checked' : ''}> Video YouTube</label>
-    </div>
-    <label class="field" data-src="file" ${isYt ? 'hidden' : ''}>Chọn phim<select id="${prefix}Item">${opts || '<option value="">Thư viện chưa có phim</option>'}</select></label>
-    <label class="field" data-src="youtube" ${isYt ? '' : 'hidden'}>Link video YouTube<input type="url" id="${prefix}Yt" placeholder="https://www.youtube.com/watch?v=…" value="${room && room.source.type === 'youtube' ? 'https://www.youtube.com/watch?v=' + esc(room.source.video_id) : ''}"></label>
+    <div class="src-tabs">${kinds.map(k => `<label class="check"><input type="radio" name="${prefix}Src" value="${k}" ${on(k) ? 'checked' : ''}
+      ${k === 'file' && !videos.length ? 'disabled' : ''}> ${label(k)}</label>`).join('')}</div>
+    <label class="field" data-src="file" ${on('file') ? '' : 'hidden'}>Chọn phim<select id="${prefix}Item">${opts || '<option value="">Thư viện chưa có phim</option>'}</select></label>
+    <div class="field" data-src="path" ${on('path') ? '' : 'hidden'}>File phim trên máy
+      <div class="paste-row"><input type="text" id="${prefix}Path" placeholder="D:\\Phim\\ten-phim.mp4">
+      ${desk && desk.pickFile ? `<button class="btn plain" type="button" data-pickvid="${prefix}">Chọn file…</button>` : ''}</div></div>
+    <label class="field" data-src="youtube" ${on('youtube') ? '' : 'hidden'}>Link video YouTube<input type="url" id="${prefix}Yt" placeholder="https://www.youtube.com/watch?v=…"></label>
+    <div class="field" data-src="link" ${on('link') ? '' : 'hidden'}>Link trang phim<input type="url" id="${prefix}Link" placeholder="https://vimeo.com/… · dailymotion · facebook · bilibili…">
+      <small class="hint">Hơn 1.800 trang (như ô dán link ở Trang Chủ). Trang khác: mở trang ở tab Xem Online, bấm phát, rồi bấm <b>Xem chung</b> ở danh sách "Luồng phim bắt được". Phim có DRM (Netflix, FPT Play…) không chiếu được.</small></div>
     <label class="field">Tên phòng (tuỳ chọn)<input type="text" id="${prefix}Title" maxlength="120" placeholder="Ví dụ: Tối thứ 7 xem phim" value="${room ? esc(room.title) : ''}"></label>
     <div class="src-tabs">
       <label class="check"><input type="radio" name="${prefix}Ctl" value="everyone" ${!room || room.control === 'everyone' ? 'checked' : ''}> Ai cũng phát/dừng/tua được</label>
@@ -195,12 +286,18 @@ function readSource(prefix) {
   const src = document.querySelector(`[name=${prefix}Src]:checked`)?.value;
   const body = {title: $(`#${prefix}Title`).value.trim() || null, control: document.querySelector(`[name=${prefix}Ctl]:checked`).value};
   if (src === 'youtube') body.youtube_url = $(`#${prefix}Yt`).value.trim();
-  else body.item_id = +$(`#${prefix}Item`).value || null;
+  else if (src === 'link') body.link = $(`#${prefix}Link`).value.trim();
+  else if (src === 'path') body.path = $(`#${prefix}Path`).value.trim();
+  else if (src === 'file') body.item_id = +$(`#${prefix}Item`).value || null;
   return body;
 }
 function bindSourceToggle(prefix) {
   document.querySelectorAll(`[name=${prefix}Src]`).forEach(r => r.addEventListener('change', () => {
-    document.querySelectorAll('#partyBox [data-src]').forEach(el => { el.hidden = el.dataset.src !== r.value; });
+    r.closest('form').querySelectorAll('[data-src]').forEach(el => { el.hidden = el.dataset.src !== r.value; });
+  }));
+  document.querySelectorAll(`[data-pickvid="${prefix}"]`).forEach(b => b.addEventListener('click', async () => {
+    const f = await desk.pickFile('Chọn file phim', ['mp4', 'mkv', 'webm', 'mov', 'm4v', 'avi', 'ts', 'mp3', 'm4a', 'flac']);
+    if (f) $(`#${prefix}Path`).value = f;
   }));
 }
 function copyBtn(text, label = 'Sao chép') {
@@ -208,6 +305,7 @@ function copyBtn(text, label = 'Sao chép') {
 }
 async function renderParty(st) {
   if (!st) { try { st = await api('/api/party'); } catch (e) { return; } }
+  if (dock.shown === 'party' && dock.open.party) return;          // đang ở trong phòng (vùng nhúng)
   const box = $('#partyBox');
   const key = JSON.stringify([st.room && {...st.room, state: null}, st.tunnel, st.lan]);
   if (key === lastKey && box.childElementCount) return;                                   // không đổi gì
@@ -226,18 +324,19 @@ async function renderParty(st) {
       <div class="box pcard">
         <h3>Cách hoạt động</h3>
         <ol class="steps">
-          <li>Bạn tạo phòng, chọn phim trong thư viện hoặc một video YouTube.</li>
+          <li>Bạn tạo phòng, chọn phim trong thư viện, file trên máy, video YouTube hoặc link trang phim. Đang xem phim trên trang nào ở tab Xem Online cũng bấm <b>Xem chung</b> được.</li>
           <li>Bấm <b>Mở cho bạn bè qua Internet</b> rồi gửi link cho bạn bè (Zalo, Messenger…). Bạn bè mở bằng trình duyệt, không cần cài gì.</li>
           <li>Cả phòng xem cùng lúc: ai bấm phát, dừng hay tua thì mọi người cùng theo. Có chat và thả cảm xúc.</li>
         </ol>
-        <p class="hint">Phim trong thư viện được phát từ máy bạn: mỗi người xem cần khoảng 3–5 Mbps tốc độ <b>tải lên</b> của mạng nhà bạn. Video YouTube thì mỗi người xem thẳng từ YouTube, không tốn mạng của bạn.</p>
+        <p class="hint">Phim trong thư viện, file trên máy và phim từ trang khác đều đi qua máy bạn: mỗi người xem cần khoảng 3–5 Mbps tốc độ <b>tải lên</b> của mạng nhà bạn. Video YouTube thì mỗi người xem thẳng từ YouTube, không tốn mạng của bạn.</p>
       </div>
     </div>`;
     bindSourceToggle('n');
     $('#newRoom').addEventListener('submit', async e => {
       e.preventDefault();
+      const b = e.submitter || e.target.querySelector('[type=submit]'); b.disabled = true; b.textContent = 'ĐANG MỞ…';
       try { renderParty(await api('/api/party', {method: 'POST', body: readSource('n')})); toast('Đã tạo phòng.'); }
-      catch (err) { toast(err.message, 'err'); }
+      catch (err) { toast(err.message, 'err'); b.disabled = false; b.textContent = 'TẠO PHÒNG'; }
     });
     return;
   }
@@ -256,7 +355,7 @@ async function renderParty(st) {
   <div class="box pcard room-card">
     <div class="row-between">
       <div><span class="badge" style="background:var(--green)">Phòng đang mở</span><h3 style="margin-top:8px">${esc(r.title)}</h3>
-        <p class="hint">${r.source.type === 'youtube' ? 'Video YouTube' : 'Phim trong thư viện'} · ${r.members.length} người đang xem${r.members.length ? ': ' + r.members.map(m => esc(m.name)).join(', ') : ''}</p></div>
+        <p class="hint">${esc(srcLabel(r.source))} · ${r.members.length} người đang xem${r.members.length ? ': ' + r.members.map(m => esc(m.name)).join(', ') : ''}</p></div>
       <button class="btn green" type="button" id="enterRoom">VÀO PHÒNG</button>
     </div>
   </div>
@@ -271,18 +370,19 @@ async function renderParty(st) {
     <summary><b>Đổi phim / cài đặt phòng</b></summary>
     <form id="editRoom" class="main" style="margin-top:12px">
       ${sourceForm('e', r)}
-      <div class="btn-row"><button class="btn yellow" type="submit">Đổi phim cho cả phòng</button></div>
+      <div class="btn-row"><button class="btn yellow" type="submit">Lưu thay đổi</button></div>
     </form>
   </details>
   <div><button class="btn red" type="button" id="closeRoom">Đóng phòng</button></div>`;
   bindSourceToggle('e');
   if (wasOpen) box.querySelector('details').open = true;
-  $('#enterRoom').addEventListener('click', () => (desk && desk.openParty ? desk.openParty(L.host) : window.open(L.host, '_blank')));
+  $('#enterRoom').addEventListener('click', () => { dock.last.party = r.title; desk && desk.openParty ? dockOpen('party', L.host) : window.open(L.host, '_blank'); });
   $('#tunnelOn')?.addEventListener('click', async () => { try { renderParty(await api('/api/party/tunnel', {method: 'POST'})); } catch (err) { toast(err.message, 'err'); } });
   $('#tunnelOff')?.addEventListener('click', async () => renderParty(await api('/api/party/tunnel', {method: 'DELETE'})));
   $('#editRoom').addEventListener('submit', async e => {
     e.preventDefault();
-    try { renderParty(await api('/api/party', {method: 'POST', body: readSource('e')})); toast('Đã đổi phim cho cả phòng.'); }
+    const body = readSource('e'), same = !body.youtube_url && !body.link && !body.path && !body.item_id;
+    try { lastKey = ''; renderParty(await api('/api/party', {method: 'POST', body})); toast(same ? 'Đã lưu cài đặt phòng.' : 'Đã đổi phim cho cả phòng.'); }
     catch (err) { toast(err.message, 'err'); }
   });
   $('#closeRoom').addEventListener('click', async e => {
@@ -300,6 +400,12 @@ document.addEventListener('click', async e => {
 function pollParty() {
   clearTimeout(partyTimer);
   if (window.CV.S.view !== 'party') return;
+  if (dock.shown === 'party' && dock.open.party) {       // đang ở trong phòng: không vẽ lại khung quản lý
+    if (!dockArea('party')) { $('#partyBox').innerHTML = dockHtml('party'); bindDock($('#partyBox')); lastKey = ''; }
+    dockSync();
+    partyTimer = setTimeout(pollParty, 1000);
+    return;
+  }
   renderParty().finally(() => { partyTimer = setTimeout(pollParty, 2500); });
 }
 

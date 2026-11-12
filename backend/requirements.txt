@@ -8,3 +8,4 @@ requests>=2.31   # nghe nhạc YouTube online (chuyển tiếp luồng âm thanh
 rapidocr_onnxruntime>=1.4.4   # nhận diện chữ trên ảnh (tab Dịch)
 anthropic>=0.80   # Claude AI (bộ dịch tùy chọn)
 Pillow>=10
+UnityPy>=1.20   # đọc/ghi bảng chữ game Unity (Việt hóa game)

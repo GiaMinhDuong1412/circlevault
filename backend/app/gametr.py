@@ -1,4 +1,4 @@
-"""Việt hóa game từ file (tab Dịch → Việt hóa game): Ren'Py và RPG Maker MV/MZ.
+"""Việt hóa game từ file (tab Dịch → Việt hóa game): Ren'Py, RPG Maker MV/MZ và Unity (Unity Localization – xem unitygame.py).
 
 Quy trình: quét thư mục game → lấy mọi câu chữ (không trùng) → dịch theo thứ tự kịch bản → người dùng xem/sửa → áp dụng.
 
@@ -29,7 +29,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from . import config, translate
+from . import config, translate, unitygame
 
 router = APIRouter(prefix="/api/translate/games", dependencies=[Depends(translate._local_only)])
 GAMES = config.DATA / "translate" / "games"
@@ -49,7 +49,13 @@ class GameError(RuntimeError):
 CODES = {
     "renpy": re.compile(r"\{\{|\[\[|\{[^{}]*\}|\[[^\[\]]*\]|%\([^)]*\)[sdif]|%[sd]"),
     "rpg": re.compile(r"\\[A-Za-z]+\[[^\]]*\]|\\[A-Za-z]+<[^>]*>|\\[{}$.|!><^\\]|%\d"),
+    # Unity: Smart String {0} {name} {value:N0}, thẻ rich text <color=#fff> </b> <sprite name=x>, %s
+    "unity": re.compile(r"\{[^{}]*\}|<[^<>]+>|%[sd]"),
 }
+
+
+def code_kind(engine: str) -> str:
+    return engine if engine in ("renpy", "unity") else "rpg"
 
 
 def protect(text: str, kind: str) -> tuple[str, list[str]]:
@@ -838,16 +844,19 @@ def detect(path: Path) -> tuple[str, Path]:
         if cand.is_dir() and (any(cand.glob("*.rpy*")) or any(cand.glob("*.rpa")) or any(cand.glob("**/*.rpyc"))):
             if cand.name == "game" or (cand / "script.rpyc").exists() or any(cand.glob("*.rpa")) or any(cand.glob("*.rpy")):
                 return "renpy", cand
-    if any(path.glob("*_Data")) and any(path.glob("*.exe")):
-        raise GameError("Đây là game Unity – app chưa Việt hóa từ file được. Dùng 'Dịch game' (dịch màn hình) "
-                        "hoặc plugin XUnity.AutoTranslator.")
+    uroot = unitygame.unity_root(path)
+    if uroot:
+        if unitygame.string_bundles(uroot):
+            return "unity", uroot
+        raise GameError("Game Unity này không lưu chữ bằng Unity Localization nên app chưa Việt hóa từ file được. "
+                        "Có gói Việt hóa của nhóm dịch thì dùng mục 'Cài gói Việt hóa có sẵn' bên dưới; không thì dùng Dịch màn hình game.")
     if any(path.glob("**/*.pak")):
         raise GameError("Đây có vẻ là game Unreal – app chưa hỗ trợ. Dùng 'Dịch game' (dịch màn hình).")
     raise GameError("Không nhận ra game. App hỗ trợ Ren'Py (có thư mục game/ với .rpy/.rpyc/.rpa) "
                     "và RPG Maker MV/MZ (có data/System.json hoặc www/data/System.json).")
 
 
-ENGINE_NAMES = {"renpy": "Ren'Py", "rpgmv": "RPG Maker MV", "rpgmz": "RPG Maker MZ"}
+ENGINE_NAMES = {"renpy": "Ren'Py", "rpgmv": "RPG Maker MV", "rpgmz": "RPG Maker MZ", "unity": "Unity"}
 
 
 def _proj_dir(pid: str) -> Path:
@@ -898,9 +907,11 @@ def create(body: ScanIn):
         engine, root = detect(path)
         if engine == "renpy":
             raw, info = scan_renpy(root)
+        elif engine == "unity":
+            raw, info = unitygame.scan(root)
         else:
             raw, info = scan_rpg(root)
-    except GameError as e:
+    except (GameError, unitygame.GameError) as e:
         raise HTTPException(400, str(e))
     seen: dict[str, dict] = {}
     items = []
@@ -916,10 +927,13 @@ def create(body: ScanIn):
     if not items:
         raise HTTPException(400, "Không tìm thấy câu chữ tiếng Anh nào để dịch.")
     pid = uuid.uuid4().hex[:12]
-    name = (path.parent.name if path.name.lower() in ("game", "www") else path.name) or "Game"
+    name = (path.parent.name if path.name.lower() in ("game", "www") or path.name.endswith("_Data") else path.name) or "Game"
     p = {"id": pid, "name": name, "path": str(path), "root": str(root), "engine": engine, "created": time.time(),
          "items": items, "status": "idle", "opts": {"font": True, "width": 50, "width_face": 40, "fonts": info.get("fonts", [])},
          "warnings": info.get("errors", [])}
+    if engine == "unity":
+        p["unity"] = info["unity"]
+        p["opts"]["font"] = False
     _save(p)
     return {**_summary(p), "estimate": estimate(sum(len(i["t"]) for i in items))}
 
@@ -1013,12 +1027,12 @@ def stop(pid: str):
 
 
 def _final(p: dict) -> list[dict]:
-    code_kind = "renpy" if p["engine"] == "renpy" else "rpg"
+    kind = code_kind(p["engine"])
     out = []
     for it in p["items"]:
         vi = it.get("vi")
         if vi and not it.get("edited"):
-            _, codes = protect(it["t"], code_kind)
+            _, codes = protect(it["t"], kind)
             if codes and any(c not in vi for c in codes):
                 vi = None                         # mất mã → giữ câu gốc
         out.append({**it, "final": vi})
@@ -1034,8 +1048,13 @@ def apply(pid: str):
     if not root.exists():
         raise HTTPException(400, f"Không thấy thư mục game: {root}")
     try:
-        res = apply_renpy(root, _final(p), p["opts"]) if p["engine"] == "renpy" else apply_rpg(root, _final(p), p["opts"])
-    except GameError as e:
+        if p["engine"] == "renpy":
+            res = apply_renpy(root, _final(p), p["opts"])
+        elif p["engine"] == "unity":
+            res = unitygame.apply(root, _final(p), p.get("unity") or {})
+        else:
+            res = apply_rpg(root, _final(p), p["opts"])
+    except (GameError, unitygame.GameError) as e:
         raise HTTPException(400, str(e))
     except PermissionError:
         raise HTTPException(400, "Không ghi được vào thư mục game (đang mở game, hoặc game nằm trong Program Files). "
@@ -1052,7 +1071,7 @@ def restore(pid: str):
     p = _load(pid)
     root = Path(p["root"])
     try:
-        n = restore_renpy(root) if p["engine"] == "renpy" else restore_rpg(root)
+        n = restore_renpy(root) if p["engine"] == "renpy" else unitygame.restore(root) if p["engine"] == "unity" else restore_rpg(root)
     except PermissionError:
         raise HTTPException(400, "Không ghi được vào thư mục game. Tắt game rồi thử lại.")
     with _lock:
@@ -1113,7 +1132,7 @@ class Worker:
         _status(pid, "running")
         s = translate.settings()
         p = _load(pid)
-        kind = "renpy" if p["engine"] == "renpy" else "rpg"
+        kind = code_kind(p["engine"])
         todo = [i for i, it in enumerate(p["items"]) if it.get("vi") is None]
         for k in range(0, len(todo), BATCH):
             if pid in self._stop:

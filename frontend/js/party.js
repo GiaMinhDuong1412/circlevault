@@ -34,16 +34,42 @@ function stageMsg(html, btn) {
 }
 
 /* ------------------------------------------------------------ trình phát */
-function filePlayer(src) {
+let hlsReady = null;
+function loadHls() {
+  if (!hlsReady) hlsReady = new Promise((res, rej) => {
+    if (window.Hls) return res();
+    const s = document.createElement('script');
+    s.src = '/p/vendor/hls.min.js'; s.onload = res;
+    s.onerror = () => rej(new Error('Không tải được trình phát luồng phim.'));
+    document.head.appendChild(s);
+  });
+  return hlsReady;
+}
+async function filePlayer(src) {
   const holder = $('#player');
   holder.className = 'player' + (src.audio ? ' audio' : '');
   holder.innerHTML = src.audio ? `<div>${esc(src.title)}</div>` : '';
   const v = document.createElement(src.audio ? 'audio' : 'video');
-  v.src = `/r/${token}/media`; v.preload = 'auto'; v.playsInline = true;
+  v.preload = 'auto'; v.playsInline = true;
   holder.appendChild(v);
+  let hls = null;
+  const url = `/r/${token}/media`;
+  if (src.hls) {
+    await loadHls();
+    if (window.Hls && window.Hls.isSupported()) {
+      hls = new window.Hls({maxBufferLength: 40});
+      hls.on(window.Hls.Events.ERROR, (_e, d) => {
+        if (!d.fatal) return;
+        if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+        else stageMsg('Không lấy được luồng phim từ trang gốc (link có thể đã hết hạn). Chủ phòng hãy mở lại phim.');
+      });
+      hls.loadSource(url); hls.attachMedia(v);
+    } else v.src = url;                                         // Safari / iPhone phát HLS sẵn
+  } else v.src = url;
   v.addEventListener('waiting', () => { $('#ctlNote').textContent = 'Đang tải phim từ máy chủ phòng…'; });
   v.addEventListener('playing', () => { $('#ctlNote').textContent = ctlNote(); });
-  v.addEventListener('error', () => stageMsg('Trình duyệt này không phát được file phim. Thử Chrome hoặc Edge bản mới.'));
+  v.addEventListener('error', () => stageMsg(src.type === 'stream' ? 'Không phát được luồng phim này (link có thể đã hết hạn). Chủ phòng hãy mở lại phim.'
+    : 'Trình duyệt này không phát được file phim. Thử Chrome hoặc Edge bản mới.'));
   return {
     kind: 'file',
     play: () => v.play().catch(e => { if (e.name === 'NotAllowedError') needGesture(); }),
@@ -54,7 +80,7 @@ function filePlayer(src) {
     playing: () => !v.paused && !v.ended,
     setRate: r => { v.playbackRate = r; },
     setVolume: x => { v.volume = x; },
-    destroy: () => { v.pause(); v.removeAttribute('src'); v.load(); holder.innerHTML = ''; },
+    destroy: () => { if (hls) hls.destroy(); v.pause(); v.removeAttribute('src'); v.load(); holder.innerHTML = ''; },
   };
 }
 let ytReady = null;
@@ -104,7 +130,7 @@ async function loadSource() {
   document.title = `${room.title} · Xem chung`;
   stageMsg('');
   try {
-    player = src.type === 'youtube' ? await ytPlayer(src) : filePlayer(src);
+    player = src.type === 'youtube' ? await ytPlayer(src) : await filePlayer(src);
     player.setVolume(+$('#cVol').value);
     apply(true);
   } catch (e) { stageMsg(esc(e.message)); loadingSrc = null; }
@@ -181,7 +207,7 @@ function connect() {
         break;
       case 'source':
         room = {...m.room, chat: room ? room.chat : []};
-        sys(`Chủ phòng đổi sang: ${room.title}`); loadSource(); $('#ctlNote').textContent = ctlNote();
+        sys(`Phòng đang chiếu: ${room.title}`); loadSource(); $('#ctlNote').textContent = ctlNote();
         break;
       case 'state': {
         room.state = m.state;
