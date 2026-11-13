@@ -49,14 +49,14 @@ _lock = threading.Lock()
 
 
 # ------------------------------------------------------------------ yt-dlp
-def _ydl_info(url: str, **extra) -> dict:
+def _ydl_info(url: str, _process: bool = True, **extra) -> dict:
     cfg = config.load()
     log = downloader._Logger()
     opts = {**downloader._base_opts(cfg), "logger": log, "skip_download": True,
             "extractor_args": {"youtubetab": {"skip": ["authcheck"]}}, **extra}
     with downloader._account(cfg, url, f"yt-{time.time_ns()}") as acc, yt_dlp.YoutubeDL({**opts, **acc}) as ydl:
         try:
-            info = ydl.extract_info(url, download=False)
+            info = ydl.extract_info(url, download=False, process=_process)
         except yt_dlp.utils.DownloadError as e:
             raise HTTPException(502, _nice(log.errors[-1] if log.errors else downloader.clean(str(e)))) from e
         info = ydl.sanitize_info(info) if info else None

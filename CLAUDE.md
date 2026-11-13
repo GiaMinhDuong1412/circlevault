@@ -107,6 +107,13 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     SoundCloud, Bandcamp): bài có `ou` (link), `GET /search?q=&site=yt|sc`, `POST /prepare?u=` + `GET /stream?u=`; chỉ có HLS thì
     tải tạm vào `DATA/cache/nghe-online` (tối đa 600 MB) rồi phát file; nút "＋ Playlist" (`#pbAdd`) trên thanh phát: bài online
     → `pickPlaylist({ou})` tạo tác vụ MP3 có `music_playlist` (tải xong tự vào playlist); bỏ định dạng mã hóa (`NO_DRM`) – Spotify/Apple Music có DRM, không làm.
+  - `ytvideo.py`: tab **YouTube** (giao diện CircleVault, `frontend/js/youtube.js`, `/api/yt/*`, chỉ máy này): dữ liệu bằng yt-dlp phẳng
+    (`ytmusic._ydl_info`, cookie qua `downloader._account` nên dùng URL youtube.com: `/` = đề xuất, `/feed/subscriptions`, `list=WL/LL`,
+    `/feed/history`; `ytsearch40:`; kênh `/channel/<id>/videos`), nhớ 5–10 phút trong bộ nhớ; `video?v=` = chi tiết (`_process=False`)
+    + liên quan (tìm theo tiêu đề + video cùng kênh). Video phát bằng iframe `youtube.com/embed` (trình phát chính thức) trong khung
+    của app; nút Tải video/MP3 (`/api/tasks`), Xem chung, Mở bằng trình duyệt YouTube (bị chặn nhúng). `browser.js` `mirrorToMain`
+    chép cookie YouTube/Google sang `session.defaultSession` để trình phát nhúng nhận tài khoản (Premium không quảng cáo).
+    Mở video thì phát sự kiện `cv-video-play` → music.js tạm dừng nhạc.
   - `discover.py`: Khám phá nhạc (`/api/music/discover/*`, chỉ máy này, thư viện ytmusicapi): `home` (Gợi ý cho bạn = trộn radio của
     bài trên máy hay nghe/mới tải có [id], Mix, trang chủ YouTube Music khi đã đăng nhập – cookie `YT_COOKIES` → header SAPISIDHASH,
     bảng xếp hạng + ca sĩ theo `config.music_country` (mặc định VN), chip tâm trạng = tìm kiếm), `radio?v=` (bài tương tự; nút ≈ và tự
@@ -133,13 +140,17 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     con, nhớ file đã tải (`uploaded`) để không trùng. Nút "☁ Lưu lên Drive" ở Nghe Nhạc. Hướng dẫn tạo client: artifact "Kết nối Google Drive".
   - Video tải về luôn ra .mp4 (`FFmpegVideoRemuxer`, cấu hình `video_format`: mp4 | original).
   - `ytdlp_update.py`: tải wheel yt-dlp (+ yt-dlp-ejs đúng phiên bản) từ PyPI vào `DATA/pylib`; `app/__init__.py` ưu tiên thư mục này.
-- `frontend/` – JS thuần, không build. Thanh cuộn theo theme: `::-webkit-scrollbar` trong app.css (KHÔNG đặt `scrollbar-color`/
+- `frontend/` – JS thuần, không build. **Kiểu giao diện** (`STYLES` trong app.js: brutal/tron/mem/phang/kinh, chọn trong hộp theme):
+  CSS dùng `--rk` (nhân bo góc: mọi `border-radius` viết `calc(Npx*var(--rk,1))`), `--hs` (thay mọi bóng cứng `var(--hs,Npx Npx 0 var(--ink))`),
+  `--ink`, `--bw`; khối `:root[data-style=…]` cuối app.css. Đổi kiểu bắt khởi động lại: lưu `cv-style-next`, script đầu index.html chỉ
+  áp dụng ở phiên mới (`sessionStorage` cv-started), nút "Khởi động lại ngay" = `cvDesktop.relaunch` (app.relaunch, bản portable dùng
+  `PORTABLE_EXECUTABLE_FILE`). CSS mới: viết bo góc/bóng theo cùng mẫu để kiểu nào cũng đúng. Thanh cuộn theo theme: `::-webkit-scrollbar` trong app.css (KHÔNG đặt `scrollbar-color`/
   `scrollbar-width` chung – Chromium mới có hai thuộc tính đó thì bỏ qua ::-webkit-scrollbar). Khám phá vẽ lại thì giữ `scrollLeft` từng `.dc-shelf`. Theme màu: `THEMES` trong app.js + khối `:root[data-theme=…]` trong app.css (localStorage `cv-theme`, không có = theo Windows). `js/app.js` định nghĩa `window.CV` (api, esc, toast, fmt…, `views`) dùng chung cho
   `js/eq.js` (Engine Web Audio + giao diện EQ 10 dải, preset `PRESETS`) và `js/music.js` (thư viện nhạc, thanh phát nhạc).
   `js/watch.js`: tab Xem Online + Xem Chung. `party.html` + `js/party.js`: trang phòng (không dùng app.js).
   `js/translate.js`: tab Dịch – menu nhóm bên trái (`NAV`): Truyện tranh, Truyện chữ / Việt hóa game, Gói Việt hóa có sẵn, Dịch màn hình
   game / Dịch nhanh, Cài đặt. `js/learn.js`: tab Học.
-  Định tuyến bằng hash: `#home #queue #library #music #online #party #translate #learn #storage`.
+  Định tuyến bằng hash: `#home #queue #library #music #youtube #online #party #translate #learn #storage`.
 - `desktop/` – Electron theo mẫu repo `aq-autotest` (`desktop/`): `main.js` chạy `pythonw -m app` bằng Python nhúng
   (`resources/python`, ._pth có `..\app\backend`), mã ở `resources/app/{backend,frontend}`, ffmpeg + Deno ở `resources/bin`
   (thêm vào PATH backend). Cầu nối trang ↔ app: `window.cvDesktop` (onUpdate/getUpdate/updateAct/pickFolder/restartServer).

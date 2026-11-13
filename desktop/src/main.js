@@ -284,6 +284,12 @@ async function init() {
   ipcMain.handle('update-get', () => (updater ? updater.getState() : null));
   ipcMain.on('update-act', () => { if (updater) updater.act(); });
   ipcMain.on('quit', () => app.quit());
+  ipcMain.on('app-relaunch', () => {
+    log('Khởi động lại app (đổi kiểu giao diện)');
+    // bản portable chạy từ thư mục tạm: mở lại đúng file .exe người dùng bấm
+    app.relaunch(process.env.PORTABLE_EXECUTABLE_FILE ? { execPath: process.env.PORTABLE_EXECUTABLE_FILE } : undefined);
+    app.quit();
+  });
   ipcMain.handle('pick-folder', async (_e, title) => {
     const r = await dialog.showOpenDialog(win, { title: typeof title === 'string' ? title.slice(0, 80) : 'Chọn thư mục nhạc', properties: ['openDirectory'] });
     return r.canceled ? null : r.filePaths[0];

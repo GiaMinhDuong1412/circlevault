@@ -836,10 +836,10 @@ function refreshView() {
 }
 function route() {
   const v = (location.hash || '#home').slice(1);
-  S.view = ['home', 'queue', 'library', 'music', 'online', 'party', 'translate', 'learn', 'storage'].includes(v) ? v : 'home';
+  S.view = ['home', 'queue', 'library', 'music', 'youtube', 'online', 'party', 'translate', 'learn', 'storage'].includes(v) ? v : 'home';
   $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.view === S.view));
   document.body.classList.toggle('view-music', S.view === 'music');
-  document.body.classList.toggle('view-wide', S.view === 'translate' || S.view === 'learn');
+  document.body.classList.toggle('view-wide', S.view === 'translate' || S.view === 'learn' || S.view === 'youtube');
   $$('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== S.view);
   refreshView();
 }
@@ -883,9 +883,47 @@ function setTheme(t) {
   if (t) r.dataset.theme = t; else delete r.dataset.theme;
   try { if (t) localStorage.setItem('cv-theme', t); else localStorage.removeItem('cv-theme'); } catch (e) { /* bỏ qua */ }
 }
+/* kiểu giao diện (hình khối) – chỉ áp dụng khi mở lại app: chọn → lưu 'cv-style-next' → đầu trang (index.html) đổi khi phiên mới */
+const STYLES = [
+  ['brutal', 'Neo-brutalist', 'Viền đậm, bóng cứng (mặc định)'],
+  ['tron', 'Brutal bo tròn', 'Viền đậm, góc bo tròn'],
+  ['mem', 'Mềm mại', 'Viền mảnh, bóng mờ, bo tròn'],
+  ['phang', 'Tối giản', 'Phẳng, không bóng'],
+  ['kinh', 'Kính mờ', 'Trong suốt, nền chuyển màu'],
+];
+const styleNow = () => document.documentElement.dataset.style || 'brutal';
+const styleNext = () => { try { return localStorage.getItem('cv-style-next'); } catch (e) { return null; } };
+function pickStyle(id) {
+  try {
+    if (id === styleNow()) localStorage.removeItem('cv-style-next'); else localStorage.setItem('cv-style-next', id);
+  } catch (e) { return toast('Không lưu được lựa chọn.', 'err'); }
+  renderThemePop();
+  if (id === styleNow()) return;
+  const name = (STYLES.find(x => x[0] === id) || [, id])[1];
+  let dlg = $('#styleDlg');
+  if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'styleDlg'; dlg.className = 'box'; document.body.appendChild(dlg); }
+  const desk = window.cvDesktop;
+  dlg.innerHTML = `<div class="dlg-head"><h3>Đổi kiểu giao diện</h3></div>
+    <p>Kiểu <b>${esc(name)}</b> sẽ được dùng sau khi <b>khởi động lại CircleVault</b>. ${desk ? '' : 'Đóng tab này rồi mở lại CircleVault.'}</p>
+    <p class="hint">Đang tải dở trong Hàng Đợi sẽ tự tải tiếp sau khi mở lại.</p>
+    <div class="btn-row">${desk && desk.relaunch ? '<button class="btn green" type="button" data-sr="now">Khởi động lại ngay</button>' : ''}
+      <button class="btn plain" type="button" data-sr="later">Để lần sau mở app</button>
+      <button class="btn plain" type="button" data-sr="undo">Thôi, giữ kiểu cũ</button></div>`;
+  dlg.onclick = e => {
+    const b = e.target.closest('[data-sr]'); if (!b) return;
+    if (b.dataset.sr === 'now') { b.disabled = true; b.textContent = 'Đang khởi động lại…'; desk.relaunch(); return; }
+    if (b.dataset.sr === 'undo') { try { localStorage.removeItem('cv-style-next'); } catch (err) { /* bỏ qua */ } renderThemePop(); }
+    dlg.close();
+  };
+  dlg.showModal();
+}
 function renderThemePop() {
   const cur = document.documentElement.dataset.theme || '';
-  $('#themePop').innerHTML = `<h4>Theme màu</h4>
+  const sn = styleNow(), nx = styleNext();
+  $('#themePop').innerHTML = `<h4>Kiểu giao diện</h4>
+    <div class="style-opts">${STYLES.map(([id, name, sub]) => `<button type="button" class="style-opt ${(nx || sn) === id ? 'on' : ''}" data-style-id="${id}" title="${esc(sub)}">
+      <span class="pv"></span><span>${name}</span>${nx === id && nx !== sn ? '<span class="pend">Áp dụng khi mở lại app</span>' : sn === id && !nx ? '<span class="hint">đang dùng</span>' : ''}</button>`).join('')}</div>
+    <h4 style="margin-top:12px">Theme màu</h4>
     ${THEMES.map(([id, name, sw]) => `<button type="button" class="theme-opt ${cur === id ? 'on' : ''}" data-theme-id="${id}" role="menuitemradio" aria-checked="${cur === id}">
       <span>${name}</span><span class="sw">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</span></button>`).join('')}
     <button type="button" class="theme-opt sys ${cur ? '' : 'on'}" data-theme-id="" role="menuitemradio" aria-checked="${!cur}"><span>Theo Windows (sáng / tối)</span><span class="hint">${cur ? '' : 'đang dùng'}</span></button>`;
@@ -898,6 +936,8 @@ $('#themeBtn').addEventListener('click', e => {
   $('#themeBtn').setAttribute('aria-expanded', String(open));
 });
 $('#themePop').addEventListener('click', e => {
+  const st = e.target.closest('[data-style-id]');
+  if (st) return pickStyle(st.dataset.styleId);
   const b = e.target.closest('[data-theme-id]'); if (!b) return;
   setTheme(b.dataset.themeId); renderThemePop();
   window.dispatchEvent(new Event('cv-theme'));   // đồ thị EQ vẽ lại theo màu mới

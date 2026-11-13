@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('cvDesktop', {
   pickFolder: (title) => ipcRenderer.invoke('pick-folder', title),
   pickFile: (title, exts) => ipcRenderer.invoke('pick-file', title, exts),   // exts: ['zip']
   restartServer: () => ipcRenderer.invoke('restart-server'),
+  relaunch: () => ipcRenderer.send('app-relaunch'),   // tắt hẳn rồi mở lại app (đổi kiểu giao diện)
   openBrowser: (mode, url) => ipcRenderer.send('open-browser', mode, url),   // 'youtube' | 'web'
   openParty: (url) => ipcRenderer.send('open-party', url),
   partyCapture: (url, opts) => ipcRenderer.send('party-capture', url, opts),   // mở trang phim, bấm phát → tự tạo phòng xem chung

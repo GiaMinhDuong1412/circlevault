@@ -841,6 +841,7 @@ window.CV.views.music = async () => {
 if (window.cvDesktop && window.cvDesktop.onYoutubeLogin) window.cvDesktop.onYoutubeLogin(() => { if (M.yt.loaded) loadYt(true); });
 window.addEventListener('cv-youtube', () => { if (M.yt.loaded) loadYt(true); });
 window.CV.music = {reload: () => { if (M.loaded) loadTracks(); }, initOnce};
+window.addEventListener('cv-video-play', () => { if (!audio.paused) audio.pause(); });   // mở video ở tab YouTube thì tạm dừng nhạc
 initBar();
 initOnce();   // nạp cài đặt EQ ngay để thanh phát nhạc dùng được ở mọi trang
 })();

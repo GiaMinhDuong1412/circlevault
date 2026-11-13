@@ -8,7 +8,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="/static/css/app.css">
-<script>try{const t=localStorage.getItem('cv-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>try{const r=document.documentElement,t=localStorage.getItem('cv-theme');if(t)r.dataset.theme=t;
+/* kiểu giao diện: lựa chọn mới chỉ áp dụng ở phiên mới (mở lại app), không đổi giữa chừng */
+let s=localStorage.getItem('cv-style');const n=localStorage.getItem('cv-style-next');
+if(n&&!sessionStorage.getItem('cv-started')){s=n;localStorage.setItem('cv-style',n);localStorage.removeItem('cv-style-next')}
+sessionStorage.setItem('cv-started','1');if(s&&s!=='brutal')r.dataset.style=s}catch(e){}</script>
 </head>
 <body>
 <div class="shell">
@@ -35,6 +39,7 @@
       <a class="tab" href="#queue" data-view="queue">Hàng Đợi <span class="mono" id="qCount"></span></a>
       <a class="tab" href="#library" data-view="library">Thư Viện</a>
       <a class="tab" href="#music" data-view="music">Nghe Nhạc</a>
+      <a class="tab" href="#youtube" data-view="youtube">YouTube</a>
       <a class="tab" href="#online" data-view="online">Xem Online</a>
       <a class="tab" href="#party" data-view="party">Xem Chung</a>
       <a class="tab" href="#translate" data-view="translate">Dịch</a>
@@ -143,6 +148,10 @@
       </section>
 
       <!-- XEM ONLINE -->
+      <section data-panel="youtube" class="main" hidden>
+        <div id="ytBox" class="yt-wrap"></div>
+      </section>
+
       <section data-panel="online" class="main" hidden>
         <div class="sec-title">Xem online &amp; tải từ trang khác</div>
         <div id="onlineBox" class="main"></div>
@@ -220,5 +229,6 @@
 <script src="/static/js/watch.js"></script>
 <script src="/static/js/translate.js"></script>
 <script src="/static/js/learn.js"></script>
+<script src="/static/js/youtube.js"></script>
 </body>
 </html>

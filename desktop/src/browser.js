@@ -69,6 +69,7 @@ async function exportYoutubeCookies({ write = true } = {}) {
     const all = (await session.fromPartition('persist:youtube').cookies.get({}))
       .filter((c) => /(^|\.)(youtube\.com|google\.com)$/.test(c.domain.replace(/^\./, '')));
     const logged = all.some((c) => LOGIN_COOKIES.includes(c.name) && /youtube\.com$/.test(c.domain));
+    if (logged) mirrorToMain(all);
     if (logged && write) {
       const lines = ['# Netscape HTTP Cookie File', '# CircleVault: cookie đăng nhập YouTube trong app, dùng cho yt-dlp', ''];
       for (const c of all) {
@@ -146,10 +147,37 @@ async function importYoutubeCookies({ force = false } = {}) {
   return { ok: true, count: n };
 }
 
+/** Chép cookie YouTube/Google sang phiên của cửa sổ chính: trình phát nhúng ở tab YouTube (giao diện CircleVault) nhận ra tài khoản
+ *  → Premium không quảng cáo, lịch sử xem, video giới hạn tuổi. Chỉ chép khi giá trị đổi để không làm phiền trang đang phát. */
+let mirrored = '';
+async function mirrorToMain(all) {
+  const sig = all.filter((c) => LOGIN_COOKIES.includes(c.name)).map((c) => c.name + '=' + c.value).sort().join(';');
+  if (sig === mirrored) return;
+  mirrored = sig;
+  const ses = session.defaultSession;
+  for (const c of all) {
+    const host = c.domain.replace(/^\./, '');
+    const d = { url: `https://${host}${c.path || '/'}`, name: c.name, value: c.value, path: c.path || '/', secure: !!c.secure,
+      httpOnly: !!c.httpOnly, sameSite: c.sameSite || 'unspecified' };
+    if (!c.hostOnly && !c.name.startsWith('__Host-')) d.domain = '.' + host;
+    if (c.expirationDate) d.expirationDate = c.expirationDate;
+    try { await ses.cookies.set(d); } catch { /* cookie không hợp lệ cho phiên này: bỏ qua */ }
+  }
+}
+async function clearMainYoutube() {
+  mirrored = '';
+  const ses = session.defaultSession;
+  for (const c of await ses.cookies.get({})) {
+    if (!/(^|\.)(youtube\.com|google\.com)$/.test(c.domain.replace(/^\./, ''))) continue;
+    try { await ses.cookies.remove(`https://${c.domain.replace(/^\./, '')}${c.path || '/'}`, c.name); } catch { /* bỏ qua */ }
+  }
+}
+
 async function youtubeLogout() {
   const ses = session.fromPartition('persist:youtube');
   await ses.clearStorageData();
   await ses.clearCache();
+  await clearMainYoutube().catch(() => {});
   try { fs.unlinkSync(path.join(ctx.dataDir, 'youtube-cookies.txt')); } catch { /* chưa có */ }
   lastLogin = false;
   ctx.notifyMain('youtube-login', false);
