@@ -2,6 +2,19 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-13-phong-thoai",
+      "date": "2026-11-13",
+      "title": "Phòng Thoại kiểu Discord + lọc giọng",
+      "items": [
+        "Tab mới Phòng Thoại: máy chủ của riêng bạn với kênh chat (#) và kênh thoại (🔊) như Discord. Bạn bè vào bằng link (Chrome/Edge/Firefox, không cần cài) hoặc app CircleVault trên điện thoại. Tiếng nói đi thẳng giữa các máy và được mã hóa, tối đa 10 người mỗi kênh.",
+        "Lọc giọng cho từng người: lọc ồn AI (RNNoise như Krisp, GTCRN mạnh hơn, Speex nhẹ), lọc tiếng ù quạt/điện, khử tiếng vọng, tự cân âm lượng, độ nhạy mic tự động hoặc chỉnh tay (có thanh đo), nghe thử giọng mình sau khi lọc.",
+        "Nhấn để nói (phím bất kỳ hoặc nút bên hông chuột) và Ctrl+Shift+M / Ctrl+Shift+D tắt mic / tắt nghe – dùng được cả khi đang ở trong game. Khung nổi ở góc màn hình hiện ai đang nói.",
+        "Âm lượng riêng từng người 0–200%, tắt tiếng một người chỉ ở máy mình, chọn micro / loa. Chủ phòng: thêm/đổi tên/xóa kênh, tắt mic người khác, mời ra khỏi kênh, đuổi, chặn.",
+        "Hồ sơ trong phòng: tên, trạng thái, ảnh đại diện, màu tên và 9 khung ảnh động (Lửa, Băng, Cầu vồng, Neon, Vương miện…).",
+        "Mạng 4G / công ty không nghe được nhau: thêm máy chuyển tiếp TURN của Cloudflare (gói miễn phí) trong tab Phòng Thoại."
+      ]
+    },
+    {
       "id": "2026-11-13-yt-dang-nhap-ben",
       "date": "2026-11-13",
       "title": "Trang chủ YouTube không còn lúc có lúc không",

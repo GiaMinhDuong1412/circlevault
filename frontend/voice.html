@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Phòng thoại · CircleVault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/p/css/app.css">
+<link rel="stylesheet" href="/p/css/voice.css">
+<script>try{const r=document.documentElement,q=new URLSearchParams(location.search);
+const t=q.get('theme')||localStorage.getItem('cv-theme'),s=q.get('style')||localStorage.getItem('cv-style');
+if(t)r.dataset.theme=t;if(s&&s!=='brutal')r.dataset.style=s;if(q.get('embed'))r.classList.add('embed')}catch(e){}</script>
+</head>
+<body class="vc">
+<div class="vc-app" id="app">
+  <nav class="vc-chans" id="chans" aria-label="Kênh">
+    <header class="vc-server">
+      <span class="logo-mark" aria-hidden="true"></span>
+      <b id="serverName">Đang vào phòng…</b>
+      <button class="vc-ibtn" type="button" id="invBtn" title="Mời bạn bè" aria-label="Mời bạn bè">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M19 8v6M16 11h6"/></svg></button>
+    </header>
+    <div class="vc-chlist" id="chList"></div>
+    <section class="vc-conn" id="conn" hidden>
+      <div class="vc-conn-top">
+        <span class="vc-sig" id="connSig" title="Chất lượng kết nối"><i></i><i></i><i></i></span>
+        <div><b id="connState">Đang kết nối…</b><small id="connName"></small></div>
+        <button class="vc-ibtn red" type="button" id="leaveBtn" title="Rời kênh thoại" aria-label="Rời kênh thoại">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85a1 1 0 0 1-1.41-.02L.29 13.08a.99.99 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67a1 1 0 0 1 0 1.41l-2.48 2.48a1 1 0 0 1-1.41.02 11.3 11.3 0 0 0-2.66-1.85 1 1 0 0 1-.56-.9v-3.1A15.3 15.3 0 0 0 12 9z"/></svg></button>
+      </div>
+      <div class="vc-conn-ns" id="connNs"></div>
+    </section>
+    <footer class="vc-me" id="mePanel">
+      <button class="vc-me-who" type="button" id="meWho" title="Hồ sơ của bạn"></button>
+      <button class="vc-ibtn" type="button" id="micBtn" title="Tắt / bật mic (Ctrl+Shift+M)" aria-label="Mic"></button>
+      <button class="vc-ibtn" type="button" id="deafBtn" title="Tắt / bật nghe (Ctrl+Shift+D)" aria-label="Tai nghe"></button>
+      <button class="vc-ibtn" type="button" id="setBtn" title="Cài đặt giọng nói & lọc giọng" aria-label="Cài đặt">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+    </footer>
+  </nav>
+
+  <main class="vc-main" id="main">
+    <header class="vc-head">
+      <button class="vc-ibtn vc-menu" type="button" id="menuBtn" aria-label="Danh sách kênh">☰</button>
+      <span class="vc-head-ic" id="headIc">#</span><b id="headName"></b><span class="vc-head-sub" id="headSub"></span>
+      <span class="sp"></span>
+      <button class="vc-ibtn" type="button" id="memBtn" title="Thành viên" aria-label="Thành viên">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="9" cy="8" r="4"/><path d="M1 21c0-4 3.5-6 8-6s8 2 8 6"/><path d="M17 4a4 4 0 0 1 0 8M23 21c0-3-2-5-5-5.6"/></svg></button>
+    </header>
+    <section class="vc-text" id="textView">
+      <div class="vc-log" id="log" aria-live="polite"></div>
+      <form class="vc-compose" id="compose">
+        <input type="text" id="msgIn" maxlength="2000" autocomplete="off" placeholder="Nhắn vào kênh…" aria-label="Tin nhắn">
+        <button class="btn sm green" type="submit">Gửi</button>
+      </form>
+    </section>
+    <section class="vc-stage" id="voiceView" hidden>
+      <div class="vc-tiles" id="tiles"></div>
+      <div class="vc-bar">
+        <button class="vc-round" type="button" id="barMic" title="Mic"></button>
+        <button class="vc-round" type="button" id="barDeaf" title="Nghe"></button>
+        <button class="vc-round" type="button" id="barSet" title="Lọc giọng">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg></button>
+        <button class="vc-round red" type="button" id="barLeave" title="Rời kênh">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85a1 1 0 0 1-1.41-.02L.29 13.08a.99.99 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67a1 1 0 0 1 0 1.41l-2.48 2.48a1 1 0 0 1-1.41.02 11.3 11.3 0 0 0-2.66-1.85 1 1 0 0 1-.56-.9v-3.1A15.3 15.3 0 0 0 12 9z"/></svg></button>
+      </div>
+    </section>
+  </main>
+
+  <aside class="vc-members" id="members" aria-label="Thành viên"></aside>
+</div>
+
+<!-- Vào phòng: tên + ảnh + khung -->
+<dialog id="joinDlg" class="box vc-dlg">
+  <form id="joinForm" class="vc-join" method="dialog">
+    <h2>Vào phòng thoại</h2>
+    <p class="hint">Nói chuyện bằng giọng nói khi chơi game, nhắn tin theo kênh. Tiếng đi thẳng giữa các máy và được mã hóa.</p>
+    <div class="vc-prof" id="joinProf"></div>
+    <button class="btn green" type="submit">VÀO PHÒNG</button>
+  </form>
+</dialog>
+
+<!-- Cài đặt -->
+<dialog id="setDlg" class="box vc-dlg vc-set">
+  <div class="vc-set-head">
+    <div class="vc-tabs" role="tablist">
+      <button class="chip on" type="button" data-stab="voice">Giọng nói &amp; lọc giọng</button>
+      <button class="chip" type="button" data-stab="prof">Hồ sơ</button>
+      <button class="chip" type="button" data-stab="keys">Phím tắt</button>
+    </div>
+    <button class="btn sm plain" type="button" id="setClose">Xong</button>
+  </div>
+  <div id="setBody" class="vc-set-body"></div>
+</dialog>
+
+<!-- Thẻ người dùng: âm lượng riêng + quản trị -->
+<div class="vc-pop box" id="pop" hidden></div>
+<div id="toasts" aria-live="polite"></div>
+<script src="/p/js/voice.js"></script>
+</body>
+</html>

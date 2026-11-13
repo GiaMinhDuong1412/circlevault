@@ -1,8 +1,14 @@
 package vn.circlevault.app.ui
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.webkit.PermissionRequest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
@@ -58,14 +64,21 @@ fun PartySection(vm: MainVM) {
     val c = cv
     val ctx = LocalContext.current
     var room by remember { mutableStateOf<Triple<String, String, Int>?>(null) }   // (tên phim, link, số người)
+    var voice by remember { mutableStateOf<Triple<String, String, String>?>(null) }   // (tên phòng thoại, link, mô tả)
     var checked by remember { mutableStateOf(false) }
     var link by remember { mutableStateOf("") }
     var reload by remember { mutableStateOf(0) }
     LaunchedEffect(reload) {
         checked = false
         room = null
+        voice = null
         if (Prefs.paired) runCatching {
             val j = Api.party()
+            j.optJSONObject("voice")?.let { v ->
+                val l = v.optString("link")
+                if (l.isNotBlank()) voice = Triple(v.optString("name", "Phòng thoại"), l,
+                    "${v.optInt("online")} người trong phòng" + (if (v.optInt("talking") > 0) " · ${v.optInt("talking")} đang nói chuyện" else ""))
+            }
             val r = j.optJSONObject("room")
             val links = j.optJSONObject("links")
             val url = links?.optString("lan")?.ifBlank { null } ?: links?.optString("internet")?.ifBlank { null }
@@ -75,7 +88,8 @@ fun PartySection(vm: MainVM) {
     }
     fun open(u: String) {
         val url = u.trim()
-        if (!url.startsWith("http") || !url.contains("/r/")) vm.toast("Link phòng có dạng http(s)://…/r/<mã>. Lấy ở tab Xem Chung trên máy tính.")
+        if (!url.startsWith("http") || !(url.contains("/r/") || url.contains("/v/")))
+            vm.toast("Link phòng có dạng http(s)://…/r/<mã> (xem chung) hoặc …/v/<mã> (phòng thoại).")
         else vm.partyUrl = url
     }
     LazyColumn(
@@ -101,11 +115,21 @@ fun PartySection(vm: MainVM) {
                 else -> Hint("Đang hỏi máy tính…")
             }
         }
+        voice?.let { v ->
+            item {
+                Card(color = c.yellow) {
+                    Text("Phòng thoại trên máy tính", color = c.onAccent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(v.first, color = c.onAccent, fontWeight = FontWeight.Black, fontSize = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(v.third, color = c.onAccent, fontSize = 13.sp)
+                    BButton("Vào phòng thoại", { open(v.second) }, color = c.green, icon = Ic.play)
+                }
+            }
+        }
         item {
             Card {
                 H("Vào phòng bằng link", size = 16)
-                Hint("Dán link phòng bạn bè gửi (link Internet hoặc link cùng Wi-Fi), hoặc quét mã QR.")
-                Field("", link, { link = it.trim() }, "https://…/r/…", KeyboardOptions(keyboardType = KeyboardType.Uri))
+                Hint("Dán link phòng xem chung (…/r/…) hoặc phòng thoại (…/v/…) bạn bè gửi, hoặc quét mã QR.")
+                Field("", link, { link = it.trim() }, "https://…/r/… hoặc …/v/…", KeyboardOptions(keyboardType = KeyboardType.Uri))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     BButton("Vào phòng", { open(link) }, Modifier.weight(1f), enabled = link.isNotBlank())
                     BButton("Quét QR", {
@@ -129,6 +153,13 @@ fun PartyScreen(url: String, onClose: () -> Unit) {
     var full by remember { mutableStateOf<View?>(null) }
     var fullCb by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
     var web by remember { mutableStateOf<WebView?>(null) }
+    val isVoice = url.contains("/v/")
+    // trang phòng thoại xin micro → hỏi quyền Android (một lần) rồi mới cho trang dùng
+    var pending by remember { mutableStateOf<PermissionRequest?>(null) }
+    val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        pending?.let { r -> if (ok) r.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) else r.deny() }
+        pending = null
+    }
     DisposableEffect(Unit) {
         PlayerConn.controller?.pause()
         onDispose {
@@ -150,7 +181,7 @@ fun PartyScreen(url: String, onClose: () -> Unit) {
             ) {
                 IconBtn(Ic.back, "Rời phòng", onClose, color = c.surface)
                 Spacer(Modifier.width(10.dp))
-                Text("Xem chung", color = c.onAccent, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                Text(if (isVoice) "Phòng thoại" else "Xem chung", color = c.onAccent, fontWeight = FontWeight.Black, fontSize = 18.sp)
             }
         }
         Box(Modifier.weight(1f).fillMaxWidth().then(if (full == null) Modifier.navigationBarsPadding() else Modifier)) {
@@ -166,6 +197,19 @@ fun PartyScreen(url: String, onClose: () -> Unit) {
                             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
                         }
                         webChromeClient = object : WebChromeClient() {
+                            override fun onPermissionRequest(request: PermissionRequest) {
+                                val host = android.net.Uri.parse(url).host
+                                if (request.origin.host != host || PermissionRequest.RESOURCE_AUDIO_CAPTURE !in request.resources) {
+                                    request.deny(); return
+                                }
+                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                    request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                                } else {
+                                    pending = request
+                                    askMic.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            }
+
                             override fun onShowCustomView(view: View, callback: CustomViewCallback) {
                                 full = view; fullCb = callback
                                 act?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE

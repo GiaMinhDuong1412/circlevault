@@ -437,11 +437,17 @@ def saved_dismiss(body: SavedPick):
 # ------------------------------------------------------------------ xem chung: app điện thoại thấy phòng đang mở trên máy tính
 @router.get("/party")
 def party_room():
+    from . import voice
+    vs = voice.status()
+    vl = vs.get("links") or {}
+    vlink = vl.get("lan") or vl.get("internet")
+    vout = {"name": vs["name"], "online": len(vs["online"]), "talking": sum(1 for m in vs["online"] if m["voice"]),
+            "link": vlink} if vs.get("open") and vlink else None
     st = party.status()
     r = st.get("room")
     if not r:
-        return {"room": None}
+        return {"room": None, "voice": vout}
     links = r.get("links", {})
     return {"room": {"title": r.get("title"), "type": (r.get("source") or {}).get("type"),
                      "members": len(r.get("members") or [])},
-            "links": {k: links[k] for k in ("lan", "internet") if links.get(k)}}
+            "links": {k: links[k] for k in ("lan", "internet") if links.get(k)}, "voice": vout}

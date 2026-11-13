@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: http://127.0.0.1:*; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Phòng thoại</title>
+<style>
+  html,body{margin:0;background:transparent;overflow:hidden;font:700 13px "Be Vietnam Pro","Segoe UI",system-ui,sans-serif;color:#fff;user-select:none}
+  .box{display:flex;flex-direction:column;gap:4px;padding:6px}
+  .head{display:inline-flex;align-self:flex-start;gap:6px;align-items:center;background:rgba(18,18,18,.78);border:2px solid #121212;border-radius:6px;padding:3px 8px;font-size:11.5px;color:#9fe8ff}
+  .row{display:flex;align-items:center;gap:8px;background:rgba(18,18,18,.62);border-radius:20px;padding:3px 10px 3px 3px;align-self:flex-start;max-width:100%;transition:background .1s}
+  .row.talk{background:rgba(18,18,18,.85)}
+  .av{width:28px;height:28px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:13px;border:2px solid #121212;background:var(--c,#19bde8);overflow:hidden;box-sizing:border-box}
+  .av img{width:100%;height:100%;object-fit:cover}
+  .row.talk .av{box-shadow:0 0 0 2px #121212,0 0 0 4px #3be08c}
+  .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px #000}
+  .row:not(.talk) .n{opacity:.8}
+  .ic{color:#ff5a5f;font-size:12px}
+</style>
+</head>
+<body>
+<div class="box" id="box"></div>
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+window.cvOverlay.onState((s) => {
+  const rows = (s.people || []).map((p) => `<div class="row ${p.talk ? 'talk' : ''}">
+    <span class="av" style="--c:${esc(p.color || '#19bde8')}">${p.av ? `<img src="${esc(p.av)}" alt="">` : esc((p.name || '?').slice(0, 1).toUpperCase())}</span>
+    <span class="n" style="${p.color ? 'color:' + esc(p.color) : ''}">${esc(p.name)}</span>${p.deaf ? '<span class="ic">🔇</span>' : p.mute ? '<span class="ic">🎙✕</span>' : ''}</div>`).join('');
+  document.getElementById('box').innerHTML = `<div class="head">🔊 ${esc(s.voice || '')}${s.mute ? ' · mic tắt' : ''}</div>${rows}`;
+});
+</script>
+</body>
+</html>

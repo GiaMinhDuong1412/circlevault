@@ -839,10 +839,10 @@ function refreshView() {
 }
 function route() {
   const v = (location.hash || '#home').slice(1);
-  S.view = ['home', 'queue', 'library', 'music', 'youtube', 'online', 'party', 'translate', 'learn', 'storage'].includes(v) ? v : 'home';
+  S.view = ['home', 'queue', 'library', 'music', 'youtube', 'online', 'party', 'voice', 'translate', 'learn', 'storage'].includes(v) ? v : 'home';
   $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.view === S.view));
   document.body.classList.toggle('view-music', S.view === 'music');
-  document.body.classList.toggle('view-wide', S.view === 'translate' || S.view === 'learn' || S.view === 'youtube');
+  document.body.classList.toggle('view-wide', S.view === 'translate' || S.view === 'learn' || S.view === 'youtube' || S.view === 'voice');
   $$('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== S.view);
   refreshView();
 }

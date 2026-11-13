@@ -42,6 +42,7 @@ sessionStorage.setItem('cv-started','1');if(s&&s!=='brutal')r.dataset.style=s}ca
       <a class="tab" href="#youtube" data-view="youtube">YouTube</a>
       <a class="tab" href="#online" data-view="online">Xem Online</a>
       <a class="tab" href="#party" data-view="party">Xem Chung</a>
+      <a class="tab" href="#voice" data-view="voice">Phòng Thoại</a>
       <a class="tab" href="#translate" data-view="translate">Dịch</a>
       <a class="tab" href="#learn" data-view="learn">Học</a>
       <a class="tab" href="#storage" data-view="storage">Lưu Trữ</a>
@@ -163,6 +164,12 @@ sessionStorage.setItem('cv-started','1');if(s&&s!=='brutal')r.dataset.style=s}ca
         <div id="partyBox" class="main"></div>
       </section>
 
+      <!-- PHÒNG THOẠI -->
+      <section data-panel="voice" class="main" hidden>
+        <div id="vcInfo"></div>
+        <div id="vcFrame" class="vc-frame box"></div>
+      </section>
+
       <!-- DỊCH -->
       <section data-panel="translate" class="main" hidden>
         <div class="sec-title">Dịch truyện &amp; game sang tiếng Việt</div>
@@ -230,5 +237,6 @@ sessionStorage.setItem('cv-started','1');if(s&&s!=='brutal')r.dataset.style=s}ca
 <script src="/static/js/translate.js"></script>
 <script src="/static/js/learn.js"></script>
 <script src="/static/js/youtube.js"></script>
+<script src="/static/js/voicetab.js"></script>
 </body>
 </html>

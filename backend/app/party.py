@@ -322,7 +322,9 @@ async def close_room():
         for ws in list(room.members):
             with contextlib.suppress(Exception):
                 await ws.close()
-    tunnel.stop()
+    from . import voice                      # phòng thoại còn người thì giữ đường hầm
+    if not voice.active():
+        tunnel.stop()
     return status()
 
 
@@ -336,7 +338,9 @@ def start_tunnel():
 
 @router.delete("/tunnel")
 def stop_tunnel():
-    tunnel.stop()
+    from . import voice
+    if not voice.active():                   # phòng thoại còn người thì giữ đường hầm
+        tunnel.stop()
     return status()
 
 

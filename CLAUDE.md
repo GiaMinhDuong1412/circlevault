@@ -76,6 +76,21 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   - `websites.py`: "Trang phim đã lưu" (`/api/web-sites`, chỉ máy này, `DATA/web-sites.json`, trùng tên miền thì thay): nút ☆ Lưu
     trang trên thanh công cụ trình duyệt (`saveSite` lưu gốc tên miền), ô ☆ Lưu ở Xem Online; chip bấm nhanh ở Xem Online (mở trang)
     và Xem Chung → Link trang phim (mở trang + tự tạo phòng).
+  - `voice.py`: **Phòng Thoại** kiểu Discord. Một máy chủ (`DATA/voice/server.json`: tên, `code` mời, `host_key`, kênh `text`/`voice`,
+    `bans` theo uid, `turn`) + tin nhắn `DATA/voice/msgs/<kênh>.jsonl` (gửi 150 tin gần nhất khi vào). Trang `/v/<code>` + WS `/v/<code>/ws`
+    gắn vào `party.party_app` (cùng cổng/đường hầm với Xem Chung; `tunnel.stop` chỉ khi cả hai không dùng). WS: hello/profile/join/leave/
+    sig (chỉ chuyển giữa 2 người CÙNG kênh thoại)/state/speak/chat/del + lệnh chủ phòng (mod smute|move-out|kick|ban, chan add|rename|del|move).
+    Ảnh đại diện giữ trong bộ nhớ, phục vụ `/v/<code>/av/<id>`. API app `/api/voice` (local_only): trạng thái + link, PUT tên/mở-đóng,
+    `/new-link`, `/turn` (Cloudflare: khóa API chỉ ở máy này, bạn bè nhận ICE tạm 24 giờ; hoặc TURN tĩnh), `/tunnel`. `VOICE_MAX`=10/kênh (mesh).
+    Giao diện `frontend/voice.html` + `js/voice.js` + `css/voice.css`: WebRTC perfect negotiation, LỌC GIỌNG ở máy từng người
+    (high-pass 90 Hz → RNNoise/GTCRN/Speex qua `vendor/ns` = @sapphi-red/web-noise-suppressor 0.4.1 → gain → analyser → cổng mic theo
+    ngưỡng tự động/tay hoặc Nhấn để nói → MediaStreamDestination; track gửi đi không đổi khi đổi bộ lọc/micro), nghe ≤100% qua <audio>
+    (giữ khử vọng), >100% qua Web Audio; âm lượng/tắt tiếng riêng theo uid (localStorage). Hồ sơ trong phòng: tên, trạng thái, ảnh (160px),
+    màu, khung (`FRAMES` – CSS tự vẽ `.fr-*`). Tab **Phòng Thoại** (`js/voicetab.js`, `#voice`): link mời/đường hầm/TURN + iframe `?embed=1`
+    giữ nguyên khi đổi tab; iframe ↔ trang cha postMessage (`cvVoiceState` / `cvVoice`). Electron `desktop/src/voice.js`: phím tắt toàn
+    cục Ctrl+Shift+M/D chỉ khi đang trong kênh, Nhấn để nói toàn cục bằng `uiohook-napi` (asarUnpack; chỉ bật khi trong kênh + chế độ PTT),
+    khung nổi `voice-overlay.html` (trong suốt, bấm xuyên qua, hiện khi app không được chọn). Android: `ui/Party.kt` nhận link `/v/`,
+    `onPermissionRequest` → xin RECORD_AUDIO; `/api/phone/party` trả thêm `voice` (link phòng thoại của máy tính).
   - `tunnel.py`: cloudflared quick tunnel → party_app (tải cloudflared vào DATA/bin lần đầu).
   - Tác vụ có cột `headers` (JSON Referer/Origin/User-Agent/Cookie) cho link phim bắt từ trình duyệt → `http_headers` yt-dlp.
   - Tài khoản YouTube: app desktop ghi `DATA/youtube-cookies.txt`; `downloader._account` dùng bản sao cho link YouTube.
@@ -155,7 +170,7 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   `js/watch.js`: tab Xem Online + Xem Chung. `party.html` + `js/party.js`: trang phòng (không dùng app.js).
   `js/translate.js`: tab Dịch – menu nhóm bên trái (`NAV`): Truyện tranh, Truyện chữ / Việt hóa game, Gói Việt hóa có sẵn, Dịch màn hình
   game / Dịch nhanh, Cài đặt. `js/learn.js`: tab Học.
-  Định tuyến bằng hash: `#home #queue #library #music #youtube #online #party #translate #learn #storage`.
+  Định tuyến bằng hash: `#home #queue #library #music #youtube #online #party #voice #translate #learn #storage`.
 - `desktop/` – Electron theo mẫu repo `aq-autotest` (`desktop/`): `main.js` chạy `pythonw -m app` bằng Python nhúng
   (`resources/python`, ._pth có `..\app\backend`), mã ở `resources/app/{backend,frontend}`, ffmpeg + Deno ở `resources/bin`
   (thêm vào PATH backend). Cầu nối trang ↔ app: `window.cvDesktop` (onUpdate/getUpdate/updateAct/pickFolder/restartServer).

@@ -21,6 +21,7 @@ const { createUpdater } = require('./updater');
 const browser = require('./browser');
 const screenTr = require('./screen');
 const miniPlayer = require('./mini');
+const voiceRoom = require('./voice');
 
 const APP_ID = 'vn.circlevault.app';
 const APP_NAME = 'CircleVault';
@@ -179,6 +180,7 @@ function createWindow() {
   });
   if (cfg.maximized) win.maximize();
   miniPlayer.attach(win);
+  voiceRoom.attach(win);
   win.on('page-title-updated', (e, title) => { e.preventDefault(); win.setTitle(title.includes('CircleVault') ? title : APP_NAME); });
   win.once('ready-to-show', () => { if (!SMOKE) win.show(); closeSplash(); });
   const keep = () => { if (!win.isMaximized() && !win.isMinimized()) cfg.bounds = win.getBounds(); cfg.maximized = win.isMaximized(); };
@@ -255,7 +257,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(init);
 }
 app.on('before-quit', () => { quitting = true; });
-app.on('will-quit', () => stopServer());
+app.on('will-quit', () => { voiceRoom.stop(); stopServer(); });
 app.on('window-all-closed', () => app.quit());
 
 async function init() {
@@ -310,6 +312,7 @@ async function init() {
   screenTr.setup({ userData: HOME, port: () => port, icon: ICON, log });
   ipcMain.on('open-screen-translate', () => screenTr.open());
   miniPlayer.setup({ userData: HOME, icon: ICON, log });
+  voiceRoom.setup({ icon: ICON, log });
   createWindow();
   if (SMOKE) return smoke();
   updater = createUpdater({

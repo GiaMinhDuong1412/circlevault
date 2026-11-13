@@ -26,5 +26,8 @@ contextBridge.exposeInMainWorld('cvDesktop', {
   openScreenTranslate: () => ipcRenderer.send('open-screen-translate'),   // khung dịch màn hình game
   musicState: (st) => ipcRenderer.send('music-state', st),               // trình phát mini khi thu nhỏ app
   onMusicCmd: (cb) => ipcRenderer.on('music-cmd', (_e, m) => cb(m)),
+  // phòng thoại: trạng thái (khung nổi khi chơi game, phím tắt toàn cục) ↔ lệnh từ phím tắt toàn cục
+  voiceState: (st) => ipcRenderer.send('voice-state', st),
+  onVoiceCmd: (cb) => ipcRenderer.on('voice-cmd', (_e, c) => cb(c)),
   quit: () => ipcRenderer.send('quit'),
 });

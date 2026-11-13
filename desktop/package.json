@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "electron-updater": "^6.6.2",
-    "@ghostery/adblocker-electron": "^2.11.0"
+    "@ghostery/adblocker-electron": "^2.11.0",
+    "uiohook-napi": "1.5.5"
   },
   "devDependencies": {
     "electron": "38.2.0",
@@ -89,6 +90,9 @@
         "repo": "circlevault-releases",
         "releaseType": "release"
       }
+    ],
+    "asarUnpack": [
+      "node_modules/uiohook-napi/**"
     ]
   }
 }
