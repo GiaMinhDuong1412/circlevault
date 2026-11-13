@@ -123,6 +123,7 @@ fun AppRoot(vm: MainVM = viewModel()) {
         if (vm.nowPlaying) NowPlaying(vm, onClose = { vm.nowPlaying = false })
         vm.playingVideo?.let { VideoScreen(it, onClose = { vm.playingVideo = null }) }
         vm.cutting?.let { CutScreen(vm, it) }
+        vm.adding?.let { PlaylistPicker(vm, it) }
         vm.partyUrl?.let { PartyScreen(it) { vm.partyUrl = null } }
         if (vm.merging) MergeScreen(vm)
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 140.dp))
@@ -193,6 +194,36 @@ private fun BottomNav(vm: MainVM) {
             }
         }
     }
+}
+
+/** Chọn playlist trên điện thoại (hoặc tạo mới) để thêm bài – nút ＋ Playlist. */
+@Composable
+internal fun PlaylistPicker(vm: MainVM, t: MainVM.AddTarget) {
+    val c = cv
+    val lib by vn.circlevault.app.Store.lib.collectAsState()
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = { vm.adding = null },
+        title = { Text(if (t.trackId == null) "Lưu \"${t.title}\" vào playlist" else "Thêm \"${t.title}\" vào playlist", fontWeight = FontWeight.Black, maxLines = 3, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (t.trackId == null) Hint("Bài đang nghe online: lưu về điện thoại rồi tự vào playlist.")
+                if (lib.playlists.isEmpty()) Hint("Điện thoại chưa có playlist nào – tạo mới bên dưới.")
+                lib.playlists.sortedBy { it.name.lowercase() }.forEach { p ->
+                    val inIt = t.trackId != null && t.trackId in p.trackIds
+                    BButton(p.name + "  (${p.trackIds.size})" + if (inIt) " ✓" else "", { vm.addToPlaylist(t, p.id, p.name) },
+                        Modifier.fillMaxWidth(), color = c.surface, enabled = !inIt)
+                }
+                Field("", name, { name = it }, "Hoặc tên playlist mới…")
+                BButton("Tạo & thêm", { if (name.isNotBlank()) vm.addToPlaylist(t, null, name.trim()) }, Modifier.fillMaxWidth(),
+                    color = c.yellow, enabled = name.isNotBlank())
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = { vm.adding = null }) { Text("Đóng", color = c.text) } },
+        containerColor = c.surface, titleContentColor = c.text, textContentColor = c.text,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+    )
 }
 
 @Composable

@@ -177,8 +177,9 @@ fun NowPlaying(vm: vn.circlevault.app.MainVM, onClose: () -> Unit) {
             Spacer(Modifier.weight(1f))
             val online = if (s.mediaId?.startsWith("y") == true) PlayerConn.currentOnline() else null
             if (online != null && vn.circlevault.app.Store.byYt(online.yt) == null) {
-                BButton("Lưu về máy", { vm.saveOnline(listOf(online), null) }, small = true, icon = Ic.download, color = c.yellow)
+                BButton("Lưu", { vm.saveOnline(listOf(online), null) }, small = true, icon = Ic.download, color = c.yellow)
             }
+            BButton("＋ Playlist", { vm.addCurrentToPlaylist() }, small = true, color = c.surface)
             BButton("EQ", { eqOpen = true }, small = true, icon = Ic.eq, color = if (vn.circlevault.app.Eq.own) c.violet else c.surface)
         }
         Box(Modifier.fillMaxWidth(0.85f).aspectRatio(1f).brutal(c.yellow, c.ink, shadow = 6.dp, radius = 10.dp, border = 3.dp), contentAlignment = Alignment.Center) {

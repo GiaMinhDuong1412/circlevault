@@ -279,9 +279,21 @@ function renderDiscover() {
     <button class="btn sm plain" type="button" id="discRefresh">⟳ Làm mới gợi ý</button>
     <label class="check"><input type="checkbox" id="autoOn" ${M.settings.autoplay !== false ? 'checked' : ''}> Hết danh sách thì tự phát bài tương tự</label>`;
   if (!d) return loadDiscover(false);
+  // vẽ lại (vd. khi bấm phát một bài) không được kéo các hàng trượt ngang về đầu: nhớ vị trí cuộn từng hàng rồi đặt lại
+  const keep = [...box.querySelectorAll('.dc-shelf')].map(s => s.scrollLeft);
   if (!d.sections.length || d.error && d.sections.every(s => s.kind === 'moods')) {
     box.innerHTML = `<div class="empty"><h3>Chưa lấy được gợi ý</h3><p>${esc(d.error || 'Kiểm tra mạng rồi bấm Làm mới gợi ý.')}</p></div>` + (d.sections.length ? discSections(d) : '');
   } else box.innerHTML = discSections(d);
+  restoreShelves(box, keep);
+}
+function restoreShelves(box, keep) {
+  if (!keep.length) return;
+  box.querySelectorAll('.dc-shelf').forEach((s, i) => {
+    if (!keep[i]) return;
+    s.style.scrollSnapType = 'none';          // tránh bị "hít" sang thẻ khác khi đặt lại vị trí
+    s.scrollLeft = keep[i];
+    requestAnimationFrame(() => { s.style.scrollSnapType = ''; });
+  });
 }
 function discSections(d) {
   return `<div class="disc">${d.sections.map((s, si) => {
@@ -780,10 +792,13 @@ async function initOnce() {
 }
 
 /* Bài điện thoại vừa lưu (YouTube) mà máy tính chưa có → hỏi rồi tải về ổ HDD */
-async function loadPhoneSaved() {
+async function loadPhoneSaved(quiet) {
   const box = $('#phoneSaved'); if (!box) return;
   let rows = [];
   try { rows = await api('/api/phone/saved'); } catch (e) { box.hidden = true; return; }
+  const sig = rows.map(r => r.yt).join(',');
+  if (quiet && sig === M.psSig) return;            // hỏi lại định kỳ: không đổi thì giữ nguyên (không mất ô đã bỏ chọn)
+  M.psSig = sig;
   box.hidden = !rows.length;
   if (!rows.length) return;
   const dev = [...new Set(rows.map(r => r.device))].join(', ');
@@ -815,6 +830,8 @@ $('#toDrive').addEventListener('click', () => {
   window.CV.drive.upload({track_ids: M.tracks.filter(t => t.id).map(t => t.id)});
 });
 
+// điện thoại lưu bài lúc nào thì báo lúc đó: đang mở Nghe Nhạc thì 30 giây hỏi lại một lần
+setInterval(() => { if (location.hash === '#music' && !document.hidden) loadPhoneSaved(true); }, 30000);
 window.CV.views.music = async () => {
   await initOnce();
   renderSide(); loadPlaylists(); loadTracks(); loadPhoneSaved();

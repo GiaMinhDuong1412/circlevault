@@ -343,6 +343,7 @@ private fun TrackCard(vm: MainVM, t: OTrack, playingId: String?, onPlay: () -> U
             }
             DropdownMenu(menu, { menu = false }, containerColor = c.surface) {
                 DropdownMenuItem({ Text("Phát") }, { menu = false; onPlay() })
+                DropdownMenuItem({ Text("Thêm vào playlist") }, { menu = false; vm.adding = MainVM.AddTarget(t.title, t.id, null) })
                 DropdownMenuItem({ Text("Cắt đoạn") }, { menu = false; vm.cutting = t })
                 DropdownMenuItem({ Text(if (selected) "Bỏ chọn ghép" else "Chọn để ghép") }, { menu = false; vm.toggleSelect(t.id) })
                 DropdownMenuItem({ Text("Lưu lên Google Drive") }, { menu = false; vm.uploadDrive(listOf(t), null) })

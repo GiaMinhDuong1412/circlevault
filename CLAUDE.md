@@ -114,7 +114,9 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     Playlist = gói .zip không nén ghi thẳng ra luồng (thư mục `<tên>/` + .m3u8, Content-Length tính bằng lượt chạy thử, zip64 khi >4 GB)
     hoặc tải từng bài `?n=` + `.m3u8`. API chỉ đọc. `GET /api/phone/playlists` trả kèm `ids` (bài còn file, đúng thứ tự) để app
     Android so với bài đã tải: nút "Cập nhật +N" / "Cập nhật tất cả" (`MainVM.plSync`, `downloadPlaylist` lấy lại danh sách,
-    giữ bài id âm của điện thoại, không xóa file).
+    giữ bài id âm của điện thoại, không xóa file). Nút "＋ Playlist" trên màn hình đang phát + menu bài (`MainVM.adding`,
+    `PlaylistPicker`): bài có trên điện thoại thêm ngay, bài online lưu về (`YouTube.saveJob` kèm playlist) – playlist tạo trên điện
+    thoại có id âm (`playlistIdFor("pl:"+tên)`); báo máy tính kèm tên playlist → khung "Điện thoại vừa lưu…" (music.js hỏi lại 30 giây/lần).
   - `devices.py`: ghép thiết bị cho chế độ Wi-Fi – middleware `Guard` (máy tính 127.0.0.1 luôn qua; thiết bị khác cần cookie `cv_dev`,
     lưu băm SHA-256 ở `DATA/devices.json`; quyền `phone` = chỉ /dt + /api/phone/*, `full` = như máy tính). Mã ghép 8 ký tự, 10 phút,
     dùng một lần, sai 20 lần/10 phút thì khóa. Tab Lưu Trữ: danh sách thiết bị (đổi quyền, đổi tên, thu hồi) + nút Thêm thiết bị (QR). Thử tên file tiếng Việt bằng Playwright trên Linux cần `LANG=C.UTF-8`.
@@ -124,7 +126,8 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     con, nhớ file đã tải (`uploaded`) để không trùng. Nút "☁ Lưu lên Drive" ở Nghe Nhạc. Hướng dẫn tạo client: artifact "Kết nối Google Drive".
   - Video tải về luôn ra .mp4 (`FFmpegVideoRemuxer`, cấu hình `video_format`: mp4 | original).
   - `ytdlp_update.py`: tải wheel yt-dlp (+ yt-dlp-ejs đúng phiên bản) từ PyPI vào `DATA/pylib`; `app/__init__.py` ưu tiên thư mục này.
-- `frontend/` – JS thuần, không build. Theme màu: `THEMES` trong app.js + khối `:root[data-theme=…]` trong app.css (localStorage `cv-theme`, không có = theo Windows). `js/app.js` định nghĩa `window.CV` (api, esc, toast, fmt…, `views`) dùng chung cho
+- `frontend/` – JS thuần, không build. Thanh cuộn theo theme: `::-webkit-scrollbar` trong app.css (KHÔNG đặt `scrollbar-color`/
+  `scrollbar-width` chung – Chromium mới có hai thuộc tính đó thì bỏ qua ::-webkit-scrollbar). Khám phá vẽ lại thì giữ `scrollLeft` từng `.dc-shelf`. Theme màu: `THEMES` trong app.js + khối `:root[data-theme=…]` trong app.css (localStorage `cv-theme`, không có = theo Windows). `js/app.js` định nghĩa `window.CV` (api, esc, toast, fmt…, `views`) dùng chung cho
   `js/eq.js` (Engine Web Audio + giao diện EQ 10 dải, preset `PRESETS`) và `js/music.js` (thư viện nhạc, thanh phát nhạc).
   `js/watch.js`: tab Xem Online + Xem Chung. `party.html` + `js/party.js`: trang phòng (không dùng app.js).
   `js/translate.js`: tab Dịch – menu nhóm bên trái (`NAV`): Truyện tranh, Truyện chữ / Việt hóa game, Gói Việt hóa có sẵn, Dịch màn hình

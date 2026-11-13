@@ -145,6 +145,40 @@ class MainVM(app: Application) : AndroidViewModel(app) {
         toast(if (n == 0) "Đang lưu rồi." else "Đang lưu $n bài về điện thoại${pl?.let { " (playlist \"${it.second}\")" } ?: ""}.")
     }
 
+    /* ---- thêm vào playlist trên điện thoại (nút ＋ Playlist): bài đã có thì thêm ngay, bài online thì lưu về máy rồi thêm */
+    data class AddTarget(val title: String, val trackId: Int?, val online: OnlineTrack?)
+    var adding by mutableStateOf<AddTarget?>(null)
+
+    fun addCurrentToPlaylist() {
+        val ctl = PlayerConn.controller ?: return
+        val m = ctl.currentMediaItem ?: return
+        val title = m.mediaMetadata.title?.toString() ?: "bài đang nghe"
+        val id = m.mediaId
+        adding = when {
+            id.startsWith("t") -> AddTarget(title, id.drop(1).toIntOrNull(), null)
+            id.startsWith("y") -> PlayerConn.currentOnline()?.let { o -> AddTarget(title, Store.byYt(o.yt)?.id, o) }
+            id.startsWith("g") -> Store.byGd(id.drop(1))?.let { AddTarget(title, it.id, null) }
+            else -> null
+        }
+        if (adding == null) toast("Bài này chưa lưu về điện thoại – tải về trước rồi thêm vào playlist.")
+    }
+
+    fun addToPlaylist(t: AddTarget, pid: Int?, name: String) {
+        val id = pid ?: YouTube.playlistIdFor("pl:" + name.trim().lowercase())
+        adding = null
+        if (t.trackId != null && t.trackId in Store.lib.value.tracks) {
+            val pl = Store.lib.value.playlists.find { it.id == id }
+            if (pl != null && t.trackId in pl.trackIds) { toast("\"${t.title}\" đã có trong \"$name\"."); return }
+            Store.addToPlaylist(id, name, t.trackId)
+            toast("Đã thêm vào playlist \"$name\".")
+            return
+        }
+        val o = t.online ?: return
+        if (!enoughSpace(6L * 1024 * 1024)) return
+        val n = Downloads.enqueue(ctx, listOf(YouTube.saveJob(o, id to name)))
+        toast(if (n == 0) "Đang lưu bài này rồi." else "Đang lưu \"${o.title}\" về điện thoại, xong sẽ vào playlist \"$name\". Máy tính cũng được báo để tải vào playlist cùng tên.")
+    }
+
     /* ---- Online: 0 YouTube · 1 Google Drive · 2 Xem chung */
     var onlineSeg by mutableIntStateOf(0)
     var partyUrl by mutableStateOf<String?>(null)
