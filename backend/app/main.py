@@ -214,7 +214,8 @@ def youtube_status():
 
 @app.delete("/api/youtube")
 def youtube_logout():
-    config.YT_COOKIES.unlink(missing_ok=True)
+    for f in (config.YT_COOKIES, config.YT_COOKIES_BROWSER, config.YT_COOKIES_APP):
+        f.unlink(missing_ok=True)
     return youtube_status()
 
 

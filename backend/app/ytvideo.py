@@ -9,6 +9,7 @@ Kênh đăng ký, Xem sau, Đã thích, Lịch sử. Chỉ dùng trên chính m�
 """
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
@@ -100,7 +101,12 @@ def feed(kind: str = "home", refresh: bool = False):
         for k in [k for k in _cache if k.startswith(("feed:", "home:"))]:
             _cache.pop(k, None)
     if kind == "home":
-        return {"kind": kind, "title": title, "logged_in": True, "topics": TOPICS, **_cached("home:all", _home, 300)}
+        res = _cached("home:all", _home, 300)
+        if not res.get("items"):              # lỗi / trang chủ rỗng: chỉ nhớ 45 giây để lần sau thử lại
+            with _lock:
+                if "home:all" in _cache:
+                    _cache["home:all"] = (time.time() - 300 + 45, res)
+        return {"kind": kind, "title": title, "logged_in": True, "topics": TOPICS, **res}
     items = _cached("feed:" + kind, lambda: _list(url, 60)[1], 300 if kind == "subs" else TTL)
     return {"kind": kind, "title": title, "logged_in": True, "items": items, "topics": TOPICS}
 
@@ -114,6 +120,48 @@ def _try_list(url: str, n: int, warn: list | None = None) -> list[dict]:
         return []
 
 
+HIST = config.DATA / "yt-xem-gan-day.json"     # video đã mở trong tab YouTube (để gợi ý khi YouTube không trả trang chủ)
+
+
+def _remember(d: dict) -> None:
+    try:
+        rows = json.loads(HIST.read_text(encoding="utf-8")) if HIST.exists() else []
+    except (OSError, ValueError):
+        rows = []
+    rows = [r for r in rows if isinstance(r, dict) and r.get("id") != d["id"]]
+    rows.insert(0, {"id": d["id"], "title": d.get("title") or "", "channel": d.get("channel") or "", "at": int(time.time())})
+    try:
+        tmp = HIST.with_suffix(".tmp")
+        tmp.write_text(json.dumps(rows[:40], ensure_ascii=False), encoding="utf-8")
+        tmp.replace(HIST)
+    except OSError:
+        pass
+
+
+def _local_sections() -> list[dict]:
+    """Gợi ý không cần đăng nhập: "video tiếp theo" của YouTube cho mấy video mở gần đây trong app; chưa mở video nào thì theo chủ đề."""
+    try:
+        rows = json.loads(HIST.read_text(encoding="utf-8")) if HIST.exists() else []
+    except (OSError, ValueError):
+        rows = []
+    rows = [r for r in rows if isinstance(r, dict) and VID.match(str(r.get("id") or ""))][:3]
+    with ThreadPoolExecutor(3) as ex:
+        nexts = list(ex.map(lambda r: _cached("n:" + r["id"], lambda: _next(r["id"]), 1800), rows))
+    seen = {r["id"] for r in rows}
+    out = []
+    for r, n in zip(rows, nexts):
+        items = [x for x in ((n or {}).get("related") or []) if x["id"] not in seen]
+        seen.update(x["id"] for x in items)
+        if items:
+            out.append({"title": f"Vì bạn đã xem “{(r.get('title') or 'video')[:60]}”", "items": items[:24]})
+    if not out:
+        for t in TOPICS[:2]:
+            items = _cached("q:" + t.lower(), lambda t=t: _try_list(f"ytsearch24:{t}", 24))
+            if items:
+                out.append({"title": f"Chủ đề: {t}", "items": items})
+    return out
+
+
 def _home() -> dict:
     """Trang chủ YouTube (đề xuất). YouTube trả trang chủ RỖNG khi tài khoản tắt Lịch sử xem (hoặc cookie không còn hiệu lực)
     → tự ghép đề xuất: video mới từ kênh đăng ký + video giống những video đã xem / đã thích gần đây."""
@@ -122,14 +170,19 @@ def _home() -> dict:
     inner_note = ""
     try:                                     # như trang chủ youtube.com (browse FEwhat_to_watch)
         raw, inner_note = ytinner.home()
-        seen0: set[str] = set()
-        for e in raw:
-            v = _v(e)
-            if v and v["id"] not in seen0:
-                seen0.add(v["id"])
-                items.append(v)
+    except ytinner.Stale as e:               # cookie hết hiệu lực: các mục cần đăng nhập đều rỗng → đề xuất từ video đã mở trong app
+        return {"items": [], "stale": True, "sections": _local_sections(),
+                "note": f"{e} Mở Chrome/Edge (có tiện ích CircleVault) cho tiện ích gửi lại đăng nhập, hoặc bấm Đăng nhập YouTube lại. "
+                        "Trong lúc chờ, CircleVault gợi ý từ những video bạn mở gần đây."}
     except Exception as e:  # noqa: BLE001
+        raw = []
         inner_note = downloader.clean(str(e))[:200]
+    seen0: set[str] = set()
+    for e in raw:
+        v = _v(e)
+        if v and v["id"] not in seen0:
+            seen0.add(v["id"])
+            items.append(v)
     if items:
         return {"items": items}
     if inner_note:
@@ -168,8 +221,8 @@ def _home() -> dict:
         sections.append({"title": "Giống video bạn đã xem", "items": similar(hist)})
     if liked:
         sections.append({"title": "Giống video bạn đã thích", "items": similar(liked)})
-    sections = [x for x in sections if x["items"]]
-    why = next((w for w in warn if re.search(r"cookie|sign in|log in|logged|YouTube báo|Không thấy", w, re.I)), "")
+    sections = [x for x in sections if x["items"]] or _local_sections()
+    why = next((w for w in warn if re.search(r"cookie|sign in|log in|logged|YouTube báo", w, re.I)), "")
     note = ("YouTube không trả về trang chủ đề xuất" + (f" ({why[:160]})" if why else
             " – thường do tài khoản đang TẮT Lịch sử xem (YouTube khi đó để trống trang chủ)") +
             ". CircleVault tự ghép đề xuất từ kênh đăng ký và video bạn đã xem/thích.")
@@ -244,6 +297,8 @@ def video(v: str):
     if not VID.match(v or ""):
         raise HTTPException(400, "Mã video không hợp lệ.")
     nx = _cached("n:" + v, lambda: _next(v), 1800)
+    if nx and nx.get("title"):
+        _remember(nx)
     if nx and nx["related"]:
         return nx
     try:
@@ -252,6 +307,8 @@ def video(v: str):
         if nx:
             return nx
         raise
+    if not nx:
+        _remember(det)
     if nx:
         det = {**det, **{k: nx[k] for k in ("title", "channel", "channel_id", "views", "likes", "date", "description") if nx.get(k)}}
     words = re.sub(r"[\[\](){}|•·\-–—_/\\\"'“”#@!?.,:;]+", " ", det["title"]).split()

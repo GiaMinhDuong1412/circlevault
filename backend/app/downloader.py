@@ -85,15 +85,45 @@ def youtube_logged_in() -> bool:
     return any(k in text for k in ("\tSAPISID\t", "\t__Secure-3PAPISID\t", "\tLOGIN_INFO\t"))
 
 
+def youtube_cookie_candidates() -> list:
+    """Các file cookie YouTube có đăng nhập: file chính trước, rồi bản riêng của trình duyệt / cửa sổ app (mới nhất trước).
+    Bỏ bản trùng nội dung."""
+    out, seen = [], set()
+    rest = sorted((p for p in (config.YT_COOKIES_BROWSER, config.YT_COOKIES_APP) if p.exists()),
+                  key=lambda p: p.stat().st_mtime, reverse=True)
+    for p in [config.YT_COOKIES, *rest]:
+        try:
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if not any(k in text for k in ("\tSAPISID\t", "\t__Secure-3PAPISID\t", "\tLOGIN_INFO\t")):
+            continue
+        key = hash(text)
+        if key not in seen:
+            seen.add(key)
+            out.append(p)
+    return out
+
+
+def promote_cookies(path) -> None:
+    """Bản cookie `path` còn hiệu lực còn file chính thì không: chép đè file chính (mọi chức năng YouTube dùng file chính)."""
+    if path == config.YT_COOKIES:
+        return
+    tmp = config.YT_COOKIES.with_suffix(".promote")
+    shutil.copyfile(path, tmp)
+    tmp.replace(config.YT_COOKIES)
+
+
 @contextlib.contextmanager
-def _account(cfg: dict, url: str, tag: str):
+def _account(cfg: dict, url: str, tag: str, cookiefile=None):
     """Link YouTube + đã đăng nhập trong app → dùng bản sao file cookie (yt-dlp ghi đè cookie khi xong việc,
-    dùng bản sao để không đụng file app đang ghi). Không thì dùng cookie trình duyệt nếu người dùng chọn."""
+    dùng bản sao để không đụng file app đang ghi). Không thì dùng cookie trình duyệt nếu người dùng chọn.
+    `cookiefile`: thử một bản cookie khác (youtube_cookie_candidates)."""
     is_yt = re.search(r"(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$", urlparse(url).netloc.split(":")[0].lower())
-    if is_yt and cfg.get("use_youtube_account", True) and youtube_logged_in():
+    if is_yt and cfg.get("use_youtube_account", True) and (cookiefile or youtube_logged_in()):
         tmp = config.DATA / "tmp" / f"cookies-{tag}.txt"
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(config.YT_COOKIES, tmp)
+        shutil.copyfile(cookiefile or config.YT_COOKIES, tmp)
         try:
             yield {"cookiefile": str(tmp), "cookiesfrombrowser": None}
         finally:

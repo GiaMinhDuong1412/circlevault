@@ -35,6 +35,11 @@ let importing = false;
 let fileSeen = 0;            // thời điểm sửa file cookie mà cửa sổ YouTube đã đồng bộ (tự ghi hoặc đã nạp)
 
 const cookieFile = () => path.join(ctx.dataDir, 'youtube-cookies.txt');
+const appCookieFile = () => path.join(ctx.dataDir, 'youtube-cookies-app.txt');            // bản riêng của cửa sổ YouTube trong app
+const browserCookieFile = () => path.join(ctx.dataDir, 'youtube-cookies-trinh-duyet.txt'); // backend ghi khi tiện ích Chrome gửi
+// Tiện ích trình duyệt vừa gửi (≤ 3 giờ): file chính là của trình duyệt – cửa sổ app chỉ ghi bản riêng, không ghi đè qua lại
+// (Google xoay vòng cookie ở từng nơi, ghi đè qua lại làm file chính lúc thì hết hiệu lực → YouTube coi như chưa đăng nhập).
+const browserOwned = () => { try { return Date.now() - fs.statSync(browserCookieFile()).mtimeMs < 3 * 3600e3; } catch { return false; } };
 const fileTime = () => { try { return fs.statSync(cookieFile()).mtimeMs; } catch { return 0; } };
 // File mới hơn lần đồng bộ gần nhất = tiện ích trình duyệt / hộp Đăng nhập YouTube vừa gửi đăng nhập mới.
 const fileNewer = () => fileTime() > fileSeen + 1;
@@ -78,11 +83,13 @@ async function exportYoutubeCookies({ write = true } = {}) {
           Math.floor(c.expirationDate || 0), c.name, c.value].join('\t'));
       }
       fs.mkdirSync(ctx.dataDir, { recursive: true });
-      fs.writeFileSync(file + '.tmp', lines.join('\n') + '\n', { mode: 0o600 });
-      fs.renameSync(file + '.tmp', file);
-      fileSeen = fileTime();
+      const body = lines.join('\n') + '\n';
+      const put = (f) => { fs.writeFileSync(f + '.tmp', body, { mode: 0o600 }); fs.renameSync(f + '.tmp', f); };
+      put(appCookieFile());
+      if (lastLogin !== true || !browserOwned()) { put(file); fileSeen = fileTime(); }   // vừa đăng nhập trong app thì luôn ghi
     } else if (!logged && write && lastLogin === true && fs.existsSync(file)) {   // vừa đăng xuất trong cửa sổ YouTube (file có thể lấy từ trình duyệt khác)
       fs.unlinkSync(file);
+      try { fs.unlinkSync(appCookieFile()); } catch { /* chưa có */ }
     }
     if (lastLogin !== logged) {
       if (lastLogin !== null) ctx.log('YouTube', logged ? 'đã đăng nhập' : 'đã đăng xuất');
@@ -178,7 +185,7 @@ async function youtubeLogout() {
   await ses.clearStorageData();
   await ses.clearCache();
   await clearMainYoutube().catch(() => {});
-  try { fs.unlinkSync(path.join(ctx.dataDir, 'youtube-cookies.txt')); } catch { /* chưa có */ }
+  for (const f of [cookieFile(), appCookieFile(), browserCookieFile()]) { try { fs.unlinkSync(f); } catch { /* chưa có */ } }
   lastLogin = false;
   ctx.notifyMain('youtube-login', false);
   if (wins.youtube) wins.youtube.view.webContents.loadURL(HOME.youtube);

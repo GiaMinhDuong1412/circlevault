@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import threading
 import time
 from urllib.parse import parse_qs, urlparse
@@ -553,6 +554,10 @@ def _save_jar(jar, source: str) -> dict:
     tmp.parent.mkdir(parents=True, exist_ok=True)
     out.save(str(tmp))
     tmp.replace(config.YT_COOKIES)
+    try:                                          # bản riêng của trình duyệt (cửa sổ app có thể ghi đè file chính)
+        shutil.copyfile(config.YT_COOKIES, config.YT_COOKIES_BROWSER)
+    except OSError:
+        pass
     changed = _account_key(config.YT_COOKIES.read_text(encoding="utf-8", errors="ignore")) != before
     if changed:                                   # tài khoản khác → lấy lại playlist
         try:

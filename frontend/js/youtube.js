@@ -67,7 +67,12 @@ async function render() {
        <span class="sp"></span><button class="btn sm plain" type="button" data-yback>← Quay lại</button></div>`
     : `<div class="yt-h"><h3>${esc(d.title)}</h3>${p.t === 'feed' ? '<button class="btn sm plain" type="button" data-yrefresh>⟳ Làm mới</button>' : ''}</div>`;
   const secs = (d.sections || []).filter(x => x.items.length);
-  body.innerHTML = title + (d.note ? `<p class="hint yt-note">${esc(d.note)}</p>` : '')
+  const note = d.stale
+    ? `<div class="box pcard yt-stale"><b>⚠ YouTube đang coi như bạn chưa đăng nhập</b><p class="hint">${esc(d.note)}</p>
+       <div class="btn-row"><button class="btn sm red" type="button" data-ylogin>Đăng nhập YouTube lại</button>
+       <button class="btn sm plain" type="button" data-yrefresh>⟳ Thử lại</button></div></div>`
+    : d.note ? `<p class="hint yt-note">${esc(d.note)}</p>` : '';
+  body.innerHTML = title + note
     + (d.items.length ? `<div class="yt-grid">${d.items.map(v => card(v)).join('')}</div>`
       : secs.length ? secs.map(x => `<h4 class="yt-sec">${esc(x.title)}</h4><div class="yt-grid">${x.items.map(v => card(v)).join('')}</div>`).join('')
       : `<div class="empty"><h3>Chưa có video nào</h3>${p.t === 'feed' ? '<p>Thử bấm Làm mới, hoặc tìm video ở ô phía trên. Nếu vẫn trống: Đăng nhập YouTube lại (đăng nhập có thể đã hết hạn).</p>' : ''}</div>`);
@@ -359,6 +364,7 @@ document.addEventListener('click', e => {
   if (q) { $('#ytSug') && ($('#ytSug').hidden = true); return go({t: 'search', q: q.dataset.yq}); }
   if (e.target.closest('[data-yback]')) return back();
   if (e.target.closest('[data-yretry]')) return render();
+  if (e.target.closest('[data-ylogin]')) return window.CV.ytLogin && window.CV.ytLogin();
   if (e.target.closest('[data-yrefresh]')) { Y.page.refresh = true; return render(); }
   if (e.target.closest('[data-yembed]')) { stopPlayer(); $('#ywPlayer').innerHTML = embedHtml(Y.page.v, encodeURIComponent(location.origin)); $('#ywNote').hidden = true; return; }
   const a = e.target.closest('[data-ya]');

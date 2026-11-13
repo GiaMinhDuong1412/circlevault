@@ -79,6 +79,11 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   - `tunnel.py`: cloudflared quick tunnel → party_app (tải cloudflared vào DATA/bin lần đầu).
   - Tác vụ có cột `headers` (JSON Referer/Origin/User-Agent/Cookie) cho link phim bắt từ trình duyệt → `http_headers` yt-dlp.
   - Tài khoản YouTube: app desktop ghi `DATA/youtube-cookies.txt`; `downloader._account` dùng bản sao cho link YouTube.
+    Bản riêng từng nguồn: `youtube-cookies-trinh-duyet.txt` (`_save_jar`: tiện ích/hộp Đăng nhập) và `youtube-cookies-app.txt` (browser.js);
+    tiện ích vừa gửi (≤ 3 giờ) thì cửa sổ app chỉ ghi bản riêng, không ghi đè file chính (Google xoay vòng cookie từng nơi). `ytinner.home` thử
+    lần lượt `downloader.youtube_cookie_candidates()`, bản nào YouTube coi là chưa đăng nhập (`logged_out`: mất LOGIN_INFO, `loggedOut`,
+    `LOGGED_IN` false) thì bỏ, bản dùng được thì `promote_cookies` chép đè file chính; hết bản → `ytinner.Stale` → `_home` trả `stale` +
+    `_local_sections` ("video tiếp theo" của video mở gần đây trong tab YouTube, `DATA/yt-xem-gan-day.json`).
     Google hay chặn đăng nhập trong cửa sổ nhúng → hộp "Đăng nhập YouTube" (`CV.ytLogin`, watch.js): lấy cookie từ trình duyệt
     của người dùng (`POST /api/youtube/import`, yt-dlp đọc) hoặc file cookies.txt (`/api/youtube/import-file`), rồi
     `cvDesktop.youtubeImport` nạp vào partition `persist:youtube`. Không giả danh trình duyệt để lách kiểm tra của Google.

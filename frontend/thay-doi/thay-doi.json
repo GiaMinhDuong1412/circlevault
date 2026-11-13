@@ -2,6 +2,16 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-13-yt-dang-nhap-ben",
+      "date": "2026-11-13",
+      "title": "Trang chủ YouTube không còn lúc có lúc không",
+      "items": [
+        "Sửa lỗi trang chủ YouTube thỉnh thoảng trống (\"Không thấy video trong trang chủ\"): Google tự làm mới đăng nhập ở Chrome và ở cửa sổ YouTube trong app, hai nơi ghi đè nhau nên có lúc app dùng bản đã hết hiệu lực. Nay app giữ riêng từng bản và tự chọn bản còn đăng nhập.",
+        "Khi cả hai bản đều hết hiệu lực: hiện khung cảnh báo có nút Đăng nhập YouTube lại / Thử lại, kèm gợi ý từ những video bạn mở gần đây (không cần đăng nhập) thay vì trang trống.",
+        "Lỗi trang chủ chỉ nhớ 45 giây, bấm Làm mới là thử lại ngay."
+      ]
+    },
+    {
       "id": "2026-11-13-yt-dieu-khien",
       "date": "13/11/2026",
       "title": "Trình phát YouTube mới & cuộn giấy Có gì mới",

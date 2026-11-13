@@ -16,6 +16,9 @@ CONFIG_PATH = DATA / "config.json"
 ARCHIVE_PATH = DATA / "archive.txt"   # ID các video đã tải, để không tải trùng
 DB_PATH = DATA / "circlevault.db"
 YT_COOKIES = DATA / "youtube-cookies.txt"  # app desktop ghi sau khi đăng nhập YouTube trong cửa sổ YouTube
+# Bản riêng từng nguồn (file chính bị ghi qua lại; Google xoay vòng cookie nên một trong hai có thể đã hết hiệu lực):
+YT_COOKIES_BROWSER = DATA / "youtube-cookies-trinh-duyet.txt"   # tiện ích Chrome/Edge, hộp Đăng nhập YouTube
+YT_COOKIES_APP = DATA / "youtube-cookies-app.txt"               # cửa sổ YouTube trong app (browser.js)
 
 KINDS = ("youtube", "film", "comic", "novel", "other")
 QUALITIES = ("best", "2160", "1440", "1080", "720", "480", "audio")

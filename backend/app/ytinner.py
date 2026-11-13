@@ -19,16 +19,30 @@ VIDEO_KEYS = ("videoRenderer", "compactVideoRenderer", "gridVideoRenderer", "pla
 
 
 @contextlib.contextmanager
-def _tab():
-    """IE YoutubeTab đã khởi tạo, dùng cookie tài khoản (bản sao) nếu đã đăng nhập."""
+def _tab(cookiefile=None):
+    """IE YoutubeTab đã khởi tạo, dùng cookie tài khoản (bản sao) nếu đã đăng nhập. `cookiefile`: thử bản cookie khác."""
     cfg = config.load()
     log = downloader._Logger()
     opts = {**downloader._base_opts(cfg), "logger": log, "skip_download": True}
-    with downloader._account(cfg, "https://www.youtube.com/", f"yi-{time.time_ns()}") as acc, \
+    with downloader._account(cfg, "https://www.youtube.com/", f"yi-{time.time_ns()}", cookiefile) as acc, \
             yt_dlp.YoutubeDL({**opts, **acc}) as ydl:
         ie = ydl.get_info_extractor("YoutubeTab")
         ie.initialize()
         yield ie, log
+
+
+def logged_out(ie, log, data=None, ytcfg=None) -> bool:
+    """Gửi cookie đăng nhập nhưng YouTube coi như CHƯA đăng nhập (cookie đã bị Google xoay vòng / hết hiệu lực)."""
+    if not getattr(ie, "_passed_auth_cookies", False):
+        return False
+    if not ie._has_auth_cookies:                       # YouTube xóa LOGIN_INFO trong phản hồi
+        return True
+    if any("no longer valid" in w for w in log.warnings):
+        return True
+    ctx = ((data or {}).get("responseContext") or {}).get("mainAppWebResponseContext") or {}
+    if ctx.get("loggedOut") is True:
+        return True
+    return (ytcfg or {}).get("LOGGED_IN") is False
 
 
 def _walk(node, ie, out: list, conts: list, depth: int = 0) -> None:
@@ -66,10 +80,31 @@ def _walk(node, ie, out: list, conts: list, depth: int = 0) -> None:
             _walk(x, ie, out, conts, depth + 1)
 
 
+class Stale(Exception):
+    """Mọi bản cookie đăng nhập đều đã hết hiệu lực."""
+
+
 def home(max_pages: int = 3) -> tuple[list[dict], str]:
-    """Trang chủ (đề xuất) như youtube.com. Trả (danh sách mục yt-dlp, ghi chú chẩn đoán)."""
-    with _tab() as (ie, log):
+    """Trang chủ (đề xuất) như youtube.com. Trả (danh sách mục yt-dlp, ghi chú chẩn đoán).
+    Thử lần lượt các bản cookie (file chính, bản của trình duyệt, bản của cửa sổ app); bản nào còn đăng nhập thì dùng và
+    chép đè file chính. Không bản nào còn hiệu lực → Stale."""
+    cands = downloader.youtube_cookie_candidates() or [None]
+    for path in cands:
+        res = _home_with(path, max_pages)
+        if res is None:                       # cookie này YouTube coi như chưa đăng nhập → thử bản khác
+            continue
+        if path is not None and path != cands[0]:
+            downloader.promote_cookies(path)
+            _cfg_cache.clear()
+        return res
+    raise Stale("Đăng nhập YouTube trong app đã hết hiệu lực (Google tự làm mới phiên đăng nhập).")
+
+
+def _home_with(cookiefile, max_pages: int):
+    with _tab(cookiefile) as (ie, log):
         data, ytcfg = ie._extract_data("https://www.youtube.com/feed/recommended", "FEwhat_to_watch", fatal=True)
+        if cookiefile is not None and logged_out(ie, log, data, ytcfg):
+            return None
         out, conts = [], []
         _walk(data, ie, out, conts)
         headers = ie.generate_api_headers(ytcfg=ytcfg)
@@ -128,11 +163,16 @@ _cfg_cache: dict = {}
 
 
 def _ytcfg(ie) -> dict:
-    hit = _cfg_cache.get("web")
+    try:                                       # đổi file cookie (đăng nhập mới) thì lấy lại ytcfg
+        key = f"web:{config.YT_COOKIES.stat().st_mtime}"
+    except OSError:
+        key = "web:-"
+    hit = _cfg_cache.get(key)
     if hit and time.time() - hit[0] < 1800:
         return hit[1]
     ytcfg = ie._download_ytcfg("web", "home") or {}
-    _cfg_cache["web"] = (time.time(), ytcfg)
+    _cfg_cache.clear()
+    _cfg_cache[key] = (time.time(), ytcfg)
     return ytcfg
 
 
