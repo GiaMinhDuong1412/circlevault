@@ -106,7 +106,18 @@ def resolve_link(url: str) -> dict:
             info = ydl.extract_info(url, download=False)
     except Exception as e:      # yt-dlp báo lỗi đủ kiểu
         msg = re.sub(r"\x1b\[[0-9;]*m", "", str(e)).replace("ERROR: ", "")
-        raise HTTPException(400, f"Không lấy được phim từ link này: {msg[:300]}")
+        found = None
+        try:
+            found = _scan_page(url)      # trang phim tự làm (yt-dlp không biết): tìm .m3u8 trong trang / khung phát nhúng
+        except Exception:  # noqa: BLE001
+            found = None
+        if found:
+            return found
+        if re.search(r"DRM|drm", msg):
+            raise HTTPException(400, f"Không lấy được phim từ link này: {msg[:300]}")
+        # 424: trang cần chạy trong trình duyệt mới ra luồng phim → app mở trang, người dùng bấm phát, app tự tạo phòng
+        raise HTTPException(424, "Trang này không đọc thẳng được link phim (phải chạy trong trình duyệt). "
+                                 "Mở trang trong app, bấm phát phim là app tự tạo phòng.")
     if info.get("_type") == "playlist":
         entries = [e for e in info.get("entries") or [] if e]
         if not entries:
@@ -139,6 +150,62 @@ def resolve_link(url: str) -> dict:
     return {"type": "stream", "url": f["url"], "hls": hls, "headers": _headers(f.get("http_headers")),
             "title": (info.get("title") or "Phim")[:120], "site": _site(info.get("webpage_url") or url), "origin": "link",
             "mime": "application/vnd.apple.mpegurl" if hls else f"video/{f.get('ext') or 'mp4'}"}
+
+
+M3U8_RE = re.compile(r"""https?://[^\s"'<>()]+?\.m3u8(?:\?[^\s"'<>()]*)?""", re.I)
+IFRAME_RE = re.compile(r"""<iframe[^>]+?src\s*=\s*["']([^"']+)["']""", re.I)
+
+
+def _scan_page(url: str, referer: str | None = None, depth: int = 0) -> dict | None:
+    """Trang phim không có trong yt-dlp: đọc HTML tìm link .m3u8 (kể cả trong JSON/JS), hoặc khung phát nhúng (iframe) rồi
+    thử yt-dlp / tìm tiếp trong khung đó. Chỉ nhận link mà máy chủ phim trả về đúng playlist HLS."""
+    import yt_dlp
+    from yt_dlp.networking import Request
+    hdr = {"Referer": referer} if referer else {}
+    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "socket_timeout": 15}) as ydl:
+        html = ydl.urlopen(Request(url, headers=hdr)).read(3_000_000).decode("utf-8", "replace")
+        text = html.replace("\\/", "/").replace("\\u0026", "&").replace("&amp;", "&")
+        title = re.sub(r"\s+", " ", (re.search(r"<title[^>]*>(.*?)</title>", html, re.S | re.I) or [None, ""])[1]).strip()
+
+        def stream(m3u8: str, page: str) -> dict | None:
+            try:
+                body = ydl.urlopen(Request(m3u8, headers={"Referer": page})).read(4096)
+            except Exception:  # noqa: BLE001
+                return None
+            if not body.lstrip().startswith(b"#EXTM3U"):
+                return None
+            origin = "{0.scheme}://{0.netloc}".format(urlparse(page))
+            return {"type": "stream", "url": m3u8, "hls": True, "headers": {"Referer": page, "Origin": origin},
+                    "title": (title or "Phim")[:120], "site": _site(url), "origin": "link", "mime": "application/vnd.apple.mpegurl"}
+
+        for m in dict.fromkeys(M3U8_RE.findall(text)):
+            if found := stream(m, url):
+                return found
+        if depth >= 1:
+            return None
+        frames = [urljoin(url, f) for f in IFRAME_RE.findall(html)]
+        frames = [f for f in dict.fromkeys(frames) if f.startswith("http") and not re.search(r"facebook|google|youtube\.com/embed|ads?[./]", f)][:3]
+    for f in frames:
+        try:
+            with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True, "socket_timeout": 15,
+                                   "http_headers": {"Referer": url}}) as y2:
+                info = y2.extract_info(f, download=False)
+            fmts = [x for x in (info.get("formats") or [info]) if x.get("url") and ("m3u8" in (x.get("protocol") or "")
+                                                                                  or x.get("ext") in ("mp4", "webm"))]
+            if fmts:
+                x = max(fmts, key=lambda x: (x.get("height") or 0) <= 1080 and (x.get("height") or 0))
+                hls = "m3u8" in (x.get("protocol") or "")
+                return {"type": "stream", "url": x["url"], "hls": hls, "headers": _headers(x.get("http_headers")) or {"Referer": f},
+                        "title": (title or info.get("title") or "Phim")[:120], "site": _site(url), "origin": "link",
+                        "mime": "application/vnd.apple.mpegurl" if hls else f"video/{x.get('ext') or 'mp4'}"}
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if found := _scan_page(f, url, depth + 1):
+                return found
+        except Exception:  # noqa: BLE001
+            pass
+    return None
 
 
 async def _source(body: "RoomIn") -> dict:

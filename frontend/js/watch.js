@@ -67,6 +67,7 @@ if (desk && desk.onDock) {
       lastKey = '';
       if (dock.shown === v) { dock.shown = null; window.CV.views[window.CV.S.view] && window.CV.views[window.CV.S.view](); }
     } else if (ch === 'dock-state' && v && v.mode === 'party') dock.last.party = v.title;
+    else if (ch === 'sites-changed') { loadSites(true).then(() => { lastKey = ''; if (!dock.shown) window.CV.views[window.CV.S.view]?.(); }); }
     else if (ch === 'party-go') { if (dock.shown !== 'party') dock.shown = null; dockSync(); lastKey = ''; location.hash = '#party'; }
   });
   desk.dockState().then(st => { for (const m of Object.keys(st || {})) dock.open[m] = {}; }).catch(() => {});
@@ -166,6 +167,47 @@ function ytLogin() {
 window.CV.ytLogin = ytLogin;
 window.addEventListener('cv-youtube', () => { if (window.CV.S.view === 'online') renderOnline(); });
 
+/* ================================================================ TRANG PHIM ĐÃ LƯU (bấm nhanh) */
+let sites = null;
+async function loadSites(force) {
+  if (sites && !force) return sites;
+  try { sites = await api('/api/web-sites'); } catch (e) { sites = []; }
+  return sites;
+}
+function sitesHtml(kind) {     // kind: 'open' (mở trong trình duyệt app) | 'party' (mở để tạo phòng)
+  if (!sites || !sites.length) return '';
+  return `<div class="saved-sites"><b>Trang phim đã lưu:</b>${sites.map(x => `<span class="chip-wrap"><button class="chip" type="button"
+    data-site-${kind}="${esc(x.url)}" title="${esc(x.url)}">${esc(x.name || x.host)}</button><button class="chip-x" type="button" data-site-del="${esc(x.url)}"
+    aria-label="Bỏ ${esc(x.name || x.host)}">×</button></span>`).join('')}</div>`;
+}
+async function saveSite(url) {
+  try { sites = await api('/api/web-sites', {method: 'POST', body: {url}}); toast('Đã lưu trang.'); return true; }
+  catch (e) { toast(e.message, 'err'); return false; }
+}
+/** Link trang phim mà máy chủ không đọc thẳng được: mở trang trong app, bấm phát → app tự tạo phòng. */
+function partyCapture(url, opts) {
+  if (!desk || !desk.partyCapture) return false;
+  desk.partyCapture(url, opts || {});
+  toast('Đã mở trang trong app: chọn phim rồi bấm phát, bắt được luồng phim là phòng tự tạo.');
+  return true;
+}
+document.addEventListener('click', async e => {
+  const o = e.target.closest('[data-site-open]');
+  if (o) return dockOpen('web', o.dataset.siteOpen);
+  const p = e.target.closest('[data-site-party]');
+  if (p) {
+    if (!partyCapture(p.dataset.siteParty, {title: $('#nTitle')?.value.trim() || '', control: document.querySelector('[name=nCtl]:checked')?.value}))
+      toast('Chỉ làm được trong app CircleVault trên Windows.', 'err');
+    return;
+  }
+  const d = e.target.closest('[data-site-del]');
+  if (d) {
+    try { sites = await api('/api/web-sites?url=' + encodeURIComponent(d.dataset.siteDel), {method: 'DELETE'}); } catch (err) { toast(err.message, 'err'); }
+    lastKey = '';
+    window.CV.views[window.CV.S.view] && window.CV.views[window.CV.S.view]();
+  }
+});
+
 /* ================================================================ XEM ONLINE */
 async function renderOnline() {
   if (dock.shown && DOCK_VIEW[dock.shown] === 'online' && dock.open[dock.shown]) {
@@ -175,6 +217,7 @@ async function renderOnline() {
   }
   let yt = {logged_in: false, use_account: true};
   try { yt = await api('/api/youtube'); } catch (e) { /* bỏ qua */ }
+  await loadSites();
   const appOnly = desk ? '' : `<div class="notice box warn"><b>Chỉ có trong app CircleVault trên Windows</b>
     <span>Bạn đang mở CircleVault bằng trình duyệt nên không mở được cửa sổ YouTube và trình duyệt bắt link. Cài app từ trang Releases để dùng phần này.</span></div>`;
   const opened = Object.keys(dock.open).filter(m => DOCK_VIEW[m] === 'online');
@@ -204,7 +247,9 @@ async function renderOnline() {
       <form class="paste-row" id="webForm">
         <input type="text" id="webUrl" placeholder="Địa chỉ trang phim, ví dụ vimeo.com/… hoặc tên phim để tìm" aria-label="Địa chỉ trang phim" ${desk ? '' : 'disabled'}>
         <button class="btn yellow" type="submit" ${desk ? '' : 'disabled'}>MỞ</button>
+        <button class="btn plain" type="button" id="webSave" title="Lưu trang này để lần sau bấm nhanh">☆ Lưu</button>
       </form>
+      ${sitesHtml('open')}
       <ol class="steps">
         <li>Mở trang, bấm phát phim như bình thường.</li>
         <li>Nút <b>Luồng phim bắt được</b> trên thanh công cụ hiện số luồng tìm thấy.</li>
@@ -233,6 +278,11 @@ async function renderOnline() {
   });
   document.querySelectorAll('#onlineBox [data-open]').forEach(b => b.addEventListener('click', () => dockOpen(b.dataset.open)));
   bindDock($('#onlineBox'));
+  $('#webSave').addEventListener('click', async () => {
+    const v = $('#webUrl').value.trim();
+    if (!v || /\s/.test(v)) { toast('Gõ địa chỉ trang phim (vd. ten-trang.com) rồi bấm Lưu. Đang mở trang thì bấm ☆ Lưu trang trên thanh công cụ.', 'err'); return $('#webUrl').focus(); }
+    if (await saveSite(v)) renderOnline();
+  });
   $('#webForm').addEventListener('submit', e => {
     e.preventDefault();
     const v = $('#webUrl').value.trim();
@@ -275,7 +325,8 @@ function sourceForm(prefix, room) {
       ${desk && desk.pickFile ? `<button class="btn plain" type="button" data-pickvid="${prefix}">Chọn file…</button>` : ''}</div></div>
     <label class="field" data-src="youtube" ${on('youtube') ? '' : 'hidden'}>Link video YouTube<input type="url" id="${prefix}Yt" placeholder="https://www.youtube.com/watch?v=…"></label>
     <div class="field" data-src="link" ${on('link') ? '' : 'hidden'}>Link trang phim<input type="url" id="${prefix}Link" placeholder="https://vimeo.com/… · dailymotion · facebook · bilibili…">
-      <small class="hint">Hơn 1.800 trang (như ô dán link ở Trang Chủ). Trang khác: mở trang ở tab Xem Online, bấm phát, rồi bấm <b>Xem chung</b> ở danh sách "Luồng phim bắt được". Phim có DRM (Netflix, FPT Play…) không chiếu được.</small></div>
+      <small class="hint">Dán link trang phim rồi bấm Tạo phòng. Trang app không đọc thẳng được thì app tự mở trang đó: chọn phim, bấm phát là phòng tự tạo. Phim có DRM (Netflix, FPT Play…) không chiếu được.</small>
+      ${prefix === 'n' ? sitesHtml('party') : ''}</div>
     <label class="field">Tên phòng (tuỳ chọn)<input type="text" id="${prefix}Title" maxlength="120" placeholder="Ví dụ: Tối thứ 7 xem phim" value="${room ? esc(room.title) : ''}"></label>
     <div class="src-tabs">
       <label class="check"><input type="radio" name="${prefix}Ctl" value="everyone" ${!room || room.control === 'everyone' ? 'checked' : ''}> Ai cũng phát/dừng/tua được</label>
@@ -313,7 +364,7 @@ async function renderParty(st) {
   lastKey = key;
   const wasOpen = !!box.querySelector('details[open]');
   if (!st.room) {
-    await loadVideos();
+    await Promise.all([loadVideos(), loadSites()]);
     box.innerHTML = `
     <div class="cols2">
       <form class="box pcard" id="newRoom">
@@ -335,8 +386,13 @@ async function renderParty(st) {
     $('#newRoom').addEventListener('submit', async e => {
       e.preventDefault();
       const b = e.submitter || e.target.querySelector('[type=submit]'); b.disabled = true; b.textContent = 'ĐANG MỞ…';
-      try { renderParty(await api('/api/party', {method: 'POST', body: readSource('n')})); toast('Đã tạo phòng.'); }
-      catch (err) { toast(err.message, 'err'); b.disabled = false; b.textContent = 'TẠO PHÒNG'; }
+      const body = readSource('n');
+      try { renderParty(await api('/api/party', {method: 'POST', body})); toast('Đã tạo phòng.'); }
+      catch (err) {
+        b.disabled = false; b.textContent = 'TẠO PHÒNG';
+        if (err.status === 424 && body.link && partyCapture(body.link, {title: body.title || '', control: body.control})) return;
+        toast(err.message, 'err');
+      }
     });
     return;
   }
@@ -383,7 +439,10 @@ async function renderParty(st) {
     e.preventDefault();
     const body = readSource('e'), same = !body.youtube_url && !body.link && !body.path && !body.item_id;
     try { lastKey = ''; renderParty(await api('/api/party', {method: 'POST', body})); toast(same ? 'Đã lưu cài đặt phòng.' : 'Đã đổi phim cho cả phòng.'); }
-    catch (err) { toast(err.message, 'err'); }
+    catch (err) {
+      if (err.status === 424 && body.link && partyCapture(body.link, {title: body.title || '', control: body.control})) return;
+      toast(err.message, 'err');
+    }
   });
   $('#closeRoom').addEventListener('click', async e => {
     const b = e.currentTarget;

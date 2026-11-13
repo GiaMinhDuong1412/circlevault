@@ -22,6 +22,7 @@
       $('#loginBtn').textContent = s.loggedIn ? 'Đăng xuất' : 'Đăng nhập';
     } else {
       $('#count').textContent = s.streams.length;
+      $('#autoChip').classList.toggle('hide', !s.autoParty);
       $('#panel').hidden = !s.panel;
       $('#adb').textContent = s.adblock ? 'Chặn quảng cáo: đang bật' : 'Chặn quảng cáo: đang khởi động…';
       if (!titleTouched) $('#title').value = (s.title || '').replace(/\s*[-|–]\s*[^-|–]{0,40}$/, '').slice(0, 200);
@@ -68,6 +69,8 @@
   $('#loginBtn').onclick = () => send(st && st.loggedIn ? 'logout' : 'login');
   $('#panelBtn').onclick = () => send('panel');
   $('#clear').onclick = () => send('clear');
+  $('#saveSite').onclick = () => send('saveSite');
+  $('#autoChip').onclick = () => send('cancelAuto');
 
   let tt = 0;
   window.bshell.onToast(({ text, kind }) => {

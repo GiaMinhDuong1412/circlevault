@@ -30,7 +30,9 @@ async function api(path, opts = {}) {
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
     const d = data.detail;
-    throw new Error(typeof d === 'string' ? d : (r.status === 422 ? 'Dữ liệu gửi lên không hợp lệ.' : `Lỗi máy chủ (${r.status}).`));
+    const err = new Error(typeof d === 'string' ? d : (r.status === 422 ? 'Dữ liệu gửi lên không hợp lệ.' : `Lỗi máy chủ (${r.status}).`));
+    err.status = r.status;
+    throw err;
   }
   return data;
 }

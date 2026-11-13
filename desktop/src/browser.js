@@ -203,6 +203,7 @@ function startSniffer(ses) {
     });
     w.streams = w.streams.slice(0, 40);
     pushState(w);
+    if (w.autoParty && type !== 'DASH') scheduleAutoParty(w);
   });
   const done = (d) => pending.delete(d.id);
   ses.webRequest.onErrorOccurred(filter, done);
@@ -289,14 +290,59 @@ async function streamHeaders(w, s) {
   return headers;
 }
 
-async function partyStream(w, id, title) {
+async function partyStream(w, id, title, control) {
   const s = w.streams.find((x) => x.id === id);
   if (!s) return;
   try {
     await postJson('/api/party', { stream: { url: s.url, kind: s.type, headers: await streamHeaders(w, s), page: s.page },
-      title: (title || s.title || s.name || 'Phim').slice(0, 120) });
+      title: (title || s.title || s.name || 'Phim').slice(0, 120), ...(control ? { control } : {}) });
     toastShell(w, 'Đã mở phòng xem chung với phim này.');
     ctx.notifyMain('party-go', true);
+  } catch (e) { toastShell(w, e.message, 'err'); }
+}
+
+/** Xem chung bằng link trang phim mà backend không đọc thẳng được: mở trang trong app, người dùng bấm phát,
+ *  bắt được luồng phim thì đợi vài giây (gom luồng master/các chất lượng) rồi tự tạo phòng. */
+function partyCapture(url, opts = {}) {
+  if (!/^https?:\/\//i.test(String(url || ''))) return;
+  openBrowser('web', url);
+  const w = wins.web;
+  if (!w) return;
+  w.streams = [];
+  w.autoParty = { title: String(opts.title || '').slice(0, 120), control: opts.control === 'host' ? 'host' : 'everyone', at: Date.now() };
+  pushState(w);
+  setTimeout(() => toastShell(w, 'Bấm phát phim (chọn tập/server nếu có). Bắt được luồng phim là app tự tạo phòng xem chung.'), 1500);
+}
+
+function scheduleAutoParty(w) {
+  clearTimeout(w.apTimer);
+  w.apTimer = setTimeout(() => {
+    const ap = w.autoParty;
+    if (!ap) return;
+    if (Date.now() - ap.at > 20 * 60 * 1000) { w.autoParty = null; pushState(w); return; }
+    const fresh = w.streams.filter((x) => x.at >= ap.at && x.type !== 'DASH');
+    const hls = fresh.filter((x) => x.type === 'HLS');
+    // HLS: luồng bắt được ĐẦU TIÊN thường là playlist tổng (master); không có thì lấy file video lớn nhất
+    const pick = hls.length ? hls[hls.length - 1] : fresh.sort((a, b) => (b.size || 0) - (a.size || 0))[0];
+    if (!pick) return;
+    w.autoParty = null;
+    pushState(w);
+    partyStream(w, pick.id, ap.title || '', ap.control);
+  }, 3500);
+}
+
+/** Lưu trang web xem phim (gốc tên miền) vào danh sách "Trang phim đã lưu". */
+async function saveSite(w) {
+  const wc = w.view.webContents;
+  let u;
+  try { u = new URL(wc.getURL()); } catch { return toastShell(w, 'Mở một trang web trước đã.', 'err'); }
+  if (!/^https?:$/.test(u.protocol)) return toastShell(w, 'Mở một trang web trước đã.', 'err');
+  const host = u.hostname.replace(/^www\./, '');
+  const name = (wc.getTitle() || '').split(/\s+[-|–—]\s+/).pop().trim().slice(0, 60) || host;
+  try {
+    await postJson('/api/web-sites', { url: `${u.protocol}//${u.host}/`, name: name.length > 3 && name.length < 40 ? name : host });
+    toastShell(w, `Đã lưu "${host}". Lần sau bấm nhanh ở tab Xem Online / Xem Chung.`);
+    ctx.notifyMain('sites-changed', true);
   } catch (e) { toastShell(w, e.message, 'err'); }
 }
 
@@ -323,7 +369,7 @@ function pushState(w) {
     mode: w.mode, url: wc.getURL(), title: wc.getTitle(), loading: wc.isLoading(),
     canBack: wc.navigationHistory.canGoBack(), canFwd: wc.navigationHistory.canGoForward(),
     loggedIn: !!lastLogin, isVideo: !!youtubeVideoUrl(wc.getURL()),
-    streams: w.streams, adblock: w.adblock, panel: w.panel,
+    streams: w.streams, adblock: w.adblock, panel: w.panel, autoParty: !!w.autoParty,
   });
 }
 function toastShell(w, text, kind = 'ok') { if (w.shell && !w.shell.isDestroyed()) w.shell.send('btoast', { text, kind }); }
@@ -486,10 +532,12 @@ function onShellMessage(e, m) {
     case 'panel': w.panel = !w.panel; layout(w); pushState(w); break;
     case 'external': shell.openExternal(wc.getURL()); break;
     case 'party': partyStream(w, m.id, m.title); break;
+    case 'saveSite': saveSite(w); break;
+    case 'cancelAuto': w.autoParty = null; clearTimeout(w.apTimer); pushState(w); break;
     case 'partyYt': partyYoutube(w); break;
   }
 }
 
 function openParty(url) { openBrowser('party', url); }
 
-module.exports = { setup, openBrowser, openParty, hideAll, youtubeLogout, importYoutubeCookies, exportYoutubeCookies, _windows: () => wins };
+module.exports = { setup, openBrowser, openParty, partyCapture, hideAll, youtubeLogout, importYoutubeCookies, exportYoutubeCookies, _windows: () => wins };

@@ -68,9 +68,14 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     /r/<mã>/ws, /r/<mã>/media, tĩnh /p = frontend). Bạn bè/đường hầm chỉ chạm party_app, không thấy API chính.
     Đồng bộ: máy chủ giữ {playing,pos,rate,at}, client tự tính theo đồng hồ máy chủ (ping/pong).
     Nguồn: thư viện (`item_id`), file trên máy (`path`), YouTube, link trang phim (`link` → yt-dlp `resolve_link` chọn định dạng
-    có cả hình + tiếng, mp4 hoặc HLS), luồng bắt được trong trình duyệt app (`stream` {url, kind, headers}). Luồng đi qua
+    có cả hình + tiếng, mp4 hoặc HLS; yt-dlp không đọc được thì `_scan_page` tìm .m3u8 trong HTML/iframe (kiểm tra #EXTM3U);
+    vẫn không có → HTTP 424 → trang gọi `cvDesktop.partyCapture` = mở trang trong trình duyệt app, `autoParty`: bắt được luồng
+    thì đợi 3,5 giây rồi tự tạo phòng (HLS bắt được đầu tiên, không thì video lớn nhất)), luồng bắt được trong trình duyệt app (`stream` {url, kind, headers}). Luồng đi qua
     `/r/<mã>/media` + `/r/<mã>/x?u=&s=` (HMAC theo `Room.secret`, viết lại .m3u8, chuyển Range); `Room.public()` chỉ gửi
     `PUBLIC_KEYS` (không lộ link gốc/cookie/đường dẫn). Trang phòng dùng `frontend/vendor/hls.min.js` (hls.js 1.5.20) cho HLS.
+  - `websites.py`: "Trang phim đã lưu" (`/api/web-sites`, chỉ máy này, `DATA/web-sites.json`, trùng tên miền thì thay): nút ☆ Lưu
+    trang trên thanh công cụ trình duyệt (`saveSite` lưu gốc tên miền), ô ☆ Lưu ở Xem Online; chip bấm nhanh ở Xem Online (mở trang)
+    và Xem Chung → Link trang phim (mở trang + tự tạo phòng).
   - `tunnel.py`: cloudflared quick tunnel → party_app (tải cloudflared vào DATA/bin lần đầu).
   - Tác vụ có cột `headers` (JSON Referer/Origin/User-Agent/Cookie) cho link phim bắt từ trình duyệt → `http_headers` yt-dlp.
   - Tài khoản YouTube: app desktop ghi `DATA/youtube-cookies.txt`; `downloader._account` dùng bản sao cho link YouTube.

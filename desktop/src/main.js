@@ -297,6 +297,7 @@ async function init() {
   ipcMain.handle('restart-server', () => restartServer().catch((e) => { log('Lỗi khởi động lại:', e.message); return false; }));
   browser.setup({ dataDir: DATA, userData: HOME, port: () => port, icon: ICON, log, notifyMain: send, mainWin: () => win });
   ipcMain.on('open-browser', (_e, mode, url) => browser.openBrowser(mode, url));
+  ipcMain.on('party-capture', (_e, url, opts) => { if (/^https?:\/\//i.test(String(url || ''))) browser.partyCapture(url, opts || {}); });
   ipcMain.on('open-party', (_e, url) => { if (isLocal(url) || /^http:\/\/127\.0\.0\.1:\d+\/r\//.test(url)) browser.openParty(url); });
   ipcMain.handle('youtube-logout', () => browser.youtubeLogout());
   ipcMain.handle('youtube-import', () => browser.importYoutubeCookies());

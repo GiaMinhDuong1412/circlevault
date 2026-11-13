@@ -13,11 +13,12 @@ contextBridge.exposeInMainWorld('cvDesktop', {
   restartServer: () => ipcRenderer.invoke('restart-server'),
   openBrowser: (mode, url) => ipcRenderer.send('open-browser', mode, url),   // 'youtube' | 'web'
   openParty: (url) => ipcRenderer.send('open-party', url),
+  partyCapture: (url, opts) => ipcRenderer.send('party-capture', url, opts),   // mở trang phim, bấm phát → tự tạo phòng xem chung
   // trình duyệt / phòng xem chung nằm ngay trong cửa sổ chính, đè lên vùng .dock-area của trang
   dockRect: (mode, rect) => ipcRenderer.send('dock-rect', mode, rect),   // rect null = ẩn
   dockClose: (mode) => ipcRenderer.send('dock-close', mode),
   dockState: () => ipcRenderer.invoke('dock-state'),
-  onDock: (cb) => ['dock-open', 'dock-closed', 'dock-state', 'party-go'].forEach((ch) => ipcRenderer.on(ch, (_e, v) => cb(ch, v))),
+  onDock: (cb) => ['dock-open', 'dock-closed', 'dock-state', 'party-go', 'sites-changed'].forEach((ch) => ipcRenderer.on(ch, (_e, v) => cb(ch, v))),
   youtubeLogout: () => ipcRenderer.invoke('youtube-logout'),
   youtubeImport: () => ipcRenderer.invoke('youtube-import'),   // nạp cookie lấy từ trình duyệt của người dùng vào cửa sổ YouTube
   onYoutubeLogin: (cb) => ipcRenderer.on('youtube-login', (_e, v) => cb(v)),
