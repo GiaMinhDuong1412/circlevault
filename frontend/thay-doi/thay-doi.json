@@ -1,0 +1,36 @@
+{
+  "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
+  "entries": [
+    {
+      "id": "2026-11-13-yt-dieu-khien",
+      "date": "13/11/2026",
+      "title": "Trình phát YouTube mới & cuộn giấy Có gì mới",
+      "items": [
+        "Tab YouTube: thanh điều khiển theo giao diện CircleVault – phát/dừng, tua ±10 giây, âm lượng, tốc độ, chất lượng, cửa sổ nổi, toàn màn hình.",
+        "Tab YouTube: tiếng đi qua bộ chỉnh âm (EQ) dùng chung với Nghe Nhạc – bấm EQ để chọn preset ngay trên trình phát.",
+        "Phím tắt khi xem: Space dừng/phát, ← → tua 5 giây, ↑ ↓ âm lượng, M tắt tiếng, F toàn màn hình.",
+        "Sau mỗi bản cập nhật, app hiện cuộn giấy này để bạn biết có gì mới (cả máy tính và điện thoại).",
+        "Điện thoại: thêm Kiểu giao diện (Neo-brutalist, Bo tròn, Mềm mại, Tối giản, Kính mờ) ở Cài đặt."
+      ]
+    },
+    {
+      "id": "2026-11-13-yt-dao-sau",
+      "date": "13/11/2026",
+      "title": "YouTube đọc dữ liệu tận gốc",
+      "items": [
+        "Trang chủ YouTube lấy đúng đề xuất như youtube.com.",
+        "Trang xem video có danh sách 'video tiếp theo' thật của YouTube, lượt xem, lượt thích, mô tả.",
+        "Trình phát của app thay trình phát nhúng (hết lỗi 'Video này không hoạt động')."
+      ]
+    },
+    {
+      "id": "2026-11-13-yt-tab",
+      "date": "13/11/2026",
+      "title": "Tab YouTube & kiểu giao diện",
+      "items": [
+        "Tab YouTube bằng giao diện CircleVault: Trang chủ, Kênh đăng ký, Xem sau, Đã thích, Đã xem, tìm kiếm, trang kênh.",
+        "5 kiểu giao diện trong nút bảng màu: Neo-brutalist, Brutal bo tròn, Mềm mại, Tối giản, Kính mờ (đổi kiểu cần khởi động lại app)."
+      ]
+    }
+  ]
+}

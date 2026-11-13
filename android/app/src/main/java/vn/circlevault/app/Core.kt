@@ -60,6 +60,11 @@ object Prefs {
     /** "" = theo hệ thống; còn lại là mã theme giống app máy tính (hong, bien, neon…) */
     var theme: String get() = str("theme"); set(v) = put("theme", v)
 
+    /** kiểu giao diện (brutal/tron/mem/phang/kinh) – chỉ đọc lúc mở app, đổi xong phải khởi động lại */
+    var uiStyle: String get() = str("uiStyle"); set(v) = sp.edit().putString("uiStyle", v).commit().let { }
+    /** id mục "Có gì mới" đã xem gần nhất (frontend/thay-doi/thay-doi.json đóng gói trong assets) */
+    var notesSeen: String get() = str("notesSeen"); set(v) = put("notesSeen", v)
+
     /* EQ: mặc định cho mọi bài + riêng từng bài (khóa = mediaId) – giá trị dB theo 5 dải chuẩn */
     var eqOn: Boolean get() = sp.getBoolean("eq_on", true); set(v) = sp.edit().putBoolean("eq_on", v).apply()
     var eqDefault: String get() = str("eq_default"); set(v) = put("eq_default", v)

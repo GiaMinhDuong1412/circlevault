@@ -13,6 +13,9 @@ android {
     namespace = "vn.circlevault.app"
     compileSdk = 35
 
+    // "Có gì mới": dùng chung file ghi chú với app máy tính
+    sourceSets.getByName("main").assets.srcDirs("../../frontend/thay-doi")
+
     defaultConfig {
         applicationId = "vn.circlevault.app"
         minSdk = 26

@@ -94,7 +94,12 @@ fun AppRoot(vm: MainVM = viewModel()) {
         if (Updater.hasNew) Prefs.updNotified = Updater.latest!!.tag      // đã thấy trong app thì không gửi thông báo nữa
         YouTube.flushReports()
     }
-    Box(Modifier.fillMaxSize().background(c.bg)) {
+    val rootBg = if (UiStyle.key == "kinh") Modifier.background(
+        androidx.compose.ui.graphics.Brush.linearGradient(listOf(c.cyan.copy(alpha = 0.35f), c.bg, c.pink.copy(alpha = 0.35f)))
+    ).background(c.bg.copy(alpha = 0.55f)) else Modifier.background(c.bg)
+    val appCtx = LocalContext.current
+    var notes by remember { mutableStateOf(WhatsNew.unseen(appCtx)) }
+    Box(Modifier.fillMaxSize().then(rootBg)) {
         Column(Modifier.fillMaxSize().imePadding()) {
             TopBar(vm)
             Box(Modifier.weight(1f)) {
@@ -124,6 +129,8 @@ fun AppRoot(vm: MainVM = viewModel()) {
         vm.playingVideo?.let { VideoScreen(it, onClose = { vm.playingVideo = null }) }
         vm.cutting?.let { CutScreen(vm, it) }
         vm.adding?.let { PlaylistPicker(vm, it) }
+        if (vm.showNotes) notes = WhatsNew.all(appCtx).take(6).also { vm.showNotes = false }
+        if (notes.isNotEmpty()) ScrollNotes(notes) { WhatsNew.markSeen(appCtx); notes = emptyList() }
         vm.partyUrl?.let { PartyScreen(it) { vm.partyUrl = null } }
         if (vm.merging) MergeScreen(vm)
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 140.dp))

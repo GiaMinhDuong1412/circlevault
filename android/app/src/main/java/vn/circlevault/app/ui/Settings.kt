@@ -81,6 +81,37 @@ fun SettingsTab(vm: MainVM) {
             Hint("App tự kiểm tra mỗi 12 giờ, mỗi bản mới chỉ báo một lần. Cập nhật không mất nhạc, phim đã tải.")
         }
 
+        // ---- kiểu giao diện (đổi = khởi động lại app)
+        Card {
+            H("Kiểu giao diện")
+            Hint("Giống app máy tính. Đổi kiểu cần khởi động lại app (nhạc đang phát sẽ dừng).")
+            var pick by remember { mutableStateOf<String?>(null) }
+            STYLES.chunked(2).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { (k, name, sub) ->
+                        val on = UiStyle.key == k
+                        Column(
+                            Modifier.weight(1f).brutal(if (on) c.yellow else c.surface, c.ink, shadow = 2.dp, border = 2.dp)
+                                .clickable { if (!on) pick = k }.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(name, color = if (on) c.onAccent else c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(if (on) "Đang dùng" else sub, color = if (on) c.onAccent else c.muted, fontSize = 12.sp)
+                        }
+                    }
+                    repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+            pick?.let { k ->
+                Confirm(
+                    "Đổi sang \"${STYLES.first { it.first == k }.second}\"?",
+                    "App sẽ tự đóng và mở lại để áp dụng kiểu giao diện mới.",
+                    "Khởi động lại", onOk = { Prefs.uiStyle = k; restartApp(ctx) }, onDismiss = { pick = null },
+                )
+            }
+            BButton("📜 Có gì mới", { vm.showNotes = true }, color = c.surface, small = true)
+        }
+
         // ---- theme
         Card {
             H("Giao diện")
@@ -156,4 +187,15 @@ fun SettingsTab(vm: MainVM) {
             "Ngắt kết nối", { vm.unpair() },
         ) { ask = false }
     }
+}
+
+
+/** Đóng hẳn rồi mở lại app (kiểu giao diện chỉ đọc lúc mở app). */
+internal fun restartApp(ctx: android.content.Context) {
+    val i = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName) ?: return
+    i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+    val pi = android.app.PendingIntent.getActivity(ctx, 7, i, android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_CANCEL_CURRENT)
+    val am = ctx.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+    am.set(android.app.AlarmManager.RTC, System.currentTimeMillis() + 400, pi)
+    android.os.Process.killProcess(android.os.Process.myPid())
 }

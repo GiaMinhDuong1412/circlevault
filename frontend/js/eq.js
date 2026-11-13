@@ -200,7 +200,7 @@ function createEQ({mount, engine, initial, onChange}) {
     $('#autoPre').checked = st.autoPreamp; $('#limiter').checked = st.limiter; $('#balance').value = st.balance;
     renderPresets(); drawCurve();
   }
-  function changed() { engine.apply(st); sync(); onChange && onChange(st); }
+  function changed() { engine.apply(st); sync(); onChange && onChange(st); window.dispatchEvent(new CustomEvent('cv-eq', {detail: st})); }
 
   /* ---- vẽ */
   let spectrum = null;
@@ -295,6 +295,11 @@ function createEQ({mount, engine, initial, onChange}) {
     get state() { return st; },
     redraw: drawCurve,
     toggle() { st.enabled = !st.enabled; changed(); },
+    setPreset(k) {          // dùng từ nơi khác (trình phát YouTube): chọn preset có sẵn hoặc của người dùng ('u:<tên>')
+      const g = k.startsWith('u:') ? st.custom[k.slice(2)] : PRESETS[k] && PRESETS[k].g;
+      if (!g) return;
+      st.gains = g.slice(); st.preset = k; st.enabled = true; changed();
+    },
   };
 }
 

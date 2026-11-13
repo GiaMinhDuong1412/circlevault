@@ -922,6 +922,42 @@ div.ln-ti{cursor:default}
 .yt-player iframe,.yt-player video{width:100%;height:100%;border:0;display:block;background:#000}
 .yt-load{height:100%;display:grid;place-items:center;color:#ddd;gap:8px;grid-auto-flow:column;justify-content:center;align-items:center}
 .yt-pnote{margin-top:-4px}
+/* thanh điều khiển trình phát YouTube (giao diện CircleVault) */
+.yt-player{position:relative}
+.yt-player video{cursor:pointer}
+.ytc{position:absolute;left:10px;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px;padding:8px 10px 8px;
+  background:var(--surface);color:var(--text);border:var(--bw) solid var(--ink);border-radius:calc(6px*var(--rk,1));box-shadow:var(--sh-sm);
+  opacity:0;transform:translateY(8px);transition:opacity .18s,transform .18s;pointer-events:none}
+.yt-player.ui .ytc,.yt-player.paused .ytc,.ytc:focus-within{opacity:1;transform:none;pointer-events:auto}
+.ytc-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ytc-row .sp{flex:1}
+.ytc-b{width:34px;height:32px;display:grid;place-items:center;padding:0;border:2px solid var(--ink);border-radius:calc(4px*var(--rk,1));
+  background:var(--surface);color:var(--text);cursor:pointer;box-shadow:var(--hs,2px 2px 0 var(--ink))}
+.ytc-b svg{width:18px;height:18px}
+.ytc-b:hover{background:var(--surface-2)}
+.ytc-b:active{transform:translate(1px,1px);box-shadow:none}
+.ytc-b.main{background:var(--yellow);color:var(--on-accent);width:40px}
+.ytc-b.txt{width:auto;padding:0 10px;font:800 12.5px var(--f-body)}
+.ytc-b.txt.on{background:var(--green);color:var(--on-accent)}
+.ytc-t{font:600 12.5px var(--f-mono);font-variant-numeric:tabular-nums;margin-left:6px;white-space:nowrap}
+.ytc-sel{height:32px;padding:0 6px;font:700 12.5px var(--f-body);border:2px solid var(--ink);border-radius:calc(4px*var(--rk,1));background:var(--surface);color:var(--text)}
+.ytc-seekw{position:relative;height:14px;display:flex;align-items:center}
+.ytc-buf{position:absolute;left:0;top:4px;height:6px;border-radius:calc(3px*var(--rk,1));background:color-mix(in srgb,var(--text) 18%,transparent);pointer-events:none;width:0}
+.ytc-seek,.ytc-vol{-webkit-appearance:none;appearance:none;height:10px;border:2px solid var(--ink);border-radius:calc(3px*var(--rk,1));cursor:pointer;
+  background:linear-gradient(90deg,var(--cyan) var(--p,0%),transparent var(--p,0%))}
+.ytc-seek{position:relative;width:100%;margin:0}
+.ytc-vol{width:90px;background:linear-gradient(90deg,var(--cyan) var(--p,0%),var(--surface-2) var(--p,0%))}
+.ytc-seek::-webkit-slider-thumb,.ytc-vol::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:18px;background:var(--yellow);border:2px solid var(--ink);border-radius:calc(3px*var(--rk,1))}
+.ytc-eqw{position:relative}
+.ytc-pop{position:absolute;right:0;bottom:calc(100% + 12px);width:min(360px,80vw);z-index:5;padding:12px;display:flex;flex-direction:column;gap:10px;
+  background:var(--surface);border:var(--bw) solid var(--ink);border-radius:calc(6px*var(--rk,1));box-shadow:var(--sh)}
+.ytc-eqh{display:flex;align-items:center;justify-content:space-between}
+.ytc-eqp{display:flex;flex-wrap:wrap;gap:6px}
+.ytc-eqp .chip.on{background:var(--yellow);color:var(--on-accent)}
+.yt-player:fullscreen{border:0;border-radius:0;aspect-ratio:auto;display:flex;align-items:center;background:#000}
+.yt-player:fullscreen video{height:100%}
+.yt-player:fullscreen .ytc{left:24px;right:24px;bottom:20px}
+.yt-player:fullscreen:not(.ui):not(.paused){cursor:none}
 .yt-q{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:13px}
 .yt-title{font-size:20px;line-height:1.35}
 .yt-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;font-size:14px}
@@ -936,6 +972,37 @@ div.ln-ti{cursor:default}
 .yt-sec{margin:26px 0 12px;font-size:17px}
 .yt-note{margin:-4px 0 14px;max-width:900px}
 @media (max-width: 1100px){ .yt-watch{grid-template-columns:1fr} }
+
+/* ------------------------------------------------------------ "Có gì mới": cuộn giấy (2 trục cuộn + tờ giấy mở ra) */
+dialog.scroll-dlg{padding:0;border:0;background:transparent;width:min(660px,calc(100vw - 32px));max-height:none;overflow:visible;box-shadow:none;color:var(--text)}
+dialog.scroll-dlg[open]{display:block}
+dialog.scroll-dlg::backdrop{background:rgba(10,10,12,.55)}
+.scroll{display:flex;flex-direction:column;align-items:center}
+.scroll-roll{position:relative;z-index:2;width:100%;height:36px;border:var(--bw) solid var(--ink);border-radius:calc(18px*var(--rk,1));box-shadow:var(--sh-sm);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--yellow) 55%,#fff) 0%,var(--yellow) 42%,color-mix(in srgb,var(--yellow) 72%,#000) 100%)}
+.scroll-roll::before,.scroll-roll::after{content:"";position:absolute;top:50%;width:22px;height:46px;transform:translateY(-50%);border:var(--bw) solid var(--ink);
+  border-radius:calc(8px*var(--rk,1));background:linear-gradient(180deg,color-mix(in srgb,var(--pink) 60%,#fff),var(--pink) 50%,color-mix(in srgb,var(--pink) 70%,#000))}
+.scroll-roll::before{left:-16px}
+.scroll-roll::after{right:-16px}
+.scroll-roll i{position:absolute;left:14px;right:14px;top:9px;height:5px;border-radius:3px;background:rgba(255,255,255,.55)}
+.scroll-paper{position:relative;z-index:1;width:calc(100% - 40px);margin:-14px 0;overflow:hidden;
+  border-left:var(--bw) solid var(--ink);border-right:var(--bw) solid var(--ink);
+  background:radial-gradient(circle at 20% 10%,rgba(160,110,40,.07),transparent 40%),radial-gradient(circle at 85% 80%,rgba(160,110,40,.08),transparent 45%),
+    repeating-linear-gradient(0deg,transparent 0 31px,color-mix(in srgb,var(--ink) 7%,transparent) 31px 32px),
+    color-mix(in srgb,var(--yellow) 9%,var(--surface));
+  animation:scroll-open .75s cubic-bezier(.2,.8,.2,1) both}
+.scroll-in{max-height:min(68vh,640px);overflow:auto;padding:34px 34px 26px}
+@keyframes scroll-open{from{max-height:0;opacity:.6}to{max-height:min(74vh,700px);opacity:1}}
+.scroll-kicker{margin:0;font:800 12px var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.scroll-paper h2{font:900 30px/1.15 var(--f-body);margin:4px 0 14px}
+.scroll-paper h3{font-size:17px;margin:0}
+.scroll-paper section{display:flex;flex-direction:column;gap:2px}
+.scroll-date{font:600 12px var(--f-mono);color:var(--muted)}
+.scroll-paper ul{margin:8px 0 4px;padding-left:22px;display:flex;flex-direction:column;gap:6px}
+.scroll-paper li::marker{content:"✦  ";color:var(--accent-line)}
+.scroll-paper hr{border:0;border-top:2px dashed color-mix(in srgb,var(--ink) 30%,transparent);margin:16px 0}
+.scroll-act{display:flex;justify-content:center;margin-top:18px}
+@media (prefers-reduced-motion: reduce){.scroll-paper{animation:none}}
 
 /* ------------------------------------------------------------ kiểu giao diện (data-style trên <html>; đổi kiểu = khởi động lại app)
    Kiểu chỉ đổi hình khối: --rk nhân độ bo góc, --hs thay mọi bóng cứng, --ink = màu viền, --bw = độ dày viền. Màu vẫn theo theme. */

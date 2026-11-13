@@ -86,6 +86,7 @@ window.CV = {api, esc, toast, fmtBytes, fmtDur, gradient, cover, S, views: {}, r
 /* ------------------------------------------------------------ sidebar + stats */
 async function loadStatus() {
   try { S.status = await api('/api/status'); } catch (e) { return; }
+  if (!S.notesChecked) { S.notesChecked = true; setTimeout(() => showWhatsNew(false), 1200); }
   const st = S.status, c = st.counts || {};
   $('#sideSources').innerHTML = ['youtube', 'film', 'other', 'comic', 'novel'].map(k =>
     `<li><a href="#library" data-kind="${k}"><span class="dot" style="background:${KINDS[k].color}"></span>${KINDS[k].label}<span class="n">${fmtNum(c[k])}</span></a></li>`).join('');
@@ -601,7 +602,8 @@ function renderTools() {
   $('#tools').innerHTML = `
     <div class="box pcard"><h3>CircleVault <span class="mono">${esc(app.version || 'dev')}</span></h3>
       <p class="hint">${window.cvDesktop ? 'App tự kiểm tra bản mới mỗi 4 giờ.' : 'Đang chạy từ mã nguồn (không tự cập nhật).'} Dữ liệu: <code>${esc(app.data || '')}</code></p>
-      ${window.cvDesktop ? '<div><button class="btn cyan" type="button" id="chkUpd">Kiểm tra cập nhật</button></div>' : ''}</div>
+      <div class="btn-row">${window.cvDesktop ? '<button class="btn cyan" type="button" id="chkUpd">Kiểm tra cập nhật</button>' : ''}
+        <button class="btn plain" type="button" id="seeNotes">📜 Có gì mới</button></div></div>
     <div class="box pcard"><h3>yt-dlp <span class="mono">${esc(t.yt_dlp || '?')}</span></h3>
       <p class="hint">YouTube thay đổi thường xuyên. Khi tải bị lỗi, hãy cập nhật trước tiên.</p>
       <div><button class="btn yellow" type="button" id="updYt">Cập nhật yt-dlp</button></div></div>
@@ -612,6 +614,7 @@ function renderTools() {
   renderPhone();
   renderDrive();
   $('#chkUpd')?.addEventListener('click', () => { window.cvDesktop.updateAct(); toast('Đang kiểm tra bản mới…'); });
+  $('#seeNotes').addEventListener('click', () => showWhatsNew(true));
   $('#updYt').addEventListener('click', async e => {
     const b = e.currentTarget; b.disabled = true; b.textContent = 'Đang cập nhật…';
     try {
@@ -995,4 +998,44 @@ if (!window.cvDesktop && matchMedia('(pointer: coarse)').matches && innerWidth <
   route();
   poll();
 })();
+/* ------------------------------------------------------------ "Có gì mới" – cuộn giấy sau mỗi bản cập nhật
+   Ghi chú ở frontend/thay-doi/thay-doi.json (mục mới nhất ở đầu). Hiện các mục chưa xem (localStorage 'cv-notes-seen'). */
+async function showWhatsNew(all) {
+  let data;
+  try { data = await (await fetch('/static/thay-doi/thay-doi.json', {cache: 'no-store'})).json(); } catch (e) { return; }
+  const list = (data.entries || []).filter(x => x && x.id);
+  if (!list.length) return;
+  let seen = null;
+  try { seen = localStorage.getItem('cv-notes-seen'); } catch (e) { /* bỏ qua */ }
+  let show;
+  if (all) show = list.slice(0, 6);
+  else {
+    const i = seen ? list.findIndex(x => x.id === seen) : 1;    // lần đầu: chỉ mục mới nhất
+    show = list.slice(0, i < 0 ? 3 : i);
+  }
+  if (!show.length) return;
+  let dlg = $('#notesDlg');
+  if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'notesDlg'; dlg.className = 'scroll-dlg'; document.body.appendChild(dlg); }
+  const ver = S.status?.app?.version;
+  dlg.innerHTML = `<div class="scroll">
+    <div class="scroll-roll top" aria-hidden="true"><i></i></div>
+    <div class="scroll-paper">
+      <div class="scroll-in">
+        <p class="scroll-kicker">CircleVault${ver && ver !== 'dev' ? ' · bản ' + esc(ver) : ''}</p>
+        <h2>Có gì mới</h2>
+        ${show.map(x => `<section><h3>${esc(x.title || '')}</h3>${x.date ? `<span class="scroll-date">${esc(x.date)}</span>` : ''}
+          <ul>${(x.items || []).map(t => `<li>${esc(t)}</li>`).join('')}</ul></section>`).join('<hr>')}
+        <div class="scroll-act"><button class="btn green" type="button" data-notes-ok>Đã hiểu</button></div>
+      </div>
+    </div>
+    <div class="scroll-roll bottom" aria-hidden="true"><i></i></div>
+  </div>`;
+  const done = () => { try { localStorage.setItem('cv-notes-seen', list[0].id); } catch (e) { /* bỏ qua */ } dlg.close(); };
+  dlg.querySelector('[data-notes-ok]').onclick = done;
+  dlg.onclick = e => { if (e.target === dlg) done(); };
+  dlg.oncancel = () => { try { localStorage.setItem('cv-notes-seen', list[0].id); } catch (e) { /* bỏ qua */ } };
+  dlg.showModal();
+}
+window.CV.whatsNew = () => showWhatsNew(true);
+
 })();

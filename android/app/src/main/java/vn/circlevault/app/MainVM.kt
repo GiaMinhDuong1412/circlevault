@@ -146,6 +146,9 @@ class MainVM(app: Application) : AndroidViewModel(app) {
     }
 
     /* ---- thêm vào playlist trên điện thoại (nút ＋ Playlist): bài đã có thì thêm ngay, bài online thì lưu về máy rồi thêm */
+    /** mở lại cuộn giấy "Có gì mới" (nút ở Cài đặt) */
+    var showNotes by mutableStateOf(false)
+
     data class AddTarget(val title: String, val trackId: Int?, val online: OnlineTrack?)
     var adding by mutableStateOf<AddTarget?>(null)
 

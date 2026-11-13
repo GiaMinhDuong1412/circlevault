@@ -111,19 +111,45 @@ fun CvTheme(content: @Composable () -> Unit) {
 val cv: CvColors @Composable get() = LocalCv.current
 
 /** Khung kiểu neo-brutalist: nền, viền đen dày, bóng cứng lệch xuống phải. */
+/** Kiểu giao diện giống app máy tính. Đọc MỘT LẦN khi mở app (đổi kiểu → khởi động lại). */
+object UiStyle {
+    val key: String by lazy { vn.circlevault.app.Prefs.uiStyle.ifBlank { "brutal" } }
+    val rk: Float get() = when (key) { "tron" -> 2.6f; "mem" -> 2.4f; "phang" -> 1.4f; "kinh" -> 3f; else -> 1f }
+    val soft: Boolean get() = key == "mem" || key == "phang" || key == "kinh"
+}
+val STYLES = listOf(
+    Triple("brutal", "Neo-brutalist", "Viền đậm, bóng cứng"),
+    Triple("tron", "Brutal bo tròn", "Viền đậm, góc tròn"),
+    Triple("mem", "Mềm mại", "Viền mảnh, bóng mờ"),
+    Triple("phang", "Tối giản", "Phẳng, không bóng"),
+    Triple("kinh", "Kính mờ", "Trong suốt, nền chuyển màu"),
+)
+
 fun Modifier.brutal(bg: Color, ink: Color, shadow: Dp = 4.dp, radius: Dp = 6.dp, border: Dp = 2.5.dp): Modifier {
-    val shape = RoundedCornerShape(radius)
+    val st = UiStyle.key
+    val r = radius * UiStyle.rk
+    val shape = RoundedCornerShape(r)
+    val soft = UiStyle.soft
+    val line = if (soft) ink.copy(alpha = if (st == "phang") 0.24f else 0.16f) else ink
+    val bw = if (soft && border > 0.dp) 1.dp else border
+    val fill = if (st == "kinh") bg.copy(alpha = bg.alpha * 0.8f) else bg
     return this
         .padding(end = shadow, bottom = shadow)
         .drawBehind {
-            if (shadow > 0.dp) {
+            if (shadow > 0.dp && st != "phang") {
                 val s = shadow.toPx()
-                drawRoundRect(ink, topLeft = Offset(s, s), size = size, cornerRadius = CornerRadius(radius.toPx()))
+                val cr = CornerRadius(r.toPx())
+                if (soft) {                 // bóng mờ: 2 lớp lệch xuống
+                    drawRoundRect(Color.Black.copy(alpha = 0.06f), topLeft = Offset(0f, s * 1.1f), size = size, cornerRadius = cr)
+                    drawRoundRect(Color.Black.copy(alpha = 0.08f), topLeft = Offset(0f, s * 0.5f), size = size, cornerRadius = cr)
+                } else {
+                    drawRoundRect(ink, topLeft = Offset(s, s), size = size, cornerRadius = cr)
+                }
             }
         }
         .clip(shape)
-        .background(bg)
-        .border(border, ink, shape)
+        .background(fill)
+        .border(bw, line, shape)
 }
 
 @Composable

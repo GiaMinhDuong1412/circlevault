@@ -87,7 +87,6 @@ async function renderWatch(my) {
         <button class="btn yellow" type="button" data-ya="audio">♪ Tải MP3</button>
         <button class="btn cyan" type="button" data-ya="party">Xem chung</button>
         ${desk ? '<button class="btn plain" type="button" data-ya="browser" title="Video không phát được ở đây (bị chặn nhúng) thì mở bằng trình duyệt YouTube">Mở bằng trình duyệt YouTube</button>' : ''}
-        <label class="yt-q" id="ywQ" hidden>Chất lượng <select id="ywQs" aria-label="Chất lượng video"></select></label>
         <button class="btn plain" type="button" data-yback>← Quay lại</button>
       </div>
       <details class="box pcard yt-desc" id="ywDesc" hidden><summary>Mô tả</summary><div class="yt-desc-t"></div></details>
@@ -111,15 +110,55 @@ async function renderWatch(my) {
 }
 
 /* ---- trình phát của app: YouTube tách hình/tiếng ở chất lượng cao → <video> (hình) + <audio> (tiếng) chạy khớp nhau */
-let avTimer = 0;
+let avTimer = 0, hideTimer = 0, ytAudio = null, ytEngine = null;
+const SVG = {
+  play: '<svg viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z" fill="currentColor"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><path d="M6 4h4.5v16H6zM13.5 4H18v16h-4.5z" fill="currentColor"/></svg>',
+  back: '<svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z" fill="currentColor"/><text x="12" y="16.5" font-size="7" text-anchor="middle" fill="currentColor" font-weight="800">10</text></svg>',
+  fwd: '<svg viewBox="0 0 24 24"><path d="M12 5V1l5 5-5 5V7a6 6 0 1 0 6 6h2a8 8 0 1 1-8-8z" fill="currentColor"/><text x="12" y="16.5" font-size="7" text-anchor="middle" fill="currentColor" font-weight="800">10</text></svg>',
+  vol: '<svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
+  mute: '<svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
+  full: '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>',
+  pip: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><rect x="12" y="11" width="7" height="6" rx="1" fill="currentColor"/></svg>',
+};
+const tfmt = t => (isFinite(t) && t > 0) ? fmtDur(Math.floor(t)) : '0:00';
 function stopPlayer() {
-  clearInterval(avTimer);
-  document.querySelectorAll('#ywPlayer video, #ywPlayer audio').forEach(m => { try { m.pause(); m.removeAttribute('src'); m.load(); } catch (e) { /* bỏ qua */ } });
+  clearInterval(avTimer); clearTimeout(hideTimer);
+  document.querySelectorAll('#ywPlayer video').forEach(m => { try { m.pause(); m.removeAttribute('src'); m.load(); } catch (e) { /* bỏ qua */ } });
+  if (ytAudio) { ytAudio.pause(); ytAudio.removeAttribute('src'); ytAudio.load(); }
+  if (document.fullscreenElement && document.fullscreenElement.id === 'ywPlayer') document.exitFullscreen().catch(() => {});
 }
 function embedHtml(v, origin) {
   return `<iframe src="https://www.youtube.com/embed/${esc(v)}?autoplay=1&rel=0&playsinline=1&origin=${origin}" title="Trình phát YouTube"
     allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
 }
+/* tiếng YouTube đi qua bộ EQ dùng chung cài đặt với Nghe Nhạc (một <audio> cố định → một Engine) */
+function ytAudioEl() {
+  if (!ytAudio) {
+    ytAudio = new Audio();
+    ytAudio.preload = 'auto';
+    if (window.CV.eq) ytEngine = new window.CV.eq.Engine(ytAudio);
+    applyEq();
+  }
+  return ytAudio;
+}
+function eqObj() { return window.CV.music && window.CV.music.eq ? window.CV.music.eq() : null; }
+function applyEq() { const e = eqObj(); if (ytEngine && e) ytEngine.apply(e.state); paintEq(); }
+window.addEventListener('cv-eq', applyEq);
+function paintEq() {
+  const b = $('#ytcEq'), e = eqObj(); if (!b) return;
+  b.classList.toggle('on', !!(e && e.state.enabled));
+}
+function eqPop() {
+  const e = eqObj(), pop = $('#ytcEqPop'); if (!pop) return;
+  if (!e) { pop.innerHTML = '<p class="hint">Bộ chỉnh âm chưa sẵn sàng.</p>'; return; }
+  const P = window.CV.eq.PRESETS, st = e.state;
+  pop.innerHTML = `<div class="ytc-eqh"><b>Bộ chỉnh âm</b><label class="switch"><input type="checkbox" id="ytcEqOn" ${st.enabled ? 'checked' : ''}><span>Bật</span></label></div>
+    <div class="ytc-eqp">${Object.entries(P).map(([k, p]) => `<button type="button" class="chip ${st.preset === k ? 'on' : ''}" data-yeq="${k}">${esc(p.name)}</button>`).join('')}
+      ${Object.keys(st.custom || {}).map(n => `<button type="button" class="chip ${st.preset === 'u:' + n ? 'on' : ''}" data-yeq="u:${esc(n)}">★ ${esc(n)}</button>`).join('')}</div>
+    <a href="#music" class="hint" data-yeqmore>Chỉnh chi tiết 10 dải ở tab Nghe Nhạc →</a>`;
+}
+
 async function setupPlayer(v, origin, my) {
   stopPlayer();
   let p;
@@ -132,53 +171,129 @@ async function setupPlayer(v, origin, my) {
     note.innerHTML = `${esc(p.why || '')} Trình phát YouTube báo lỗi thì bấm <b>Mở bằng trình duyệt YouTube</b>.`;
     return;
   }
-  if (p.mode === 'single') {
-    host.innerHTML = `<video controls autoplay playsinline src="${esc(p.src)}"></video>`;
-    return;
-  }
-  host.innerHTML = `<video id="ywV" controls autoplay playsinline></video><audio id="ywA" preload="auto"></audio>`;
-  const vid = $('#ywV'), aud = $('#ywA');
+  const split = p.mode === 'split';
+  host.innerHTML = `<video id="ywV" playsinline preload="auto"></video>
+    <div class="ytc" id="ytc">
+      <div class="ytc-seekw"><div class="ytc-buf" id="ytcBuf"></div><input type="range" class="ytc-seek" id="ytcSeek" min="0" max="1000" step="1" value="0" aria-label="Tua"></div>
+      <div class="ytc-row">
+        <button type="button" class="ytc-b main" id="ytcPlay" aria-label="Phát / tạm dừng (Space)">${SVG.play}</button>
+        <button type="button" class="ytc-b" id="ytcBack" aria-label="Lùi 10 giây (←)">${SVG.back}</button>
+        <button type="button" class="ytc-b" id="ytcFwd" aria-label="Tới 10 giây (→)">${SVG.fwd}</button>
+        <span class="ytc-t" id="ytcT">0:00 / 0:00</span>
+        <span class="sp"></span>
+        <button type="button" class="ytc-b" id="ytcMute" aria-label="Tắt tiếng (M)">${SVG.vol}</button>
+        <input type="range" class="ytc-vol" id="ytcVol" min="0" max="1" step="0.01" aria-label="Âm lượng (↑ ↓)">
+        ${split ? '<span class="ytc-eqw"><button type="button" class="ytc-b txt" id="ytcEq" aria-label="Bộ chỉnh âm">EQ</button><div class="ytc-pop" id="ytcEqPop" hidden></div></span>' : ''}
+        <select class="ytc-sel" id="ytcRate" aria-label="Tốc độ">${[0.5, 0.75, 1, 1.25, 1.5, 2].map(r => `<option value="${r}" ${r === 1 ? 'selected' : ''}>${r}×</option>`).join('')}</select>
+        ${split ? '<select class="ytc-sel" id="ytwQs" aria-label="Chất lượng"></select>' : ''}
+        ${document.pictureInPictureEnabled ? `<button type="button" class="ytc-b" id="ytcPip" aria-label="Cửa sổ nổi">${SVG.pip}</button>` : ''}
+        <button type="button" class="ytc-b" id="ytcFull" aria-label="Toàn màn hình (F)">${SVG.full}</button>
+      </div>
+    </div>`;
+  const vid = $('#ywV');
+  const aud = split ? ytAudioEl() : vid;          // phần tử phát tiếng (âm lượng, EQ)
   let saved = 1;
-  try { saved = +localStorage.getItem('cv-yt-vol') || 1; } catch (e) { /* bỏ qua */ }
-  vid.volume = aud.volume = Math.min(1, Math.max(0, saved));
-  aud.src = p.audio;
-  let pick = p.default;
-  try { const h = +localStorage.getItem('cv-yt-q'); const m = h && p.qualities.find(x => x.h <= h); if (m) pick = m.f; } catch (e) { /* bỏ qua */ }
-  vid.src = p.base + pick;
-  const q = $('#ywQ'), qs = $('#ywQs');
-  q.hidden = false;
-  qs.innerHTML = p.qualities.map(x => `<option value="${esc(x.f)}" ${x.f === pick ? 'selected' : ''}>${x.h}p${x.fps > 30 ? x.fps : ''}</option>`).join('');
-  qs.onchange = () => {
-    const t = vid.currentTime, playing = !vid.paused;
-    try { localStorage.setItem('cv-yt-q', String(p.qualities.find(x => x.f === qs.value)?.h || '')); } catch (e) { /* bỏ qua */ }
-    vid.src = p.base + qs.value;
-    vid.addEventListener('loadedmetadata', () => { vid.currentTime = t; aud.currentTime = t; if (playing) vid.play().catch(() => {}); }, {once: true});
-  };
-  const near = () => { if (Math.abs(aud.currentTime - vid.currentTime) > 0.3) aud.currentTime = vid.currentTime; };
-  vid.addEventListener('play', () => { near(); aud.play().catch(() => {}); });
-  vid.addEventListener('playing', () => { near(); if (aud.paused) aud.play().catch(() => {}); });
-  vid.addEventListener('pause', () => { if (!vid._wait) aud.pause(); });
-  vid.addEventListener('waiting', () => aud.pause());
-  vid.addEventListener('seeking', () => { aud.currentTime = vid.currentTime; });
-  vid.addEventListener('ratechange', () => { aud.playbackRate = vid.playbackRate; });
-  vid.addEventListener('volumechange', () => {
-    aud.volume = vid.volume; aud.muted = vid.muted;
-    try { localStorage.setItem('cv-yt-vol', String(vid.volume)); } catch (e) { /* bỏ qua */ }
-  });
-  vid.addEventListener('ended', () => aud.pause());
-  aud.addEventListener('waiting', () => { if (!vid.paused) { vid._wait = true; vid.pause(); } });   // tiếng chưa kịp tải: đợi cùng
-  aud.addEventListener('canplay', () => { if (vid._wait) { vid._wait = false; vid.play().catch(() => {}); } });
-  const fail = what => () => {
+  try { saved = localStorage.getItem('cv-yt-vol'); saved = saved == null ? 1 : +saved; } catch (e) { saved = 1; }
+  aud.volume = Math.min(1, Math.max(0, saved));
+  if (split) {
+    vid.muted = true;
+    aud.src = p.audio;
+    let pick = p.default;
+    try { const h = +localStorage.getItem('cv-yt-q'); const m = h && p.qualities.find(x => x.h <= h); if (m) pick = m.f; } catch (e) { /* bỏ qua */ }
+    vid.src = p.base + pick;
+    const qs = $('#ytwQs');
+    qs.innerHTML = p.qualities.map(x => `<option value="${esc(x.f)}" ${x.f === pick ? 'selected' : ''}>${x.h}p${x.fps > 30 ? x.fps : ''}</option>`).join('');
+    qs.onchange = () => {
+      const t = vid.currentTime, playing = !vid.paused;
+      try { localStorage.setItem('cv-yt-q', String(p.qualities.find(x => x.f === qs.value)?.h || '')); } catch (e) { /* bỏ qua */ }
+      vid.src = p.base + qs.value;
+      vid.addEventListener('loadedmetadata', () => { vid.currentTime = t; aud.currentTime = t; if (playing) vid.play().catch(() => {}); }, {once: true});
+    };
+    const near = () => { if (Math.abs(aud.currentTime - vid.currentTime) > 0.3) aud.currentTime = vid.currentTime; };
+    vid.addEventListener('play', () => { near(); ytEngine && ytEngine.resume(); aud.play().catch(() => {}); });
+    vid.addEventListener('playing', () => { near(); if (aud.paused) aud.play().catch(() => {}); });
+    vid.addEventListener('pause', () => { if (!vid._wait) aud.pause(); });
+    vid.addEventListener('waiting', () => aud.pause());
+    vid.addEventListener('seeking', () => { aud.currentTime = vid.currentTime; });
+    vid.addEventListener('ratechange', () => { aud.playbackRate = vid.playbackRate; });
+    vid.addEventListener('ended', () => aud.pause());
+    aud.onwaiting = () => { if (!vid.paused) { vid._wait = true; vid.pause(); } };   // tiếng chưa kịp tải: đợi cùng
+    aud.oncanplay = () => { if (vid._wait) { vid._wait = false; vid.play().catch(() => {}); } };
+    aud.onerror = () => fail('tiếng');
+    clearInterval(avTimer);
+    avTimer = setInterval(() => { if (!vid.isConnected) return clearInterval(avTimer); if (!vid.paused && !vid.seeking) near(); }, 1000);
+  } else vid.src = p.src;
+  function fail(what) {
     if (my !== Y.seq) return;
     note.hidden = false;
     note.innerHTML = `Không phát được ${what} của video này. <button class="btn sm plain" type="button" data-yembed>Dùng trình phát YouTube</button>`;
+  }
+  vid.addEventListener('error', () => fail('hình'));
+
+  /* ---- thanh điều khiển */
+  const seek = $('#ytcSeek'), vol = $('#ytcVol'), playB = $('#ytcPlay'), muteB = $('#ytcMute'), ctl = $('#ytc');
+  let dragging = false;
+  const paintVol = () => {
+    vol.value = aud.muted ? 0 : aud.volume;
+    vol.style.setProperty('--p', (aud.muted ? 0 : aud.volume) * 100 + '%');
+    muteB.innerHTML = aud.muted || aud.volume === 0 ? SVG.mute : SVG.vol;
   };
-  vid.addEventListener('error', fail('hình'));
-  aud.addEventListener('error', fail('tiếng'));
-  clearInterval(avTimer);
-  avTimer = setInterval(() => { if (!vid.isConnected) return clearInterval(avTimer); if (!vid.paused && !vid.seeking) near(); }, 1000);
+  const paint = () => {
+    const d = vid.duration || p.duration || 0;
+    if (!dragging) { seek.value = d ? Math.round(vid.currentTime / d * 1000) : 0; seek.style.setProperty('--p', (d ? vid.currentTime / d * 100 : 0) + '%'); }
+    $('#ytcT').textContent = `${tfmt(vid.currentTime)} / ${tfmt(d)}`;
+    try { const b = vid.buffered; if (b.length && d) $('#ytcBuf').style.width = (b.end(b.length - 1) / d * 100) + '%'; } catch (e) { /* bỏ qua */ }
+    playB.innerHTML = vid.paused ? SVG.play : SVG.pause;
+    host.classList.toggle('paused', vid.paused);
+  };
+  ['timeupdate', 'play', 'pause', 'loadedmetadata', 'progress', 'durationchange'].forEach(ev => vid.addEventListener(ev, paint));
+  const toggle = () => { if (vid.paused) vid.play().catch(() => {}); else vid.pause(); };
+  const jump = s => { vid.currentTime = Math.max(0, Math.min((vid.duration || 0) - 0.5, vid.currentTime + s)); paint(); };
+  const setVol = x => { aud.muted = false; aud.volume = Math.min(1, Math.max(0, x)); try { localStorage.setItem('cv-yt-vol', String(aud.volume)); } catch (e) { /* bỏ qua */ } paintVol(); };
+  playB.onclick = toggle;
+  vid.addEventListener('click', toggle);
+  vid.addEventListener('dblclick', () => $('#ytcFull').click());
+  $('#ytcBack').onclick = () => jump(-10);
+  $('#ytcFwd').onclick = () => jump(10);
+  seek.addEventListener('input', () => { dragging = true; const d = vid.duration || 0; seek.style.setProperty('--p', seek.value / 10 + '%'); $('#ytcT').textContent = `${tfmt(seek.value / 1000 * d)} / ${tfmt(d)}`; });
+  seek.addEventListener('change', () => { dragging = false; const d = vid.duration || 0; if (d) vid.currentTime = seek.value / 1000 * d; });
+  vol.addEventListener('input', () => setVol(+vol.value));
+  muteB.onclick = () => { aud.muted = !aud.muted; paintVol(); };
+  $('#ytcRate').onchange = e => { vid.playbackRate = +e.target.value; };
+  $('#ytcFull').onclick = () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else host.requestFullscreen().catch(() => {}); };
+  $('#ytcPip')?.addEventListener('click', () => { (document.pictureInPictureElement ? document.exitPictureInPicture() : vid.requestPictureInPicture()).catch(() => {}); });
+  if (split) {
+    $('#ytcEq').onclick = e => { e.stopPropagation(); const pop = $('#ytcEqPop'); pop.hidden = !pop.hidden; if (!pop.hidden) eqPop(); };
+    $('#ytcEqPop').addEventListener('click', e => {
+      e.stopPropagation();
+      const k = e.target.closest('[data-yeq]'); const eq = eqObj();
+      if (k && eq) { eq.setPreset(k.dataset.yeq); eqPop(); return; }
+      if (e.target.closest('[data-yeqmore]')) { $('#ytcEqPop').hidden = true; vid.pause(); setTimeout(() => document.getElementById('eqPanel')?.scrollIntoView({behavior: 'smooth'}), 120); }
+    });
+    $('#ytcEqPop').addEventListener('change', e => { if (e.target.id === 'ytcEqOn') { const eq = eqObj(); if (eq && eq.state.enabled !== e.target.checked) eq.toggle(); } });
+    paintEq();
+  }
+  const wake = () => { host.classList.add('ui'); clearTimeout(hideTimer); hideTimer = setTimeout(() => host.classList.remove('ui'), 2600); };
+  host.addEventListener('mousemove', wake);
+  host.addEventListener('mouseleave', () => host.classList.remove('ui'));
+  ctl.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+  host._keys = e => {
+    if (e.target.closest('input[type=text], input[type=search], textarea, select') || e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === ' ' || k === 'k') { e.preventDefault(); toggle(); } else if (k === 'arrowleft') { e.preventDefault(); jump(-5); } else if (k === 'arrowright') { e.preventDefault(); jump(5); }
+    else if (k === 'arrowup') { e.preventDefault(); setVol(aud.volume + 0.05); } else if (k === 'arrowdown') { e.preventDefault(); setVol(aud.volume - 0.05); }
+    else if (k === 'm') { aud.muted = !aud.muted; paintVol(); } else if (k === 'f') $('#ytcFull').click();
+    else return;
+    wake();
+  };
+  paintVol(); paint();
   vid.play().catch(() => {});
 }
+document.addEventListener('keydown', e => {
+  const h = document.getElementById('ywPlayer');
+  if (h && h._keys && window.CV.S.view === 'youtube' && h.isConnected && !document.querySelector('dialog[open]')) h._keys(e);
+});
+document.addEventListener('click', e => { const pop = document.getElementById('ytcEqPop'); if (pop && !pop.hidden && !e.target.closest('.ytc-eqw')) pop.hidden = true; });
 
 function go(page, push = true) {
   stopPlayer();
@@ -189,7 +304,7 @@ function go(page, push = true) {
   window.scrollTo({top: 0});
 }
 function back() { stopPlayer(); Y.page = Y.stack.pop() || {t: 'feed', kind: 'home'}; render(); }
-window.addEventListener('hashchange', () => { if (location.hash !== '#youtube') document.querySelectorAll('#ywPlayer video, #ywPlayer audio').forEach(m => m.pause()); });
+window.addEventListener('hashchange', () => { if (location.hash !== '#youtube') { document.querySelectorAll('#ywPlayer video').forEach(m => m.pause()); if (ytAudio) ytAudio.pause(); } });
 
 function bindHead() {
   const f = $('#ytQ'); if (!f || f.dataset.b) return;
@@ -245,7 +360,7 @@ document.addEventListener('click', e => {
   if (e.target.closest('[data-yback]')) return back();
   if (e.target.closest('[data-yretry]')) return render();
   if (e.target.closest('[data-yrefresh]')) { Y.page.refresh = true; return render(); }
-  if (e.target.closest('[data-yembed]')) { stopPlayer(); $('#ywPlayer').innerHTML = embedHtml(Y.page.v, encodeURIComponent(location.origin)); $('#ywNote').hidden = true; $('#ywQ').hidden = true; return; }
+  if (e.target.closest('[data-yembed]')) { stopPlayer(); $('#ywPlayer').innerHTML = embedHtml(Y.page.v, encodeURIComponent(location.origin)); $('#ywNote').hidden = true; return; }
   const a = e.target.closest('[data-ya]');
   if (a) return act(a.dataset.ya);
   if (!e.target.closest('.yt-search')) { const s = $('#ytSug'); if (s) s.hidden = true; }

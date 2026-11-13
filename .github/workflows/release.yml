@@ -85,13 +85,17 @@ jobs:
         run: |
           V="${{ steps.ver.outputs.ver }}"
           PREV=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          # "Có gì mới" = mục đầu của frontend/thay-doi/thay-doi.json (cùng nội dung cuộn giấy trong app)
+          python -c "import json,io;d=json.load(io.open('frontend/thay-doi/thay-doi.json',encoding='utf-8'))['entries'][0];io.open('whatsnew.md','w',encoding='utf-8').write('### '+d['title']+'\n\n'+''.join('- '+x+'\n' for x in d['items'])+'\n')" || : > whatsnew.md
           {
             echo "CircleVault $V – commit ${GITHUB_SHA::7}"
             echo
+            cat whatsnew.md
             echo "Thay đổi:"
             if [ -n "$PREV" ]; then git log --no-merges --pretty='- %s' "$PREV..HEAD" | head -40; else git log --no-merges --pretty='- %s' -20; fi
           } > notes.md
           {
+            cat whatsnew.md
             echo "**Tải về (Windows 10/11, 64-bit):**"
             echo "- \`CircleVault-Setup-$V.exe\`: bộ cài, khuyên dùng (không cần quyền admin, tự báo và cài bản mới về sau)"
             echo "- \`CircleVault-Portable-$V.exe\`: bản chạy ngay, không cần cài (không tự cập nhật)"
