@@ -14,10 +14,11 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
-from . import config, devices, downloader
-from .ytmusic import _ydl_info, VID
+from . import config, devices, downloader, ytinner
+from .ytmusic import _ydl_info, _get, VID
 
 router = APIRouter(prefix="/api/yt", dependencies=[Depends(devices.local_only)])
 _cache: dict[str, tuple[float, object]] = {}
@@ -117,6 +118,22 @@ def _home() -> dict:
     """Trang chủ YouTube (đề xuất). YouTube trả trang chủ RỖNG khi tài khoản tắt Lịch sử xem (hoặc cookie không còn hiệu lực)
     → tự ghép đề xuất: video mới từ kênh đăng ký + video giống những video đã xem / đã thích gần đây."""
     warn: list[str] = []
+    items: list[dict] = []
+    inner_note = ""
+    try:                                     # như trang chủ youtube.com (browse FEwhat_to_watch)
+        raw, inner_note = ytinner.home()
+        seen0: set[str] = set()
+        for e in raw:
+            v = _v(e)
+            if v and v["id"] not in seen0:
+                seen0.add(v["id"])
+                items.append(v)
+    except Exception as e:  # noqa: BLE001
+        inner_note = downloader.clean(str(e))[:200]
+    if items:
+        return {"items": items}
+    if inner_note:
+        warn.append(inner_note)
     items = _try_list(FEEDS["home"][0], 60, warn)
     if items:
         return {"items": items}
@@ -152,7 +169,7 @@ def _home() -> dict:
     if liked:
         sections.append({"title": "Giống video bạn đã thích", "items": similar(liked)})
     sections = [x for x in sections if x["items"]]
-    why = next((w for w in warn if re.search(r"cookie|sign in|log in|logged", w, re.I)), "")
+    why = next((w for w in warn if re.search(r"cookie|sign in|log in|logged|YouTube báo|Không thấy", w, re.I)), "")
     note = ("YouTube không trả về trang chủ đề xuất" + (f" ({why[:160]})" if why else
             " – thường do tài khoản đang TẮT Lịch sử xem (YouTube khi đó để trống trang chủ)") +
             ". CircleVault tự ghép đề xuất từ kênh đăng ký và video bạn đã xem/thích.")
@@ -203,11 +220,40 @@ def _details(vid: str) -> dict:
             "tags": (info.get("tags") or [])[:8]}
 
 
+def _next(v: str) -> dict | None:
+    """Chi tiết + 'video tiếp theo' thật của YouTube (endpoint next). None nếu không đọc được."""
+    try:
+        n = ytinner.watch_next(v)
+    except Exception:  # noqa: BLE001
+        return None
+    if not n or not n.get("title"):
+        return None
+    seen, related = {v}, []
+    for e in n["related"]:
+        x = _v(e)
+        if x and x["id"] not in seen:
+            seen.add(x["id"])
+            related.append(x)
+    return {"id": v, "title": n["title"], "channel": n["channel"], "channel_id": n["channel_id"], "views": n["views"],
+            "views_text": n["views_text"], "likes": n["likes"], "date": n["date"], "subs_text": n["subs_text"],
+            "description": n["description"][:5000], "playable_in_embed": True, "related": related[:40]}
+
+
 @router.get("/video")
 def video(v: str):
     if not VID.match(v or ""):
         raise HTTPException(400, "Mã video không hợp lệ.")
-    det = _cached("v:" + v, lambda: _details(v), 3600)
+    nx = _cached("n:" + v, lambda: _next(v), 1800)
+    if nx and nx["related"]:
+        return nx
+    try:
+        det = _cached("v:" + v, lambda: _details(v), 3600)
+    except HTTPException:
+        if nx:
+            return nx
+        raise
+    if nx:
+        det = {**det, **{k: nx[k] for k in ("title", "channel", "channel_id", "views", "likes", "date", "description") if nx.get(k)}}
     words = re.sub(r"[\[\](){}|•·\-–—_/\\\"'“”#@!?.,:;]+", " ", det["title"]).split()
     q = " ".join(words[:6]) or det["channel"]
 
@@ -240,3 +286,127 @@ def video(v: str):
 @router.get("/status")
 def status():
     return {"logged_in": downloader.youtube_logged_in(), "use_account": config.load().get("use_youtube_account", True)}
+
+
+# ------------------------------------------------------------------ trình phát của app (không dùng trình phát nhúng)
+# YouTube tách hình và tiếng ở chất lượng cao: trang dùng <video> (chỉ hình) + <audio> (chỉ tiếng) chạy khớp nhau;
+# luồng đi qua /api/yt/s/<id>/<định dạng> (chuyển tiếp Range từng đoạn 8 MB, link hết hạn thì lấy lại).
+_play: dict[str, dict] = {}
+_play_lock = threading.Lock()
+PCHUNK = 8 * 1024 * 1024
+
+
+def _vcodec_rank(f: dict) -> int:
+    c = (f.get("vcodec") or "").lower()
+    return 3 if c.startswith("avc1") else 2 if c.startswith(("vp09", "vp9")) else 1 if c.startswith("av01") else 0
+
+
+def _resolve_play(vid: str, force: bool = False) -> dict:
+    with _play_lock:
+        hit = _play.get(vid)
+        if hit and not force and hit["exp"] > time.time():
+            return hit
+    info = _ydl_info(f"https://www.youtube.com/watch?v={vid}")
+    fmts = [f for f in info.get("formats") or [] if f.get("url") and f.get("protocol") in ("https", "http")
+            and not f.get("has_drm")]
+    none = (None, "none")
+    vo = [f for f in fmts if f.get("vcodec") not in none and f.get("acodec") in none and (f.get("height") or 0) > 0]
+    ao = [f for f in fmts if f.get("acodec") not in none and f.get("vcodec") in none]
+    av = [f for f in fmts if f.get("acodec") not in none and f.get("vcodec") not in none]
+    by_h: dict[int, dict] = {}
+    for f in vo:
+        h = int(f["height"])
+        if h not in by_h or (_vcodec_rank(f), f.get("tbr") or 0) > (_vcodec_rank(by_h[h]), by_h[h].get("tbr") or 0):
+            by_h[h] = f
+    audio = max(ao, key=lambda f: (f.get("ext") == "m4a", f.get("abr") or f.get("tbr") or 0)) if ao else None
+    prog = max(av, key=lambda f: f.get("height") or 0) if av else None
+
+    def mime(f, kind):
+        ext = f.get("ext") or ("mp4" if kind == "video" else "m4a")
+        return f"{kind}/{'mp4' if ext in ('mp4', 'm4a') else 'webm' if ext == 'webm' else ext}"
+    table = {}
+    for f in by_h.values():
+        table[f["format_id"]] = {"url": f["url"], "headers": f.get("http_headers") or {}, "mime": mime(f, "video")}
+    if audio:
+        table[audio["format_id"]] = {"url": audio["url"], "headers": audio.get("http_headers") or {}, "mime": mime(audio, "audio")}
+    if prog:
+        table[prog["format_id"]] = {"url": prog["url"], "headers": prog.get("http_headers") or {}, "mime": mime(prog, "video")}
+    q = [{"h": h, "f": by_h[h]["format_id"], "codec": (by_h[h].get("vcodec") or "").split(".")[0], "fps": by_h[h].get("fps")}
+         for h in sorted(by_h, reverse=True)]
+    entry = {"exp": time.time() + 4 * 3600, "table": table, "qualities": q, "audio": audio and audio["format_id"],
+             "prog": prog and prog["format_id"], "live": info.get("is_live") or info.get("live_status") == "is_live",
+             "duration": info.get("duration"), "title": info.get("title")}
+    with _play_lock:
+        _play[vid] = entry
+        if len(_play) > 60:
+            for k in sorted(_play, key=lambda k: _play[k]["exp"])[:20]:
+                _play.pop(k, None)
+    return entry
+
+
+@router.get("/play")
+def play(v: str):
+    if not VID.match(v or ""):
+        raise HTTPException(400, "Mã video không hợp lệ.")
+    e = _resolve_play(v)
+    if e["live"]:
+        return {"mode": "embed", "why": "Video đang phát trực tiếp: xem bằng trình phát YouTube."}
+    if e["qualities"] and e["audio"]:
+        return {"mode": "split", "qualities": e["qualities"], "audio": f"/api/yt/s/{v}/{e['audio']}",
+                "default": next((x["f"] for x in e["qualities"] if x["h"] <= 1080), e["qualities"][-1]["f"]),
+                "base": f"/api/yt/s/{v}/", "duration": e["duration"]}
+    if e["prog"]:
+        return {"mode": "single", "src": f"/api/yt/s/{v}/{e['prog']}", "duration": e["duration"]}
+    return {"mode": "embed", "why": "Không lấy được luồng phát của video này."}
+
+
+_RANGE = re.compile(r"bytes=(\d*)-(\d*)")
+
+
+@router.get("/s/{vid}/{fid}")
+def stream(vid: str, fid: str, request: Request):
+    if not VID.match(vid) or not re.match(r"^[\w-]{1,40}$", fid):
+        raise HTTPException(400, "Sai định dạng.")
+    e = _resolve_play(vid)
+    src = e["table"].get(fid)
+    if not src:
+        raise HTTPException(404, "Không có định dạng này.")
+    m = _RANGE.match(request.headers.get("range", "") or "")
+    start = int(m.group(1)) if m and m.group(1) else 0
+    want_end = int(m.group(2)) if m and m.group(2) else None
+    stop = start + PCHUNK - 1 if want_end is None else min(want_end, start + PCHUNK - 1)
+    r = _get(src, start, stop)
+    if r.status_code in (403, 410):                       # link hết hạn → lấy lại
+        r.close()
+        src = _resolve_play(vid, force=True)["table"].get(fid)
+        if not src:
+            raise HTTPException(410, "Định dạng không còn, bấm phát lại.")
+        r = _get(src, start, stop)
+    if r.status_code == 416:
+        r.close()
+        raise HTTPException(416, "Vượt quá cuối video.")
+    if r.status_code not in (200, 206):
+        r.close()
+        raise HTTPException(502, f"YouTube từ chối luồng (mã {r.status_code}).")
+    cr = re.search(r"/(\d+)", r.headers.get("content-range", ""))
+    total = int(cr.group(1)) if cr else int(r.headers.get("content-length") or 0) + (start if r.status_code == 206 else 0)
+    if r.status_code == 200:
+        start = 0
+    end = min(stop, total - 1) if total else stop
+    if want_end is None and total and r.status_code == 200:
+        end = total - 1
+
+    def gen(r=r):
+        sent = 0
+        try:
+            for chunk in r.iter_content(64 * 1024):
+                if sent > end - start:
+                    break
+                chunk = chunk[: end - start + 1 - sent]
+                sent += len(chunk)
+                yield chunk
+        finally:
+            r.close()
+    headers = {"Accept-Ranges": "bytes", "Content-Length": str(end - start + 1), "Cache-Control": "no-store",
+               "Content-Range": f"bytes {start}-{end}/{total or '*'}"}
+    return StreamingResponse(gen(), status_code=206, media_type=src["mime"], headers=headers)

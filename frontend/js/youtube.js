@@ -42,8 +42,8 @@ async function render() {
   bindHead();
   let d;
   try {
-    d = p.t === 'search' ? await api('https://rp2.alfred511.top/hf/api/yt/search?q=' + encodeURIComponent(p.q))
-      : p.t === 'channel' ? await api('https://rp2.alfred511.top/hf/api/yt/channel?c=' + encodeURIComponent(p.c))
+    d = p.t === 'search' ? await api('/api/yt/search?q=' + encodeURIComponent(p.q))
+      : p.t === 'channel' ? await api('/api/yt/channel?c=' + encodeURIComponent(p.c))
       : await api(`/api/yt/feed?kind=${p.kind}${p.refresh ? '&refresh=1' : ''}`);
   } catch (e) {
     if (my !== Y.seq) return;
@@ -78,8 +78,8 @@ async function renderWatch(my) {
   const origin = encodeURIComponent(location.origin);
   box.innerHTML = head() + `<div class="yt-watch">
     <div class="yt-main">
-      <div class="yt-player box"><iframe src="https://www.youtube.com/embed/${esc(v)}?autoplay=1&rel=0&playsinline=1&enablejsapi=1&origin=${origin}"
-        title="Trình phát YouTube" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+      <div class="yt-player box" id="ywPlayer"><div class="yt-load"><span class="spin"></span> Đang mở video…</div></div>
+      <div class="yt-pnote hint" id="ywNote" hidden></div>
       <h2 class="yt-title" id="ywTitle">${esc(pre.title || '')}</h2>
       <div class="yt-meta" id="ywMeta"><span class="hint">Đang tải thông tin…</span></div>
       <div class="btn-row yt-acts">
@@ -87,6 +87,7 @@ async function renderWatch(my) {
         <button class="btn yellow" type="button" data-ya="audio">♪ Tải MP3</button>
         <button class="btn cyan" type="button" data-ya="party">Xem chung</button>
         ${desk ? '<button class="btn plain" type="button" data-ya="browser" title="Video không phát được ở đây (bị chặn nhúng) thì mở bằng trình duyệt YouTube">Mở bằng trình duyệt YouTube</button>' : ''}
+        <label class="yt-q" id="ywQ" hidden>Chất lượng <select id="ywQs" aria-label="Chất lượng video"></select></label>
         <button class="btn plain" type="button" data-yback>← Quay lại</button>
       </div>
       <details class="box pcard yt-desc" id="ywDesc" hidden><summary>Mô tả</summary><div class="yt-desc-t"></div></details>
@@ -95,28 +96,100 @@ async function renderWatch(my) {
   </div>`;
   bindHead();
   window.dispatchEvent(new Event('cv-video-play'));   // tạm dừng nhạc đang phát ở tab Nghe Nhạc
+  setupPlayer(v, origin, my);
   let d;
-  try { d = await api('https://rp2.alfred511.top/hf/api/yt/video?v=' + encodeURIComponent(v)); }
+  try { d = await api('/api/yt/video?v=' + encodeURIComponent(v)); }
   catch (e) { if (my === Y.seq) { $('#ywMeta').innerHTML = `<span class="hint">${esc(e.message)}</span>`; $('#ywRel').innerHTML = ''; } return; }
   if (my !== Y.seq) return;
   Y.data = d;
   $('#ywTitle').textContent = d.title;
   $('#ywMeta').innerHTML = `<a href="#youtube" class="yt-chlink" data-ych="${esc(d.channel_id)}"><span class="yt-ava sm">${esc((d.channel || '?').slice(0, 1))}</span><b>${esc(d.channel)}</b></a>
-    ${d.subs ? `<span class="hint">${num(d.subs)} người đăng ký</span>` : ''}<span class="sp"></span>
-    <span>${esc(views(d.views))}</span>${d.likes ? `<span>👍 ${num(d.likes)}</span>` : ''}${d.date ? `<span>${esc(d.date)}</span>` : ''}`;
-  if (d.playable_in_embed === false) toast('Chủ kênh không cho phát video này ngoài YouTube. Bấm "Mở bằng trình duyệt YouTube".', 'err');
+    ${d.subs ? `<span class="hint">${num(d.subs)} người đăng ký</span>` : d.subs_text ? `<span class="hint">${esc(d.subs_text)}</span>` : ''}<span class="sp"></span>
+    <span>${esc(d.views != null ? views(d.views) : d.views_text || '')}</span>${d.likes ? `<span>👍 ${num(d.likes)}</span>` : ''}${d.date ? `<span>${esc(d.date)}</span>` : ''}`;
   if (d.description) { $('#ywDesc').hidden = false; $('.yt-desc-t').textContent = d.description; }
   $('#ywRel').innerHTML = d.related.map(x => card(x, true)).join('') || '<p class="hint">Không có.</p>';
 }
 
+/* ---- trình phát của app: YouTube tách hình/tiếng ở chất lượng cao → <video> (hình) + <audio> (tiếng) chạy khớp nhau */
+let avTimer = 0;
+function stopPlayer() {
+  clearInterval(avTimer);
+  document.querySelectorAll('#ywPlayer video, #ywPlayer audio').forEach(m => { try { m.pause(); m.removeAttribute('src'); m.load(); } catch (e) { /* bỏ qua */ } });
+}
+function embedHtml(v, origin) {
+  return `<iframe src="https://www.youtube.com/embed/${esc(v)}?autoplay=1&rel=0&playsinline=1&origin=${origin}" title="Trình phát YouTube"
+    allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+}
+async function setupPlayer(v, origin, my) {
+  stopPlayer();
+  let p;
+  try { p = await api('/api/yt/play?v=' + encodeURIComponent(v)); } catch (e) { p = {mode: 'embed', why: e.message}; }
+  if (my !== Y.seq) return;
+  const host = $('#ywPlayer'), note = $('#ywNote');
+  if (p.mode === 'embed') {
+    host.innerHTML = embedHtml(v, origin);
+    note.hidden = false;
+    note.innerHTML = `${esc(p.why || '')} Trình phát YouTube báo lỗi thì bấm <b>Mở bằng trình duyệt YouTube</b>.`;
+    return;
+  }
+  if (p.mode === 'single') {
+    host.innerHTML = `<video controls autoplay playsinline src="${esc(p.src)}"></video>`;
+    return;
+  }
+  host.innerHTML = `<video id="ywV" controls autoplay playsinline></video><audio id="ywA" preload="auto"></audio>`;
+  const vid = $('#ywV'), aud = $('#ywA');
+  let saved = 1;
+  try { saved = +localStorage.getItem('cv-yt-vol') || 1; } catch (e) { /* bỏ qua */ }
+  vid.volume = aud.volume = Math.min(1, Math.max(0, saved));
+  aud.src = p.audio;
+  let pick = p.default;
+  try { const h = +localStorage.getItem('cv-yt-q'); const m = h && p.qualities.find(x => x.h <= h); if (m) pick = m.f; } catch (e) { /* bỏ qua */ }
+  vid.src = p.base + pick;
+  const q = $('#ywQ'), qs = $('#ywQs');
+  q.hidden = false;
+  qs.innerHTML = p.qualities.map(x => `<option value="${esc(x.f)}" ${x.f === pick ? 'selected' : ''}>${x.h}p${x.fps > 30 ? x.fps : ''}</option>`).join('');
+  qs.onchange = () => {
+    const t = vid.currentTime, playing = !vid.paused;
+    try { localStorage.setItem('cv-yt-q', String(p.qualities.find(x => x.f === qs.value)?.h || '')); } catch (e) { /* bỏ qua */ }
+    vid.src = p.base + qs.value;
+    vid.addEventListener('loadedmetadata', () => { vid.currentTime = t; aud.currentTime = t; if (playing) vid.play().catch(() => {}); }, {once: true});
+  };
+  const near = () => { if (Math.abs(aud.currentTime - vid.currentTime) > 0.3) aud.currentTime = vid.currentTime; };
+  vid.addEventListener('play', () => { near(); aud.play().catch(() => {}); });
+  vid.addEventListener('playing', () => { near(); if (aud.paused) aud.play().catch(() => {}); });
+  vid.addEventListener('pause', () => { if (!vid._wait) aud.pause(); });
+  vid.addEventListener('waiting', () => aud.pause());
+  vid.addEventListener('seeking', () => { aud.currentTime = vid.currentTime; });
+  vid.addEventListener('ratechange', () => { aud.playbackRate = vid.playbackRate; });
+  vid.addEventListener('volumechange', () => {
+    aud.volume = vid.volume; aud.muted = vid.muted;
+    try { localStorage.setItem('cv-yt-vol', String(vid.volume)); } catch (e) { /* bỏ qua */ }
+  });
+  vid.addEventListener('ended', () => aud.pause());
+  aud.addEventListener('waiting', () => { if (!vid.paused) { vid._wait = true; vid.pause(); } });   // tiếng chưa kịp tải: đợi cùng
+  aud.addEventListener('canplay', () => { if (vid._wait) { vid._wait = false; vid.play().catch(() => {}); } });
+  const fail = what => () => {
+    if (my !== Y.seq) return;
+    note.hidden = false;
+    note.innerHTML = `Không phát được ${what} của video này. <button class="btn sm plain" type="button" data-yembed>Dùng trình phát YouTube</button>`;
+  };
+  vid.addEventListener('error', fail('hình'));
+  aud.addEventListener('error', fail('tiếng'));
+  clearInterval(avTimer);
+  avTimer = setInterval(() => { if (!vid.isConnected) return clearInterval(avTimer); if (!vid.paused && !vid.seeking) near(); }, 1000);
+  vid.play().catch(() => {});
+}
+
 function go(page, push = true) {
+  stopPlayer();
   if (push) Y.stack.push(Y.page);
   if (Y.stack.length > 30) Y.stack.shift();
   Y.page = page;
   render();
   window.scrollTo({top: 0});
 }
-function back() { Y.page = Y.stack.pop() || {t: 'feed', kind: 'home'}; render(); }
+function back() { stopPlayer(); Y.page = Y.stack.pop() || {t: 'feed', kind: 'home'}; render(); }
+window.addEventListener('hashchange', () => { if (location.hash !== '#youtube') document.querySelectorAll('#ywPlayer video, #ywPlayer audio').forEach(m => m.pause()); });
 
 function bindHead() {
   const f = $('#ytQ'); if (!f || f.dataset.b) return;
@@ -128,7 +201,7 @@ function bindHead() {
     if (q.length < 2) { $('#ytSug').hidden = true; return; }
     Y.sugTimer = setTimeout(async () => {
       let r = [];
-      try { r = await api('https://rp2.alfred511.top/hf/api/music/discover/suggest?q=' + encodeURIComponent(q)); if (!Array.isArray(r)) r = []; } catch (e) { /* bỏ qua */ }
+      try { r = await api('/api/music/discover/suggest?q=' + encodeURIComponent(q)); if (!Array.isArray(r)) r = []; } catch (e) { /* bỏ qua */ }
       const s = $('#ytSug'); if (!s) return;
       s.innerHTML = r.slice(0, 8).map(x => `<button type="button" data-yq="${esc(x.text || x)}">${esc(x.text || x)}</button>`).join('');
       s.hidden = !r.length;
@@ -172,6 +245,7 @@ document.addEventListener('click', e => {
   if (e.target.closest('[data-yback]')) return back();
   if (e.target.closest('[data-yretry]')) return render();
   if (e.target.closest('[data-yrefresh]')) { Y.page.refresh = true; return render(); }
+  if (e.target.closest('[data-yembed]')) { stopPlayer(); $('#ywPlayer').innerHTML = embedHtml(Y.page.v, encodeURIComponent(location.origin)); $('#ywNote').hidden = true; $('#ywQ').hidden = true; return; }
   const a = e.target.closest('[data-ya]');
   if (a) return act(a.dataset.ya);
   if (!e.target.closest('.yt-search')) { const s = $('#ytSug'); if (s) s.hidden = true; }

@@ -110,7 +110,7 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   - `ytvideo.py`: tab **YouTube** (giao diện CircleVault, `frontend/js/youtube.js`, `/api/yt/*`, chỉ máy này): dữ liệu bằng yt-dlp phẳng
     (`ytmusic._ydl_info`, cookie qua `downloader._account` nên dùng URL youtube.com: `/` = đề xuất, `/feed/subscriptions`, `list=WL/LL`,
     `/feed/history`; `ytsearch40:`; kênh `/channel/<id>/videos`), nhớ 5–10 phút trong bộ nhớ; `video?v=` = chi tiết (`_process=False`)
-    + liên quan (tìm theo tiêu đề + video cùng kênh). Trang chủ rỗng (tài khoản tắt Lịch sử xem / cookie hết hạn) → `_home` ghép `sections`: mới từ kênh đăng ký + giống video đã xem/đã thích, kèm `note` (cảnh báo yt-dlp qua `_warn`). Video phát bằng iframe `youtube.com/embed` (trình phát chính thức) trong khung
+    + liên quan (tìm theo tiêu đề + video cùng kênh). Trang chủ rỗng (tài khoản tắt Lịch sử xem / cookie hết hạn) → `_home` ghép `sections`: mới từ kênh đăng ký + giống video đã xem/đã thích, kèm `note` (cảnh báo yt-dlp qua `_warn`). `ytinner.py`: gọi thẳng InnerTube bằng hàm của yt-dlp (IE YoutubeTab + cookie tài khoản): trang chủ = `_extract_data(/feed/recommended, FEwhat_to_watch)` + 2 lượt continuation (yt-dlp tự lấy /feed/recommended thì rỗng), trang xem = endpoint `next` (chi tiết + "video tiếp theo" thật); mục video đọc bằng `_extract_lockup_view_model`/`_extract_video` (`_walk`). Phát video bằng **trình phát của app**: `GET /api/yt/play` chọn định dạng (hình riêng theo độ phân giải, ưu tiên avc1; tiếng m4a) → `<video>` + `<audio>` chạy khớp nhau (youtube.js `setupPlayer`), luồng qua `/api/yt/s/<id>/<format>` (Range 8 MB, hết hạn thì lấy lại); trực tiếp/không có luồng → iframe `youtube.com/embed` (lỗi thì "Mở bằng trình duyệt YouTube"). Trước đây iframe trong khung
     của app; nút Tải video/MP3 (`/api/tasks`), Xem chung, Mở bằng trình duyệt YouTube (bị chặn nhúng). `browser.js` `mirrorToMain`
     chép cookie YouTube/Google sang `session.defaultSession` để trình phát nhúng nhận tài khoản (Premium không quảng cáo).
     Mở video thì phát sự kiện `cv-video-play` → music.js tạm dừng nhạc.
@@ -191,7 +191,7 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   → phòng đang mở trên PC; vào phòng bằng link/QR → WebView trang phòng (toàn màn hình qua onShowCustomView).
   Phát hành: job `android` trong release.yml đính `CircleVault-Android.apk` vào Release 2 repo; link cố định
   `…/circlevault-releases/releases/latest/download/CircleVault-Android.apk`.
-- `tools/dong_goi_app.py` chuẩn bị `desktop/res/`; `tools/kiem_tra.py` kiểm tra cú pháp + liên kết file.
+- `tools/dong_goi_app.py` chuẩn bị `desktop/res/`; `tools/kiem_tra.py` kiểm tra cú pháp + liên kết file + đường dẫn `/api/…` bị đổi thành địa chỉ ngoài (`kiem_url_la`).
 
 ## Quy trình
 - Trước khi commit: `python tools/kiem_tra.py`.

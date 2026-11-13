@@ -919,7 +919,10 @@ div.ln-ti{cursor:default}
 .yt-watch{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:24px;align-items:start}
 .yt-main{display:flex;flex-direction:column;gap:12px;min-width:0}
 .yt-player{aspect-ratio:16/9;overflow:hidden;padding:0;background:#000}
-.yt-player iframe{width:100%;height:100%;border:0;display:block}
+.yt-player iframe,.yt-player video{width:100%;height:100%;border:0;display:block;background:#000}
+.yt-load{height:100%;display:grid;place-items:center;color:#ddd;gap:8px;grid-auto-flow:column;justify-content:center;align-items:center}
+.yt-pnote{margin-top:-4px}
+.yt-q{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:13px}
 .yt-title{font-size:20px;line-height:1.35}
 .yt-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;font-size:14px}
 .yt-meta .sp{flex:1}

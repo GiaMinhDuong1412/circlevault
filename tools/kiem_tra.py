@@ -79,11 +79,23 @@ def kiem_desktop():
         loi.append("Thiếu desktop/build/icon.ico")
 
 
+def kiem_url_la():
+    """Đường dẫn API phải tương đối (/api/…); bắt lỗi công cụ soạn mã tự đổi '/api/…' thành địa chỉ ngoài."""
+    for f in [*ROOT.joinpath("frontend").rglob("*.js"), *ROOT.joinpath("frontend").rglob("*.html"),
+              *ROOT.joinpath("backend", "app").rglob("*.py"), *ROOT.joinpath("desktop", "src").rglob("*.js")]:
+        if "vendor" in f.parts:
+            continue
+        txt = f.read_text(encoding="utf-8", errors="ignore")
+        if re.search(r"https?://[\w.-]*alfred\d*\.\w+/", txt):
+            loi.append(f"{f.relative_to(ROOT)}: có địa chỉ lạ thay cho đường dẫn /api/… (sửa về đường dẫn tương đối)")
+
+
 def main():
     kiem_python()
     kiem_js()
     kiem_html()
     kiem_desktop()
+    kiem_url_la()
     if loi:
         print("KIỂM TRA LỖI:")
         for x in loi:
