@@ -61,7 +61,10 @@ function sanitize(r) {
 // ---------------------------------------------------------------- cookie YouTube → yt-dlp
 async function exportYoutubeCookies({ write = true } = {}) {
   const file = cookieFile();
-  if (write && !importing && fileNewer()) return importYoutubeCookies();   // có đăng nhập mới hơn từ trình duyệt: nạp vào trước
+  if (write && !importing && fileNewer()) {   // có đăng nhập mới hơn từ trình duyệt: nạp vào trước (chỉ khi cửa sổ YouTube chưa đăng nhập)
+    const r = await importYoutubeCookies();
+    if (!r.same) return r;
+  }
   try {
     const all = (await session.fromPartition('persist:youtube').cookies.get({}))
       .filter((c) => /(^|\.)(youtube\.com|google\.com)$/.test(c.domain.replace(/^\./, '')));
@@ -92,11 +95,14 @@ async function exportYoutubeCookies({ write = true } = {}) {
 /** Nạp file cookie (backend lấy từ trình duyệt của người dùng / file cookies.txt) vào cửa sổ YouTube của app.
  *  Tiện ích trình duyệt gửi lại đăng nhập mỗi 30 phút: nếu cửa sổ YouTube đang đăng nhập ĐÚNG tài khoản đó (cùng cookie SID)
  *  thì không nạp đè và KHÔNG tải lại trang (trước đây trang tự nhảy về trang chủ khi đang xem). */
-async function importYoutubeCookies() {
+async function importYoutubeCookies({ force = false } = {}) {
   const file = cookieFile();
   let text = '';
   try { text = fs.readFileSync(file, 'utf8'); } catch { return { ok: false, count: 0 }; }
   fileSeen = fileTime();
+  // Tự động (không phải người dùng bấm đăng nhập): cửa sổ YouTube đang đăng nhập thì KHÔNG nạp đè – nạp cookie khi trang đang mở
+  // làm YouTube tự tải lại (đang nghe nhạc bị ngắt). File do tiện ích Chrome gửi / yt-dlp ghi lại khi nghe online đều rơi vào đây.
+  if (!force && lastLogin === true) return { ok: true, count: 0, same: true };
   const ses = session.fromPartition('persist:youtube');
   const rows = [];
   for (let line of text.split(/\r?\n/)) {
@@ -460,6 +466,7 @@ function openBrowser(mode, url) {
     .forEach((ev) => wc.on(ev, () => pushState(w)));
   wc.on('did-navigate', (_e, u) => {
     if (mode === 'web') { w.streams = w.streams.filter((s) => s.page === u); pushState(w); }
+    if (mode === 'youtube') ctx.log('YouTube nạp cả trang:', u.slice(0, 120));   // để dò nếu còn tự tải lại (YouTube chuyển bài bình thường không nạp cả trang)
   });
   wc.setWindowOpenHandler(({ url: u }) => {
     if (mode === 'party') { if (/^https?:/i.test(u)) shell.openExternal(u); return { action: 'deny' }; }

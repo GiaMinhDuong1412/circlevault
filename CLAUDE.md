@@ -85,8 +85,9 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     Cách chính: tiện ích Chrome/Edge `backend/extension/` (MV3, cài "Load unpacked" từ `DATA/tien-ich-trinh-duyet`, do
     `POST /api/youtube/extension` chép ra) đọc cookie youtube/google của trình duyệt, dò cổng 8686–8705 qua `/api/youtube/hello`,
     gửi `import-file?source=extension` (bắt buộc header `X-CircleVault: 1` chống trang lạ gửi), gửi lại khi cookie *SID đổi
-    và mỗi 30 phút. `browser.js`: file mới hơn lần đồng bộ (`fileSeen`) thì nạp vào cửa sổ YouTube trước, không ghi đè – nhưng cùng cookie `SID` với
-    cửa sổ đang đăng nhập thì bỏ qua, KHÔNG tải lại trang (tiện ích gửi lại mỗi 30 phút từng làm trang YouTube tự nhảy về trang chủ).
+    và mỗi 30 phút. `browser.js`: file mới hơn lần đồng bộ (`fileSeen`) thì nạp vào cửa sổ YouTube trước, không ghi đè – nhưng cửa sổ YouTube ĐANG đăng nhập thì
+    bỏ qua hẳn (nạp cookie khi trang đang mở làm YouTube tự tải lại, ngắt nhạc) – chỉ hộp Đăng nhập YouTube (`youtube-import`, `force`)
+    mới nạp đè; khi đó cùng `SID` thì thôi, khác tài khoản thì tải lại đúng trang. Nhật ký ghi "YouTube nạp cả trang" mỗi lần nạp cả trang.
   - `translate.py` + `ocr.py`: tab Dịch, router `/api/translate/*` (chỉ nhận từ 127.0.0.1 vì có API key). `ocr.py` = RapidOCR
     (onnxruntime, offline) đọc chữ, cắt ảnh webtoon dài thành đoạn, gom dòng thành khung thoại, lấy màu nền. Bộ dịch: `google`
     (web miễn phí, từng câu) hoặc `claude` (SDK anthropic, API key người dùng trong `DATA/translate.json`, dịch cả trang một lần,

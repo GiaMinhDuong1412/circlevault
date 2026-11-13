@@ -300,7 +300,7 @@ async function init() {
   ipcMain.on('party-capture', (_e, url, opts) => { if (/^https?:\/\//i.test(String(url || ''))) browser.partyCapture(url, opts || {}); });
   ipcMain.on('open-party', (_e, url) => { if (isLocal(url) || /^http:\/\/127\.0\.0\.1:\d+\/r\//.test(url)) browser.openParty(url); });
   ipcMain.handle('youtube-logout', () => browser.youtubeLogout());
-  ipcMain.handle('youtube-import', () => browser.importYoutubeCookies());
+  ipcMain.handle('youtube-import', () => browser.importYoutubeCookies({ force: true }));   // người dùng vừa đăng nhập qua hộp Đăng nhập YouTube
   screenTr.setup({ userData: HOME, port: () => port, icon: ICON, log });
   ipcMain.on('open-screen-translate', () => screenTr.open());
   miniPlayer.setup({ userData: HOME, icon: ICON, log });
