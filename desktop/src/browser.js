@@ -89,36 +89,54 @@ async function exportYoutubeCookies({ write = true } = {}) {
   } catch (e) { ctx.log('Lỗi ghi cookie YouTube:', e.message); }
 }
 
-/** Nạp file cookie (backend lấy từ trình duyệt của người dùng / file cookies.txt) vào cửa sổ YouTube của app. */
+/** Nạp file cookie (backend lấy từ trình duyệt của người dùng / file cookies.txt) vào cửa sổ YouTube của app.
+ *  Tiện ích trình duyệt gửi lại đăng nhập mỗi 30 phút: nếu cửa sổ YouTube đang đăng nhập ĐÚNG tài khoản đó (cùng cookie SID)
+ *  thì không nạp đè và KHÔNG tải lại trang (trước đây trang tự nhảy về trang chủ khi đang xem). */
 async function importYoutubeCookies() {
   const file = cookieFile();
   let text = '';
   try { text = fs.readFileSync(file, 'utf8'); } catch { return { ok: false, count: 0 }; }
   fileSeen = fileTime();
   const ses = session.fromPartition('persist:youtube');
+  const rows = [];
+  for (let line of text.split(/\r?\n/)) {
+    let httpOnly = false;
+    if (line.startsWith('#HttpOnly_')) { line = line.slice(10); httpOnly = true; }
+    if (!line || line.startsWith('#')) continue;
+    const [domain, sub, cpath, secure, expires, name, ...rest] = line.split('\t');
+    if (!name || !domain) continue;
+    rows.push({ domain, sub, cpath, secure, expires, name, value: rest.join('\t'), httpOnly });
+  }
+  const isYt = (d) => /(^|\.)youtube\.com$/.test(String(d || '').replace(/^\./, ''));
+  const fileSid = (rows.find((r) => r.name === 'SID' && isYt(r.domain)) || {}).value || '';
+  let curSid = '';
+  try { curSid = ((await ses.cookies.get({ name: 'SID' })).find((c) => isYt(c.domain)) || {}).value || ''; } catch { /* bỏ qua */ }
+  const wasLogged = lastLogin === true && !!curSid;
+  if (wasLogged && fileSid && fileSid === curSid) {
+    return { ok: true, count: 0, same: true };          // cùng tài khoản, đang đăng nhập: giữ nguyên, không tải lại trang
+  }
   importing = true;
   let n = 0;
   try {
-    for (let line of text.split(/\r?\n/)) {
-      let httpOnly = false;
-      if (line.startsWith('#HttpOnly_')) { line = line.slice(10); httpOnly = true; }
-      if (!line || line.startsWith('#')) continue;
-      const [domain, sub, cpath, secure, expires, name, ...rest] = line.split('\t');
-      if (!name || !domain) continue;
-      const host = domain.replace(/^\./, '');
-      const c = { url: `https://${host}${cpath || '/'}`, name, value: rest.join('\t'), path: cpath || '/', secure: secure === 'TRUE',
-        httpOnly: httpOnly || /^(__Secure-|SID$|HSID$|SSID$|LOGIN_INFO$)/.test(name), sameSite: name.startsWith('__Secure-3P') ? 'no_restriction' : 'unspecified' };
-      if (name.startsWith('__Host-')) c.path = '/';
-      else if (sub === 'TRUE' || domain.startsWith('.')) c.domain = '.' + host;
-      if (Number(expires) > 0) c.expirationDate = Number(expires);
-      try { await ses.cookies.set(c); n++; } catch (e) { ctx.log('Không nạp được cookie', name, e.message); }
+    for (const r of rows) {
+      const host = r.domain.replace(/^\./, '');
+      const c = { url: `https://${host}${r.cpath || '/'}`, name: r.name, value: r.value, path: r.cpath || '/', secure: r.secure === 'TRUE',
+        httpOnly: r.httpOnly || /^(__Secure-|SID$|HSID$|SSID$|LOGIN_INFO$)/.test(r.name), sameSite: r.name.startsWith('__Secure-3P') ? 'no_restriction' : 'unspecified' };
+      if (r.name.startsWith('__Host-')) c.path = '/';
+      else if (r.sub === 'TRUE' || r.domain.startsWith('.')) c.domain = '.' + host;
+      if (Number(r.expires) > 0) c.expirationDate = Number(r.expires);
+      try { await ses.cookies.set(c); n++; } catch (e) { ctx.log('Không nạp được cookie', r.name, e.message); }
     }
     await ses.cookies.flushStore();
   } finally { importing = false; }
-  ctx.log('Nạp cookie YouTube từ trình duyệt khác:', n);
+  ctx.log('Nạp cookie YouTube từ trình duyệt khác:', n, wasLogged ? '(đổi tài khoản)' : '');
   lastLogin = null;
   await exportYoutubeCookies();
-  if (wins.youtube) wins.youtube.view.webContents.loadURL(HOME.youtube);
+  if (wins.youtube) {
+    const wc = wins.youtube.view.webContents;
+    if (wasLogged) wc.reload();                          // đổi sang tài khoản khác: tải lại đúng trang đang xem
+    else wc.loadURL(HOME.youtube);                       // vừa đăng nhập: về trang chủ YouTube
+  }
   return { ok: true, count: n };
 }
 
