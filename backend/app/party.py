@@ -39,6 +39,10 @@ from pydantic import BaseModel
 
 from . import config, db, tunnel
 
+# Windows có thể khai báo sai kiểu file trong registry (.js = text/plain) → module/AudioWorklet (bộ lọc ồn) không nạp được
+for _t, _e in (("text/javascript", ".js"), ("text/javascript", ".mjs"), ("text/css", ".css"), ("application/wasm", ".wasm")):
+    mimetypes.add_type(_t, _e)
+
 YT_ID = re.compile(r"(?:v=|youtu\.be/|/shorts/|/embed/|/live/)([A-Za-z0-9_-]{11})")
 EMOJI = {"❤️", "😂", "😮", "😢", "👏", "🔥"}
 PUBLIC_KEYS = {"type", "title", "mime", "audio", "video_id", "hls", "item_id", "site", "origin"}
