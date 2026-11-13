@@ -49,9 +49,11 @@ _lock = threading.Lock()
 
 
 # ------------------------------------------------------------------ yt-dlp
-def _ydl_info(url: str, _process: bool = True, **extra) -> dict:
+def _ydl_info(url: str, _process: bool = True, _warn: list | None = None, **extra) -> dict:
     cfg = config.load()
     log = downloader._Logger()
+    if _warn is not None:
+        log.warnings = _warn          # người gọi đọc cảnh báo của yt-dlp (vd. cookie hết hạn)
     opts = {**downloader._base_opts(cfg), "logger": log, "skip_download": True,
             "extractor_args": {"youtubetab": {"skip": ["authcheck"]}}, **extra}
     with downloader._account(cfg, url, f"yt-{time.time_ns()}") as acc, yt_dlp.YoutubeDL({**opts, **acc}) as ydl:

@@ -66,8 +66,11 @@ async function render() {
     ? `<div class="yt-chhead"><span class="yt-ava">${esc((d.title || '?').slice(0, 1))}</span><div><h3>${esc(d.title)}</h3><span class="hint">${d.subs ? num(d.subs) + ' người đăng ký' : ''}</span></div>
        <span class="sp"></span><button class="btn sm plain" type="button" data-yback>← Quay lại</button></div>`
     : `<div class="yt-h"><h3>${esc(d.title)}</h3>${p.t === 'feed' ? '<button class="btn sm plain" type="button" data-yrefresh>⟳ Làm mới</button>' : ''}</div>`;
-  body.innerHTML = title + (d.items.length ? `<div class="yt-grid">${d.items.map(v => card(v)).join('')}</div>`
-    : '<div class="empty"><h3>Chưa có video nào</h3></div>');
+  const secs = (d.sections || []).filter(x => x.items.length);
+  body.innerHTML = title + (d.note ? `<p class="hint yt-note">${esc(d.note)}</p>` : '')
+    + (d.items.length ? `<div class="yt-grid">${d.items.map(v => card(v)).join('')}</div>`
+      : secs.length ? secs.map(x => `<h4 class="yt-sec">${esc(x.title)}</h4><div class="yt-grid">${x.items.map(v => card(v)).join('')}</div>`).join('')
+      : `<div class="empty"><h3>Chưa có video nào</h3>${p.t === 'feed' ? '<p>Thử bấm Làm mới, hoặc tìm video ở ô phía trên. Nếu vẫn trống: Đăng nhập YouTube lại (đăng nhập có thể đã hết hạn).</p>' : ''}</div>`);
 }
 
 async function renderWatch(my) {

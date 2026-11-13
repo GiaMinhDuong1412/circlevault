@@ -110,7 +110,7 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   - `ytvideo.py`: tab **YouTube** (giao diện CircleVault, `frontend/js/youtube.js`, `/api/yt/*`, chỉ máy này): dữ liệu bằng yt-dlp phẳng
     (`ytmusic._ydl_info`, cookie qua `downloader._account` nên dùng URL youtube.com: `/` = đề xuất, `/feed/subscriptions`, `list=WL/LL`,
     `/feed/history`; `ytsearch40:`; kênh `/channel/<id>/videos`), nhớ 5–10 phút trong bộ nhớ; `video?v=` = chi tiết (`_process=False`)
-    + liên quan (tìm theo tiêu đề + video cùng kênh). Video phát bằng iframe `youtube.com/embed` (trình phát chính thức) trong khung
+    + liên quan (tìm theo tiêu đề + video cùng kênh). Trang chủ rỗng (tài khoản tắt Lịch sử xem / cookie hết hạn) → `_home` ghép `sections`: mới từ kênh đăng ký + giống video đã xem/đã thích, kèm `note` (cảnh báo yt-dlp qua `_warn`). Video phát bằng iframe `youtube.com/embed` (trình phát chính thức) trong khung
     của app; nút Tải video/MP3 (`/api/tasks`), Xem chung, Mở bằng trình duyệt YouTube (bị chặn nhúng). `browser.js` `mirrorToMain`
     chép cookie YouTube/Google sang `session.defaultSession` để trình phát nhúng nhận tài khoản (Premium không quảng cáo).
     Mở video thì phát sự kiện `cv-video-play` → music.js tạm dừng nhạc.

@@ -76,8 +76,8 @@ def _v(e: dict) -> dict | None:
     }
 
 
-def _list(url: str, n: int = 48) -> tuple[dict, list[dict]]:
-    info = _ydl_info(url, extract_flat=True, playlistend=n)
+def _list(url: str, n: int = 48, warn: list | None = None) -> tuple[dict, list[dict]]:
+    info = _ydl_info(url, extract_flat=True, playlistend=n, _warn=warn)
     seen, out = set(), []
     for e in _flat(info):
         v = _v(e)
@@ -96,9 +96,67 @@ def feed(kind: str = "home", refresh: bool = False):
         return {"kind": kind, "title": FEEDS[kind][1], "logged_in": False, "items": [], "topics": TOPICS}
     url, title = FEEDS[kind]
     if refresh:
-        _cache.pop("feed:" + kind, None)
-    items = _cached("feed:" + kind, lambda: _list(url, 60)[1], 300 if kind in ("home", "subs") else TTL)
+        for k in [k for k in _cache if k.startswith(("feed:", "home:"))]:
+            _cache.pop(k, None)
+    if kind == "home":
+        return {"kind": kind, "title": title, "logged_in": True, "topics": TOPICS, **_cached("home:all", _home, 300)}
+    items = _cached("feed:" + kind, lambda: _list(url, 60)[1], 300 if kind == "subs" else TTL)
     return {"kind": kind, "title": title, "logged_in": True, "items": items, "topics": TOPICS}
+
+
+def _try_list(url: str, n: int, warn: list | None = None) -> list[dict]:
+    try:
+        return _list(url, n, warn)[1]
+    except HTTPException as e:
+        if warn is not None:
+            warn.append(str(e.detail))
+        return []
+
+
+def _home() -> dict:
+    """Trang chủ YouTube (đề xuất). YouTube trả trang chủ RỖNG khi tài khoản tắt Lịch sử xem (hoặc cookie không còn hiệu lực)
+    → tự ghép đề xuất: video mới từ kênh đăng ký + video giống những video đã xem / đã thích gần đây."""
+    warn: list[str] = []
+    items = _try_list(FEEDS["home"][0], 60, warn)
+    if items:
+        return {"items": items}
+    with ThreadPoolExecutor(3) as ex:
+        f_subs = ex.submit(_try_list, FEEDS["subs"][0], 24)
+        f_hist = ex.submit(_try_list, FEEDS["history"][0], 6)
+        f_like = ex.submit(_try_list, FEEDS["liked"][0], 6)
+        subs, hist, liked = f_subs.result(), f_hist.result(), f_like.result()
+    seen: set[str] = set()
+
+    def similar(src: list[dict], k: int = 3) -> list[dict]:
+        qs = []
+        for v in src[:k]:
+            words = re.sub(r"[\[\](){}|•·\-–—_/\\\"'“”#@!?.,:;]+", " ", v["title"]).split()
+            if words:
+                qs.append(" ".join(words[:5]))
+        with ThreadPoolExecutor(3) as ex2:
+            res = list(ex2.map(lambda q: _cached("q:" + q.lower(), lambda: _try_list(f"ytsearch12:{q}", 12)), qs))
+        out = []
+        for i in range(12):
+            for r in res:
+                if i < len(r) and r[i]["id"] not in seen:
+                    seen.add(r[i]["id"])
+                    out.append(r[i])
+        return out[:24]
+    seen.update(v["id"] for v in hist + liked)
+    sections = []
+    if subs:
+        seen.update(v["id"] for v in subs)
+        sections.append({"title": "Mới từ kênh bạn đăng ký", "items": subs})
+    if hist:
+        sections.append({"title": "Giống video bạn đã xem", "items": similar(hist)})
+    if liked:
+        sections.append({"title": "Giống video bạn đã thích", "items": similar(liked)})
+    sections = [x for x in sections if x["items"]]
+    why = next((w for w in warn if re.search(r"cookie|sign in|log in|logged", w, re.I)), "")
+    note = ("YouTube không trả về trang chủ đề xuất" + (f" ({why[:160]})" if why else
+            " – thường do tài khoản đang TẮT Lịch sử xem (YouTube khi đó để trống trang chủ)") +
+            ". CircleVault tự ghép đề xuất từ kênh đăng ký và video bạn đã xem/thích.")
+    return {"items": [], "sections": sections, "note": note}
 
 
 @router.get("/search")
