@@ -39,7 +39,7 @@ const FEED_IC = {home: '⌂', subs: '★', later: '◷', liked: '♥', history: 
 function head() {
   const p = Y.page, st = Y.status || {};
   return `<div class="yt-top">
-    <div class="yt-brand"><span class="yt-logo" aria-hidden="true">▶</span><b>CV<span>Tube</span></b></div>
+    <div class="yt-brand"><span class="yt-logo" aria-hidden="true">▶</span><b>YouTube</b></div>
     <form class="yt-search" id="ytQ" autocomplete="off"><span class="yt-sic" aria-hidden="true">⌕</span><input type="search" id="ytQin" placeholder="Tìm video, kênh, bài hát…" value="${p.t === 'search' ? esc(p.q) : ''}" aria-label="Tìm trên YouTube">
       <button class="btn yellow" type="submit" aria-label="Tìm">Tìm</button><div class="yt-sug" id="ytSug" hidden></div></form>
     <span class="sp"></span>
@@ -145,6 +145,14 @@ async function renderWatch(my) {
     $('.yt-q-l li.on')?.scrollIntoView({block: 'nearest'});
   } else $('#ywQueue').innerHTML = '';
 }
+function autoNextNow() {
+  const d = Y.data; if (!d || Y.page.t !== 'watch') return;
+  const q = d.queue, list = Y.page.list;
+  let nx = null;
+  if (q && list) { const i = q.items.findIndex(x => x.id === Y.page.v); nx = q.items[i + 1] || null; }
+  if (!nx) nx = (d.related || []).find(x => x.kind !== 'list');
+  if (nx) go({t: 'watch', v: nx.id, list: q && list && q.items.some(x => x.id === nx.id) ? list : undefined, pre: {title: nx.title}}, false);
+}
 function autoOn() { try { return localStorage.getItem('cv-yt-auto') !== '0'; } catch (e) { return true; } }
 /* hết video: bài tiếp theo trong danh sách (Mix thì YouTube tự nối thêm bài), không có danh sách thì video "Tiếp theo" đầu tiên */
 function autoNext(my) {
@@ -211,6 +219,7 @@ function eqPop() {
 
 async function setupPlayer(v, origin, my) {
   stopPlayer();
+  barOff = false;
   let p;
   try { p = await api('/api/yt/play?v=' + encodeURIComponent(v)); } catch (e) { p = {mode: 'embed', why: e.message}; }
   if (my !== Y.seq) return;
@@ -359,10 +368,74 @@ function go(page, push = true) {
   if (Y.stack.length > 30) Y.stack.shift();
   Y.page = page;
   render();
-  window.scrollTo({top: 0});
+  if (window.CV.S.view === 'youtube') window.scrollTo({top: 0});
 }
 function back() { stopPlayer(); Y.page = Y.stack.pop() || {t: 'feed', kind: 'home'}; render(); }
-window.addEventListener('hashchange', () => { if (location.hash !== '#youtube') { document.querySelectorAll('#ywPlayer video').forEach(m => m.pause()); if (ytAudio) ytAudio.pause(); } });
+/* ---- phát nền: sang tab khác video vẫn chạy (cả tự phát bài tiếp), dưới đáy app hiện thanh điều khiển như thanh nghe nhạc */
+const bar = document.createElement('div');
+bar.className = 'pbar ytbar'; bar.id = 'ytBar'; bar.hidden = true;
+bar.innerHTML = `<div class="pb-info" id="ybInfo" role="button" tabindex="0" title="Quay lại video">
+    <span class="yb-th"><img id="ybImg" alt="" referrerpolicy="no-referrer"><i>▶ YouTube</i></span>
+    <div><b id="ybTitle"></b><span id="ybCh"></span></div></div>
+  <div class="pb-center">
+    <div class="pb-ctrl">
+      <button class="pbtn" type="button" id="ybBack" aria-label="Lùi 10 giây">${SVG.back}</button>
+      <button class="pbtn main" type="button" id="ybPlay" aria-label="Phát / tạm dừng">${SVG.play}</button>
+      <button class="pbtn" type="button" id="ybFwd" aria-label="Tới 10 giây">${SVG.fwd}</button>
+      <button class="pbtn" type="button" id="ybNext" aria-label="Video tiếp theo" title="Video tiếp theo"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 5v14l10-7zM16 5h3v14h-3z" fill="currentColor"/></svg></button>
+    </div>
+    <div class="pb-seek"><span id="ybCur">0:00</span><input type="range" id="ybSeek" min="0" max="1000" step="1" value="0" aria-label="Tua"><span id="ybDur">0:00</span></div>
+  </div>
+  <div class="pb-right">
+    <button class="btn sm plain" type="button" id="ybOpen">Xem video</button>
+    <button class="pbtn" type="button" id="ybMute" aria-label="Tắt tiếng">${SVG.vol}</button>
+    <input type="range" id="ybVol" min="0" max="1" step="0.01" aria-label="Âm lượng">
+    <button class="pbtn" type="button" id="ybClose" aria-label="Dừng xem" title="Dừng xem">✕</button>
+  </div>`;
+document.body.appendChild(bar);
+let barOff = false;            // người dùng bấm ✕: thôi hiện tới khi mở video khác
+function curV() { const v = document.getElementById('ywV'); return v && v.isConnected && v.currentSrc ? v : null; }
+function curA(v) { return v && v.muted && ytAudio && ytAudio.src ? ytAudio : v; }
+function barPaint() {
+  const v = curV(), emb = !v && document.querySelector('#ywPlayer iframe');
+  const show = window.CV.S.view !== 'youtube' && Y.page.t === 'watch' && !barOff && !!(v || emb);
+  bar.hidden = !show;
+  document.body.classList.toggle('yt-bar', show);
+  if (!show) return;
+  const d = Y.data && Y.data.id === Y.page.v ? Y.data : null;
+  $('#ybTitle').textContent = (d && d.title) || (Y.page.pre || {}).title || 'Video YouTube';
+  $('#ybCh').textContent = d ? d.channel : '';
+  const img = `https://i.ytimg.com/vi/${Y.page.v}/mqdefault.jpg`;
+  if ($('#ybImg').getAttribute('src') !== img) $('#ybImg').src = img;
+  bar.classList.toggle('embed', !v);
+  if (!v) return;
+  const a = curA(v), dur = v.duration || 0;
+  $('#ybPlay').innerHTML = v.paused ? SVG.play : SVG.pause;
+  if (!bar._drag) { $('#ybSeek').value = dur ? Math.round(v.currentTime / dur * 1000) : 0; $('#ybSeek').style.setProperty('--p', (dur ? v.currentTime / dur * 100 : 0) + '%'); }
+  $('#ybCur').textContent = tfmt(v.currentTime); $('#ybDur').textContent = tfmt(dur);
+  $('#ybVol').value = a.muted ? 0 : a.volume;
+  $('#ybVol').style.setProperty('--p', (a.muted ? 0 : a.volume) * 100 + '%');
+  $('#ybMute').innerHTML = a.muted || a.volume === 0 ? SVG.mute : SVG.vol;
+}
+setInterval(() => { if (!bar.hidden || (window.CV.S.view !== 'youtube' && Y.page.t === 'watch')) barPaint(); }, 500);
+window.addEventListener('hashchange', () => setTimeout(barPaint, 0));
+$('#ybPlay', bar).onclick = () => { const v = curV(); if (v) { if (v.paused) v.play().catch(() => {}); else v.pause(); barPaint(); } };
+$('#ybBack', bar).onclick = () => { const v = curV(); if (v) { v.currentTime = Math.max(0, v.currentTime - 10); barPaint(); } };
+$('#ybFwd', bar).onclick = () => { const v = curV(); if (v) { v.currentTime = Math.min((v.duration || 0) - 0.5, v.currentTime + 10); barPaint(); } };
+$('#ybNext', bar).onclick = () => { autoNextNow(); };
+$('#ybSeek', bar).addEventListener('input', () => { bar._drag = true; });
+$('#ybSeek', bar).addEventListener('change', e => { bar._drag = false; const v = curV(); if (v && v.duration) v.currentTime = e.target.value / 1000 * v.duration; barPaint(); });
+$('#ybVol', bar).addEventListener('input', e => {
+  const v = curV(); if (!v) return; const a = curA(v);
+  a.muted = false; a.volume = +e.target.value;
+  try { localStorage.setItem('cv-yt-vol', String(a.volume)); } catch (err) { /* bỏ qua */ }
+  barPaint();
+});
+$('#ybMute', bar).onclick = () => { const v = curV(); if (v) { const a = curA(v); a.muted = !a.muted; barPaint(); } };
+$('#ybOpen', bar).onclick = $('#ybInfo', bar).onclick = () => { location.hash = '#youtube'; };
+$('#ybClose', bar).onclick = () => { stopPlayer(); barOff = true; barPaint(); };
+// nghe nhạc ở tab Nghe Nhạc → tạm dừng video (ngược lại: mở video thì nhạc dừng – cv-video-play)
+window.addEventListener('cv-music-play', () => { const v = curV(); if (v && !v.paused) v.pause(); const f = document.querySelector('#ywPlayer iframe'); if (f && window.CV.S.view !== 'youtube') { stopPlayer(); f.remove(); } barPaint(); });
 
 function bindHead() {
   const f = $('#ytQ'); if (!f || f.dataset.b) return;

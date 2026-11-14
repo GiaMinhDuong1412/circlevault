@@ -44,7 +44,7 @@ class Manager:
                 disk = storage.pick_disk(cfg, t["kind"])
             if disk is None:
                 db.update_task(t["id"], status="error",
-                               error="Không tìm thấy ổ lưu nào còn chỗ. Kiểm tra trang Lưu Trữ.")
+                               error="Không tìm thấy ổ lưu nào còn chỗ. Kiểm tra tab Cài đặt.")
                 continue
             busy = sum(1 for d in self.running.values() if d == disk["id"])
             if busy >= cfg["max_concurrent_per_disk"]:

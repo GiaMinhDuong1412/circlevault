@@ -419,7 +419,7 @@ async function renderParty(st) {
     <div class="box pcard"><h3>Link cho bạn bè ở xa</h3>${tunnelHtml}</div>
     <div class="box pcard"><h3>Link cho người cùng Wi-Fi</h3>
       ${L.lan ? `<div class="linkbox"><code>${esc(L.lan)}</code>${copyBtn(L.lan)}</div>`
-        : '<p class="hint">Đang tắt. Bật ở tab Lưu Trữ → Mạng → "Cho điện thoại cùng Wi-Fi", rồi mở lại app. Người cùng nhà xem bằng điện thoại/TV sẽ mượt hơn đi qua Internet.</p>'}
+        : '<p class="hint">Đang tắt. Bật ở tab Cài đặt → Mạng → "Cho điện thoại cùng Wi-Fi", rồi mở lại app. Người cùng nhà xem bằng điện thoại/TV sẽ mượt hơn đi qua Internet.</p>'}
     </div>
   </div>
   <details class="box pcard">
