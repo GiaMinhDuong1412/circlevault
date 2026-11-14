@@ -12,7 +12,8 @@
 /* kiểu giao diện: lựa chọn mới chỉ áp dụng ở phiên mới (mở lại app), không đổi giữa chừng */
 let s=localStorage.getItem('cv-style');const n=localStorage.getItem('cv-style-next');
 if(n&&!sessionStorage.getItem('cv-started')){s=n;localStorage.setItem('cv-style',n);localStorage.removeItem('cv-style-next')}
-sessionStorage.setItem('cv-started','1');if(s&&s!=='brutal')r.dataset.style=s}catch(e){}</script>
+sessionStorage.setItem('cv-started','1');if(s&&s!=='brutal')r.dataset.style=s;
+const f=localStorage.getItem('cv-font');if(f)r.dataset.font=f}catch(e){}</script>
 </head>
 <body>
 <div class="shell">

@@ -12,7 +12,8 @@
 <link rel="stylesheet" href="/p/css/voice.css">
 <script>try{const r=document.documentElement,q=new URLSearchParams(location.search);
 const t=q.get('theme')||localStorage.getItem('cv-theme'),s=q.get('style')||localStorage.getItem('cv-style');
-if(t)r.dataset.theme=t;if(s&&s!=='brutal')r.dataset.style=s;if(q.get('embed'))r.classList.add('embed')}catch(e){}</script>
+const f=q.has('font')?q.get('font'):localStorage.getItem('cv-font');
+if(t)r.dataset.theme=t;if(s&&s!=='brutal')r.dataset.style=s;if(f)r.dataset.font=f;if(q.get('embed'))r.classList.add('embed')}catch(e){}</script>
 </head>
 <body class="vc">
 <div class="lg" id="app" data-pane="rooms">

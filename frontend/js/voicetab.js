@@ -109,7 +109,7 @@ function poll() {
 
 function themeQ() {
   const r = document.documentElement;
-  return `&embed=1&theme=${encodeURIComponent(r.dataset.theme || '')}&style=${encodeURIComponent(r.dataset.style || 'brutal')}`;
+  return `&embed=1&theme=${encodeURIComponent(r.dataset.theme || '')}&style=${encodeURIComponent(r.dataset.style || 'brutal')}&font=${encodeURIComponent(r.dataset.font || '')}`;
 }
 function frame() {
   const L = V.st && V.st.links;

@@ -1125,3 +1125,14 @@ dialog.scroll-dlg::backdrop{background:rgba(10,10,12,.55)}
 .tab.vc-live::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);border:1.5px solid var(--ink);margin-right:6px;vertical-align:1px;animation:vcLive 1.6s ease-in-out infinite}
 @keyframes vcLive{50%{opacity:.35}}
 .vc-dot{display:inline-block;margin-left:6px;background:var(--red);color:#fff;font:800 10.5px/1 var(--f-body);border-radius:calc(99px*var(--rk,1));padding:3px 5px;vertical-align:2px}
+
+/* ------------------------------------------------------------ font chữ người dùng chọn (data-font trên <html>) */
+:root[data-font="tahoma"]{--f-body:Tahoma,Verdana,"Segoe UI",sans-serif}
+:root[data-font="consolas"]{--f-body:Consolas,"Courier New",ui-monospace,monospace;--f-mono:Consolas,"Courier New",ui-monospace,monospace}
+:root[data-font="times"]{--f-body:"Times New Roman",Times,"Noto Serif",serif}
+.font-opts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:6px}
+.font-opt{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 10px;border:2px solid var(--ink);border-radius:calc(6px*var(--rk,1));background:var(--surface);color:var(--text);cursor:pointer;text-align:left}
+.font-opt b{font-size:17px;font-weight:700;line-height:1.2}
+.font-opt small{font:600 11.5px "Segoe UI",system-ui,sans-serif;color:var(--muted)}
+.font-opt.on{background:var(--yellow);color:var(--on-accent)}
+.font-opt.on small{color:inherit;opacity:.8}

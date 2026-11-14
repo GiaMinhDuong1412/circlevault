@@ -171,7 +171,9 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   CSS dùng `--rk` (nhân bo góc: mọi `border-radius` viết `calc(Npx*var(--rk,1))`), `--hs` (thay mọi bóng cứng `var(--hs,Npx Npx 0 var(--ink))`),
   `--ink`, `--bw`; khối `:root[data-style=…]` cuối app.css. Đổi kiểu bắt khởi động lại: lưu `cv-style-next`, script đầu index.html chỉ
   áp dụng ở phiên mới (`sessionStorage` cv-started), nút "Khởi động lại ngay" = `cvDesktop.relaunch` (app.relaunch, bản portable dùng
-  `PORTABLE_EXECUTABLE_FILE`). CSS mới: viết bo góc/bóng theo cùng mẫu để kiểu nào cũng đúng. Thanh cuộn theo theme: `::-webkit-scrollbar` trong app.css (KHÔNG đặt `scrollbar-color`/
+  `PORTABLE_EXECUTABLE_FILE`). CSS mới: viết bo góc/bóng theo cùng mẫu để kiểu nào cũng đúng. **Font chữ** (`FONTS`/`setFont` trong app.js,
+  hộp theme): `data-font` = tahoma|consolas|times đổi `--f-body` (khối `:root[data-font=…]` trong app.css), localStorage `cv-font`, áp dụng NGAY
+  (script đầu index.html/party.html/dt.html; iframe phòng thoại nhận `&font=`) – CSS mới luôn dùng `var(--f-body)`/`var(--f-mono)`, không ghi tên font cứng. Thanh cuộn theo theme: `::-webkit-scrollbar` trong app.css (KHÔNG đặt `scrollbar-color`/
   `scrollbar-width` chung – Chromium mới có hai thuộc tính đó thì bỏ qua ::-webkit-scrollbar). Khám phá vẽ lại thì giữ `scrollLeft` từng `.dc-shelf`. Theme màu: `THEMES` trong app.js + khối `:root[data-theme=…]` trong app.css (localStorage `cv-theme`, không có = theo Windows). `js/app.js` định nghĩa `window.CV` (api, esc, toast, fmt…, `views`) dùng chung cho
   `js/eq.js` (Engine Web Audio + giao diện EQ 10 dải, preset `PRESETS`) và `js/music.js` (thư viện nhạc, thanh phát nhạc).
   `js/watch.js`: tab Xem Online + Xem Chung. `party.html` + `js/party.js`: trang phòng (không dùng app.js).
@@ -216,6 +218,8 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   client Android theo gói + SHA-1 khóa ký), nhiều tài khoản (Prefs.gdAccounts/gdActive), chọn thư mục gốc; phát `cvgd://<id>?a=<email>`
   (ResolvingDataSource gắn Bearer), tải về (`DJob.drive`, OTrack.gd), đưa bài lên (resumable). `ui/Party.kt`: `GET /api/phone/party`
   → phòng đang mở trên PC; vào phòng bằng link/QR → WebView trang phòng (toàn màn hình qua onShowCustomView).
+  **TẠM DỪNG APK (11/2026, người dùng yêu cầu tới tháng sau)**: job `android` ở release.yml + kiem-tra.yml có `if: false`; không sửa
+  `android/` trong thời gian này. Bật lại = xóa dòng `if: false`.
   Phát hành: job `android` trong release.yml đính `CircleVault-Android.apk` vào Release 2 repo; link cố định
   `…/circlevault-releases/releases/latest/download/CircleVault-Android.apk`.
 - **Có gì mới**: `frontend/thay-doi/thay-doi.json` (`entries`, mục MỚI NHẤT ở đầu, `id` không trùng) – MỖI LẦN PHÁT HÀNH thêm một mục. PC: `showWhatsNew` (app.js) hiện cuộn giấy `dialog.scroll-dlg` với mục chưa xem (`cv-notes-seen`), nút "📜 Có gì mới" ở Lưu Trữ. APK: file đóng gói vào assets (`sourceSets…assets.srcDirs`), `ui/WhatsNew.kt` (`ScrollNotes`, Prefs.notesSeen), nút ở Cài đặt. release.yml lấy mục đầu làm ghi chú Release. APK có **Kiểu giao diện** (`UiStyle` trong Theme.kt đọc Prefs.uiStyle MỘT LẦN, `brutal()` đổi bo góc/viền/bóng theo kiểu; đổi kiểu → `restartApp`).

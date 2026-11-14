@@ -2,6 +2,15 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-14-font-chu",
+      "date": "2026-11-14",
+      "title": "Chọn font chữ",
+      "items": [
+        "Bấm nút 🎨 (cạnh Ổ đĩa & Cài đặt) → Font chữ: Mặc định (Be Vietnam Pro), Tahoma, Consolas hoặc Times New Roman. Đổi là thấy ngay, không cần mở lại app; Phòng Thoại và Xem Chung dùng cùng font.",
+        "Bản Android tạm dừng cập nhật tới tháng sau; app trên điện thoại vẫn dùng bình thường."
+      ]
+    },
+    {
       "id": "2026-11-14-cvtube-phong-khach",
       "date": "2026-11-14",
       "title": "CVTube mới, Danh sách kết hợp & Phòng Thoại kiểu phòng khách",

@@ -894,6 +894,19 @@ const STYLES = [
   ['phang', 'Tối giản', 'Phẳng, không bóng'],
   ['kinh', 'Kính mờ', 'Trong suốt, nền chuyển màu'],
 ];
+/* font chữ: đổi ngay, không cần khởi động lại (CSS --f-body theo data-font) */
+const FONTS = [
+  ['', 'Mặc định', 'Be Vietnam Pro', '"Be Vietnam Pro","Segoe UI",sans-serif'],
+  ['tahoma', 'Tahoma', 'Gọn, dễ đọc', 'Tahoma,Verdana,sans-serif'],
+  ['consolas', 'Consolas', 'Chữ đều (lập trình)', 'Consolas,"Courier New",monospace'],
+  ['times', 'Times New Roman', 'Có chân, kiểu sách', '"Times New Roman",Times,serif'],
+];
+function setFont(f) {
+  const r = document.documentElement;
+  if (f) r.dataset.font = f; else delete r.dataset.font;
+  try { if (f) localStorage.setItem('cv-font', f); else localStorage.removeItem('cv-font'); } catch (e) { /* bỏ qua */ }
+  window.dispatchEvent(new CustomEvent('cv-font', {detail: f}));
+}
 const styleNow = () => document.documentElement.dataset.style || 'brutal';
 const styleNext = () => { try { return localStorage.getItem('cv-style-next'); } catch (e) { return null; } };
 function pickStyle(id) {
@@ -926,6 +939,9 @@ function renderThemePop() {
   $('#themePop').innerHTML = `<h4>Kiểu giao diện</h4>
     <div class="style-opts">${STYLES.map(([id, name, sub]) => `<button type="button" class="style-opt ${(nx || sn) === id ? 'on' : ''}" data-style-id="${id}" title="${esc(sub)}">
       <span class="pv"></span><span>${name}</span>${nx === id && nx !== sn ? '<span class="pend">Áp dụng khi mở lại app</span>' : sn === id && !nx ? '<span class="hint">đang dùng</span>' : ''}</button>`).join('')}</div>
+    <h4 style="margin-top:12px">Font chữ</h4>
+    <div class="font-opts">${FONTS.map(([id, name, sub, ff]) => `<button type="button" class="font-opt ${(document.documentElement.dataset.font || '') === id ? 'on' : ''}" data-font-id="${id}">
+      <b style="font-family:${esc(ff)}">${name}</b><small>${sub}</small></button>`).join('')}</div>
     <h4 style="margin-top:12px">Theme màu</h4>
     ${THEMES.map(([id, name, sw]) => `<button type="button" class="theme-opt ${cur === id ? 'on' : ''}" data-theme-id="${id}" role="menuitemradio" aria-checked="${cur === id}">
       <span>${name}</span><span class="sw">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</span></button>`).join('')}
@@ -941,6 +957,8 @@ $('#themeBtn').addEventListener('click', e => {
 $('#themePop').addEventListener('click', e => {
   const st = e.target.closest('[data-style-id]');
   if (st) return pickStyle(st.dataset.styleId);
+  const fo = e.target.closest('[data-font-id]');
+  if (fo) { setFont(fo.dataset.fontId); renderThemePop(); return; }
   const b = e.target.closest('[data-theme-id]'); if (!b) return;
   setTheme(b.dataset.themeId); renderThemePop();
   window.dispatchEvent(new Event('cv-theme'));   // đồ thị EQ vẽ lại theo màu mới
