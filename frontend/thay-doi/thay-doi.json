@@ -2,6 +2,15 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-14-fb-cam-ung",
+      "date": "2026-11-14",
+      "title": "Facebook: video/Reels đúng kiểu điện thoại",
+      "items": [
+        "Khung Facebook giả lập màn hình cảm ứng của điện thoại: Reels và video hiện to, đầy khung như trên điện thoại; bấm chuột = chạm, kéo chuột = vuốt, con lăn chuột vẫn cuộn.",
+        "Khung tự chuyển về giao diện điện thoại (kể cả khi trước đó đã chọn giao diện máy tính). Đổi lại: ⋯ → \"Dùng giao diện máy tính\"."
+      ]
+    },
+    {
       "id": "2026-11-14-fb-dien-thoai",
       "date": "2026-11-14",
       "title": "Facebook giao diện điện thoại",

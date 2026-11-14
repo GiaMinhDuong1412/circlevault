@@ -39,7 +39,7 @@ const IC = {
 };
 
 const F = {on: load('cv-fbx-on', '0') === '1', w: +load('cv-fbx-w', '440') || 440, st: {}, sent: '', menu: false,
-  skin: load('cv-fbx-skin', '1') === '1', skinSent: '', mobile: load('cv-fbx-mobile', '1') === '1'};
+  skin: load('cv-fbx-skin', '1') === '1', skinSent: '', mobile: load('cv-fbx-mobile2', '1') === '1'};
 /* giao diện điện thoại (m.facebook.com, mặc định): Facebook tự có thanh trên + hàng mục → khung chỉ giữ thanh mỏng ‹ › ↻.
  * "Giao diện app" (tô theo theme CircleVault) chỉ áp dụng cho giao diện máy tính. */
 const skinOn = () => F.skin && !F.mobile;
@@ -183,7 +183,7 @@ box.addEventListener('click', e => {
   if (a === 'more') { F.menu = !F.menu; $('#fbxMenu').hidden = !F.menu; sync(); return; }
   F.menu = false; $('#fbxMenu').hidden = true;
   if (a === 'hide') return setOn(false);
-  if (a === 'mobile') { F.mobile = !F.mobile; save('cv-fbx-mobile', F.mobile ? '1' : '0'); cmd({t: 'mobile', on: F.mobile}); return paint(); }
+  if (a === 'mobile') { F.mobile = !F.mobile; save('cv-fbx-mobile2', F.mobile ? '1' : '0'); cmd({t: 'mobile', on: F.mobile}); return paint(); }
   if (a === 'skin') { F.skin = !F.skin; save('cv-fbx-skin', F.skin ? '1' : '0'); return paint(); }
   if (a === 'ext') {
     window.CV.api('/api/youtube/extension', {method: 'POST'}).then(r => window.CV.toast(

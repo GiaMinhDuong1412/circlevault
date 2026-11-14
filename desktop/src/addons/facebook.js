@@ -35,6 +35,23 @@ function fitUrl(u) {
     return x.toString();
   } catch { return u; }
 }
+/** Giao diện điện thoại cần thêm "màn hình cảm ứng" (như chế độ thiết bị của DevTools): trang thấy ontouchstart/pointer:coarse
+ * nên Reels/video hiện đúng kiểu điện thoại; kéo chuột = vuốt, bấm = chạm, con lăn chuột vẫn cuộn. */
+// Lưu ý: chỉ gửi được lệnh khi khung đã có trang (gửi lúc chưa tải gì thì lệnh treo) → ensure() mở about:blank trước.
+async function touch(wc, on) {
+  const d = wc.debugger;
+  try {
+    if (on) {
+      if (!d.isAttached()) d.attach('1.3');
+      await d.sendCommand('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+      await d.sendCommand('Emulation.setEmitTouchEventsForMouse', { enabled: true, configuration: 'mobile' });
+    } else if (d.isAttached()) {
+      await d.sendCommand('Emulation.setTouchEmulationEnabled', { enabled: false });
+      await d.sendCommand('Emulation.setEmitTouchEventsForMouse', { enabled: false });
+    }
+  } catch (e) { if (ctx) ctx.log('Facebook: không bật được chế độ cảm ứng', e.message); }
+}
+let ready = Promise.resolve();   // khung mới: xong about:blank + bật cảm ứng thì mới mở Facebook
 const HOME = () => (mobile ? 'https://m.facebook.com/' : 'https://www.facebook.com/');
 
 function setup(options) {
@@ -182,7 +199,7 @@ function ensure(url) {
   wc.on('dom-ready', () => { skinKey = null; applySkin(); });   // trang mới = CSS chèn cũ đã mất
   wc.on('did-finish-load', () => wc.setZoomFactor(zoom));
   wc.setWindowOpenHandler(({ url: u }) => {
-    if (okUrl(u)) wc.loadURL(u); else if (/^https?:/i.test(u)) shell.openExternal(u);
+    if (okUrl(u)) wc.loadURL(fitUrl(u)); else if (/^https?:/i.test(u)) shell.openExternal(u);
     return { action: 'deny' };
   });
   wc.on('will-navigate', (e, u) => { if (!okUrl(u) && /^https?:/i.test(u)) { e.preventDefault(); shell.openExternal(u); } });
@@ -195,7 +212,10 @@ function ensure(url) {
     Menu.buildFromTemplate(items).popup({ window: main });
   });
   wc.on('render-process-gone', () => { try { wc.reload(); } catch { /* bỏ qua */ } });
-  wc.loadURL(okUrl(url) ? fitUrl(url) : HOME());
+  const first = okUrl(url) ? fitUrl(url) : HOME();
+  ready = wc.loadURL('about:blank').catch(() => {})
+    .then(() => touch(wc, mobile))
+    .then(() => { if (!wc.isDestroyed()) return wc.loadURL(first).catch(() => {}); });
   return view;
 }
 
@@ -223,7 +243,10 @@ function onMessage(m) {
       layout();
       break;
     case 'go':
-      if (okUrl(m.url)) { ensure(m.url); view.webContents.loadURL(fitUrl(m.url)); }
+      if (okUrl(m.url)) {
+        const had = !!view, v = ensure(m.url);         // khung mới thì ensure() đã tự mở đúng link này
+        if (had) ready.then(() => { if (view === v) v.webContents.loadURL(fitUrl(m.url)).catch(() => {}); });
+      }
       break;
     case 'back': if (view && view.webContents.navigationHistory.canGoBack()) view.webContents.navigationHistory.goBack(); break;
     case 'fwd': if (view && view.webContents.navigationHistory.canGoForward()) view.webContents.navigationHistory.goForward(); break;
@@ -247,7 +270,11 @@ function onMessage(m) {
     case 'mobile':                      // đổi giao diện điện thoại ↔ máy tính: đổi UA rồi mở lại đúng trang ở tên miền kia
       if (!!m.on === mobile) break;
       mobile = !!m.on; dark = null;
-      if (view) { const wc = view.webContents; wc.setUserAgent(mobile ? MOBILE_UA : CHROME_UA); wc.loadURL(fitUrl(wc.getURL() || HOME())); }
+      if (view) {
+        const wc = view.webContents, cur = wc.getURL();
+        wc.setUserAgent(mobile ? MOBILE_UA : CHROME_UA);
+        ready = ready.then(() => touch(wc, mobile)).then(() => wc.loadURL(fitUrl(okUrl(cur) ? cur : HOME())).catch(() => {}));
+      }
       push();
       break;
     case 'skin': {
