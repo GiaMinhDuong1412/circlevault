@@ -53,11 +53,19 @@ def _walk(node, ie, out: list, conts: list, depth: int = 0) -> None:
             if not isinstance(v, (dict, list)):
                 continue
             if k == "lockupViewModel" and isinstance(v, dict):
-                try:
-                    e = ie._extract_lockup_view_model(v)
-                except Exception:  # noqa: BLE001
-                    e = None
+                if v.get("contentType") in ("LOCKUP_CONTENT_TYPE_PLAYLIST", "LOCKUP_CONTENT_TYPE_PODCAST"):
+                    e = _list_lockup(v)          # danh sách kết hợp (Mix) / playlist: tự đọc để có video đầu tiên
+                else:
+                    try:
+                        e = ie._extract_lockup_view_model(v)
+                    except Exception:  # noqa: BLE001
+                        e = None
                 if e:
+                    out.append(e)
+                continue
+            if k in ("radioRenderer", "compactRadioRenderer", "playlistRenderer", "compactPlaylistRenderer", "gridPlaylistRenderer") \
+                    and isinstance(v, dict):
+                if (e := _list_renderer(v)):
                     out.append(e)
                 continue
             if k in VIDEO_KEYS and isinstance(v, dict) and v.get("videoId"):
@@ -84,13 +92,85 @@ class Stale(Exception):
     """Mọi bản cookie đăng nhập đều đã hết hiệu lực."""
 
 
-def home(max_pages: int = 3) -> tuple[list[dict], str]:
+def _texts(node, key: str = "content", depth: int = 0) -> list:
+    out = []
+    if depth > 12:
+        return out
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == key and isinstance(v, str):
+                out.append(v)
+            elif isinstance(v, (dict, list)):
+                out += _texts(v, key, depth + 1)
+    elif isinstance(node, list):
+        for x in node:
+            out += _texts(x, key, depth + 1)
+    return out
+
+
+def _thumb(node) -> str:
+    srcs = _find_list(node, "sources") or _find_list(node, "thumbnails") or []
+    srcs = [x for x in srcs if isinstance(x, dict) and x.get("url")]
+    if not srcs:
+        return ""
+    best = max(srcs, key=lambda x: (x.get("width") or 0))
+    u = best["url"]
+    return ("https:" + u) if u.startswith("//") else u
+
+
+def _find_list(node, key: str, depth: int = 0):
+    if depth > 25:
+        return None
+    if isinstance(node, dict):
+        if isinstance(node.get(key), list):
+            return node[key]
+        for v in node.values():
+            if isinstance(v, (dict, list)) and (r := _find_list(v, key, depth + 1)) is not None:
+                return r
+    elif isinstance(node, list):
+        for x in node:
+            if (r := _find_list(x, key, depth + 1)) is not None:
+                return r
+    return None
+
+
+def _list_lockup(v: dict) -> dict | None:
+    """lockupViewModel kiểu playlist: {_type: list, list, first, title, sub, thumb, badge, mix}."""
+    lid = v.get("contentId") or ""
+    if not re.match(r"^[\w-]{10,64}$", lid):
+        return None
+    meta = ((v.get("metadata") or {}).get("lockupMetadataViewModel") or {})
+    title = ((meta.get("title") or {}).get("content")) or ""
+    rows = _texts((meta.get("metadata") or {}))
+    we = _find(v.get("rendererContext"), "watchEndpoint") or _find(v, "watchEndpoint") or {}
+    img = v.get("contentImage") or {}
+    badges = _texts(_find(img, "overlays") or img, "text")
+    return {"_type": "list", "list": lid, "first": we.get("videoId") or "", "title": title,
+            "sub": " · ".join(dict.fromkeys(r for r in rows if r and r != "•"))[:160],
+            "thumb": _thumb(img.get("collectionThumbnailViewModel") or img), "badge": (badges[0] if badges else ""),
+            "mix": lid.startswith("RD")}
+
+
+def _list_renderer(v: dict) -> dict | None:
+    """radioRenderer / playlistRenderer (giao diện cũ)."""
+    gt = yt_dlp.extractor.youtube._base.YoutubeBaseInfoExtractor._get_text
+    lid = v.get("playlistId") or ""
+    if not lid:
+        return None
+    we = _find(v.get("navigationEndpoint"), "watchEndpoint") or {}
+    first = we.get("videoId") or ((v.get("videos") or [{}])[0].get("childVideoRenderer") or {}).get("videoId") or ""
+    return {"_type": "list", "list": lid, "first": first, "title": gt(v, "title") or "",
+            "sub": gt(v, "longBylineText") or gt(v, "shortBylineText") or "", "thumb": _thumb(v.get("thumbnail") or v),
+            "badge": gt(v, "videoCountShortText") or gt(v, "videoCountText") or "", "mix": lid.startswith("RD")}
+
+
+def home(max_pages: int = 3, limit: int = 80) -> tuple[list[dict], str]:
     """Trang chủ (đề xuất) như youtube.com. Trả (danh sách mục yt-dlp, ghi chú chẩn đoán).
     Thử lần lượt các bản cookie (file chính, bản của trình duyệt, bản của cửa sổ app); bản nào còn đăng nhập thì dùng và
     chép đè file chính. Không bản nào còn hiệu lực → Stale."""
     cands = downloader.youtube_cookie_candidates() or [None]
     for path in cands:
-        res = _home_with(path, max_pages)
+        res = _home_with(path, max_pages, limit)
         if res is None:                       # cookie này YouTube coi như chưa đăng nhập → thử bản khác
             continue
         if path is not None and path != cands[0]:
@@ -100,7 +180,7 @@ def home(max_pages: int = 3) -> tuple[list[dict], str]:
     raise Stale("Đăng nhập YouTube trong app đã hết hiệu lực (Google tự làm mới phiên đăng nhập).")
 
 
-def _home_with(cookiefile, max_pages: int):
+def _home_with(cookiefile, max_pages: int, limit: int = 80):
     with _tab(cookiefile) as (ie, log):
         data, ytcfg = ie._extract_data("https://www.youtube.com/feed/recommended", "FEwhat_to_watch", fatal=True)
         if cookiefile is not None and logged_out(ie, log, data, ytcfg):
@@ -109,7 +189,7 @@ def _home_with(cookiefile, max_pages: int):
         _walk(data, ie, out, conts)
         headers = ie.generate_api_headers(ytcfg=ytcfg)
         pages = 1
-        while conts and pages < max_pages and len(out) < 80:
+        while conts and pages < max_pages and len(out) < limit:
             q = conts.pop(0)
             resp = ie._extract_response(item_id="FEwhat_to_watch", query=q, ep="browse", ytcfg=ytcfg, headers=headers,
                                         fatal=False, note="Trang chủ (thêm)")
@@ -126,12 +206,14 @@ def _home_with(cookiefile, max_pages: int):
         return out, note
 
 
-def watch_next(vid: str) -> dict:
-    """Chi tiết video + 'Video tiếp theo' từ endpoint next (như cột phải của trang xem YouTube)."""
+def watch_next(vid: str, plist: str = "") -> dict:
+    """Chi tiết video + 'Video tiếp theo' từ endpoint next (như cột phải của trang xem YouTube).
+    Có `plist` (Mix / playlist): kèm `queue` = danh sách phát như khung bên phải của YouTube."""
+    q = {"videoId": vid, **({"playlistId": plist} if plist else {})}
     with _tab() as (ie, log):
         ytcfg = _ytcfg(ie)
         headers = ie.generate_api_headers(ytcfg=ytcfg)
-        data = ie._extract_response(item_id=vid, query={"videoId": vid}, ep="next", ytcfg=ytcfg, headers=headers,
+        data = ie._extract_response(item_id=vid, query=q, ep="next", ytcfg=ytcfg, headers=headers,
                                     note="Trang xem video")
     if not data:
         return {}
@@ -147,7 +229,8 @@ def watch_next(vid: str) -> dict:
     with _tab() as (ie, _log):
         out, conts = [], []
         _walk(res.get("secondaryResults"), ie, out, conts)
-    return {
+        queue = _queue(res.get("playlist"), ie) if plist else None
+    return {"queue": queue,
         "title": gt(prim, "title") or "", "views": yt_dlp.utils.parse_count(views_txt) if views_txt else None,
         "views_text": views_txt, "date": gt(prim, "dateText") or "",
         "likes": int(likes.group(1)) if likes else None,
@@ -157,6 +240,27 @@ def watch_next(vid: str) -> dict:
         "description": ((sec.get("attributedDescription") or {}).get("content")) or gt(sec, "description") or "",
         "related": out,
     }
+
+
+def _queue(node, ie) -> dict | None:
+    """Khung danh sách phát (playlistPanelRenderer) → {title, owner, index, items}."""
+    pl = ((node or {}).get("playlist")) or {}
+    if not pl:
+        return None
+    gt = yt_dlp.extractor.youtube._base.YoutubeBaseInfoExtractor._get_text
+    items = []
+    for c in pl.get("contents") or []:
+        r = (c or {}).get("playlistPanelVideoRenderer")
+        if not r or not r.get("videoId"):
+            continue
+        try:
+            e = ie._extract_video(r)
+        except Exception:  # noqa: BLE001
+            e = {"id": r["videoId"], "title": gt(r, "title")}
+        e["channel"] = e.get("channel") or gt(r, "shortBylineText") or gt(r, "longBylineText") or ""
+        items.append(e)
+    return {"title": gt(pl, "title") or pl.get("title") or "Danh sách phát", "owner": gt(pl, "ownerName") or "",
+            "index": pl.get("currentIndex") or 0, "items": items, "mix": bool(pl.get("isInfinite"))}
 
 
 _cfg_cache: dict = {}

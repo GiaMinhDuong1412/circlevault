@@ -10,9 +10,11 @@ Kênh đăng ký, Xem sau, Đã thích, Lịch sử. Chỉ dùng trên chính m�
 from __future__ import annotations
 
 import json
+import random
 import re
 import threading
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -101,7 +103,7 @@ def feed(kind: str = "home", refresh: bool = False):
         for k in [k for k in _cache if k.startswith(("feed:", "home:"))]:
             _cache.pop(k, None)
     if kind == "home":
-        res = _cached("home:all", _home, 300)
+        res = _cached("home:all", lambda: _home(refresh), 300)
         if not res.get("items"):              # lỗi / trang chủ rỗng: chỉ nhớ 45 giây để lần sau thử lại
             with _lock:
                 if "home:all" in _cache:
@@ -162,14 +164,42 @@ def _local_sections() -> list[dict]:
     return out
 
 
-def _home() -> dict:
+_SHOWN: deque = deque(maxlen=400)       # video/danh sách đã hiện ở trang chủ (Làm mới thì đưa cái mới lên trước)
+
+
+def _pl(e: dict) -> dict | None:
+    """Danh sách kết hợp (Mix) / playlist ở trang chủ → thẻ danh sách."""
+    if e.get("_type") != "list" or not e.get("list") or not e.get("title"):
+        return None
+    first = e.get("first") or ""
+    if not VID.match(first):
+        m = re.match(r"^RD([\w-]{11})$", e["list"])     # Mix của một video: RD + mã video
+        first = m.group(1) if m else ""
+    return {"kind": "list", "id": "L:" + e["list"], "list": e["list"], "first": first, "title": e["title"],
+            "sub": e.get("sub") or "", "badge": e.get("badge") or "", "mix": bool(e.get("mix")),
+            "thumb": e.get("thumb") or (f"https://i.ytimg.com/vi/{first}/hqdefault.jpg" if first else "")}
+
+
+def _fresh(items: list[dict], refresh: bool) -> list[dict]:
+    """Làm mới: mục chưa hiện lần nào lên trước (giữ thứ tự YouTube), mục đã xem qua xuống sau và đảo thứ tự."""
+    if refresh and _SHOWN:
+        shown = set(_SHOWN)
+        new = [x for x in items if x["id"] not in shown]
+        old = [x for x in items if x["id"] in shown]
+        random.shuffle(old)
+        items = new + old
+    _SHOWN.extend(x["id"] for x in items[:60])
+    return items
+
+
+def _home(refresh: bool = False) -> dict:
     """Trang chủ YouTube (đề xuất). YouTube trả trang chủ RỖNG khi tài khoản tắt Lịch sử xem (hoặc cookie không còn hiệu lực)
     → tự ghép đề xuất: video mới từ kênh đăng ký + video giống những video đã xem / đã thích gần đây."""
     warn: list[str] = []
     items: list[dict] = []
     inner_note = ""
     try:                                     # như trang chủ youtube.com (browse FEwhat_to_watch)
-        raw, inner_note = ytinner.home()
+        raw, inner_note = ytinner.home(6 if refresh else 3, 160 if refresh else 80)
     except ytinner.Stale as e:               # cookie hết hiệu lực: các mục cần đăng nhập đều rỗng → đề xuất từ video đã mở trong app
         return {"items": [], "stale": True, "sections": _local_sections(),
                 "note": f"{e} Mở Chrome/Edge (có tiện ích CircleVault) cho tiện ích gửi lại đăng nhập, hoặc bấm Đăng nhập YouTube lại. "
@@ -179,12 +209,12 @@ def _home() -> dict:
         inner_note = downloader.clean(str(e))[:200]
     seen0: set[str] = set()
     for e in raw:
-        v = _v(e)
-        if v and v["id"] not in seen0:
+        v = _pl(e) if e.get("_type") == "list" else _v(e)
+        if v and v["id"] not in seen0 and not v.get("short"):
             seen0.add(v["id"])
             items.append(v)
     if items:
-        return {"items": items}
+        return {"items": _fresh(items, refresh)[:90]}
     if inner_note:
         warn.append(inner_note)
     items = _try_list(FEEDS["home"][0], 60, warn)
@@ -273,10 +303,10 @@ def _details(vid: str) -> dict:
             "tags": (info.get("tags") or [])[:8]}
 
 
-def _next(v: str) -> dict | None:
+def _next(v: str, plist: str = "") -> dict | None:
     """Chi tiết + 'video tiếp theo' thật của YouTube (endpoint next). None nếu không đọc được."""
     try:
-        n = ytinner.watch_next(v)
+        n = ytinner.watch_next(v, plist)
     except Exception:  # noqa: BLE001
         return None
     if not n or not n.get("title"):
@@ -289,14 +319,27 @@ def _next(v: str) -> dict | None:
             related.append(x)
     return {"id": v, "title": n["title"], "channel": n["channel"], "channel_id": n["channel_id"], "views": n["views"],
             "views_text": n["views_text"], "likes": n["likes"], "date": n["date"], "subs_text": n["subs_text"],
-            "description": n["description"][:5000], "playable_in_embed": True, "related": related[:40]}
+            "description": n["description"][:5000], "playable_in_embed": True, "related": related[:40],
+            "queue": _queue_out(n.get("queue"))}
+
+
+def _queue_out(q: dict | None) -> dict | None:
+    if not q:
+        return None
+    items = []
+    for e in q["items"]:
+        x = _v(e)
+        if x:
+            items.append(x)
+    return {"title": q["title"], "owner": q["owner"], "index": q["index"], "mix": q["mix"], "items": items} if items else None
 
 
 @router.get("/video")
-def video(v: str):
+def video(v: str, list: str = ""):  # noqa: A002 – tên tham số giống YouTube
     if not VID.match(v or ""):
         raise HTTPException(400, "Mã video không hợp lệ.")
-    nx = _cached("n:" + v, lambda: _next(v), 1800)
+    plist = list if re.match(r"^[\w-]{10,64}$", list or "") else ""
+    nx = _cached(f"n:{v}:{plist}", lambda: _next(v, plist), 1800 if not plist else 600)
     if nx and nx.get("title"):
         _remember(nx)
     if nx and nx["related"]:
@@ -338,6 +381,14 @@ def video(v: str):
             seen.add(item["id"])
             related.append(item)
     return {**det, "related": related[:30]}
+
+
+@router.get("/list")
+def plist(l: str):  # noqa: E741
+    """Video trong một playlist (khi thẻ danh sách không kèm sẵn video đầu tiên)."""
+    if not re.match(r"^[\w-]{10,64}$", l or ""):
+        raise HTTPException(400, "Danh sách không hợp lệ.")
+    return {"items": _cached("pl:" + l, lambda: _list(f"https://www.youtube.com/playlist?list={l}", 50)[1])}
 
 
 @router.get("/status")

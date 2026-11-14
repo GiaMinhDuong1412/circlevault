@@ -2,6 +2,18 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-14-cvtube-phong-khach",
+      "date": "2026-11-14",
+      "title": "CVTube mới, Danh sách kết hợp & Phòng Thoại kiểu phòng khách",
+      "items": [
+        "Tab YouTube đổi giao diện thành CVTube: thanh tìm kiếm bo tròn, tab có biểu tượng, video đầu trang chủ thành thẻ Nổi bật, mỗi video có huy hiệu kênh, rê chuột hiện nút phát.",
+        "Trang chủ có Danh sách kết hợp (Mix) như YouTube: thẻ chồng lớp, bấm là phát từ bài đầu với khung danh sách phát bên phải; Mix tự nối thêm bài.",
+        "Nút Tự phát: hết video thì phát tiếp bài sau trong danh sách (hoặc video Tiếp theo).",
+        "Làm mới lấy đề xuất mới thật: tải thêm nhiều trang đề xuất, video chưa thấy lần nào lên trước, video đã hiện xuống cuối.",
+        "Phòng Thoại đổi giao diện (chức năng giữ nguyên): phòng nói dạng thẻ màu kèm ảnh người đang trong phòng, sân khấu tối khi đang nói chuyện, trò chuyện dạng bong bóng với chủ đề là các tab, thanh điều khiển nổi ở dưới, ai đang online xem ở cụm ảnh đầu trang. Điện thoại chuyển nhanh giữa Phòng nói và Trò chuyện."
+      ]
+    },
+    {
       "id": "2026-11-13-phong-thoai",
       "date": "2026-11-13",
       "title": "Phòng Thoại kiểu Discord + lọc giọng",

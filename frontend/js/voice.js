@@ -321,7 +321,7 @@ function syncPeers() {               // ai rời kênh thì đóng kết nối
   }
 }
 async function joinVoice(cid) {
-  if (st.voice === cid) { st.view = 'v:' + cid; render(); return; }
+  if (st.voice === cid) { setPane('rooms'); return; }
   if (st.voice) leaveVoice(true);
   const ok = A.raw || await openMic();
   if (!ok) toast('Vào kênh chỉ để nghe (chưa có micro).', 'err');
@@ -335,7 +335,6 @@ function leaveVoice(quiet) {
   Object.keys(st.peers).forEach(dropPeer);
   st.voice = null;
   if (!quiet) beep('leave');
-  if (st.view.startsWith('v:')) st.view = 't:' + firstText();
   render(); postState();
 }
 setInterval(async () => {          // ping tới từng người (thanh tín hiệu)
@@ -403,7 +402,7 @@ function onMsg(m) {
       break;
     }
     case 'joined':
-      st.voice = m.cid; st.view = 'v:' + m.cid; beep('join');
+      st.voice = m.cid; beep('join'); setPane('rooms');
       sendState();
       for (const id of m.peers) pcFor(id);            // người mới vào gửi offer cho từng người đang có trong kênh
       render(); postState();
@@ -411,7 +410,7 @@ function onMsg(m) {
     case 'kicked-voice':
       Object.keys(st.peers).forEach(dropPeer); st.voice = null; beep('leave');
       toast('Chủ phòng đã mời bạn ra khỏi kênh thoại.', 'err');
-      st.view = 't:' + firstText(); render(); postState();
+      render(); postState();
       break;
     case 'sig': onSig(m.from, m.data); break;
     case 'speak': setTalk(m.id, !!m.on); break;
@@ -419,6 +418,7 @@ function onMsg(m) {
     case 'chat': {
       (st.history[m.cid] = st.history[m.cid] || []).push(m.msg);
       if (st.view === 't:' + m.cid && !document.hidden) appendMsg(m.msg); else { st.unread[m.cid] = (st.unread[m.cid] || 0) + 1; renderChans(); }
+      if (pane === 'rooms' && window.innerWidth <= 800 && m.msg.uid !== UID) { st.mUnread = (st.mUnread || 0) + 1; paintBadge(); }
       if (document.hidden || st.view !== 't:' + m.cid) postState();
       break;
     }
@@ -440,45 +440,56 @@ function render() {
   $('#serverName').textContent = st.closed ? 'Đã rời phòng' : (st.server.name || 'Phòng thoại');
   renderChans(); renderMain(); renderMembers(); renderMe(); renderConn();
 }
+/* màn hình hẹp: chuyển giữa "Phòng nói" và "Trò chuyện" */
+let pane = 'rooms';
+function setPane(p) {
+  pane = p;
+  $('#app').dataset.pane = p;
+  $$('[data-gopane]').forEach(b => b.classList.toggle('on', b.dataset.gopane === p));
+  if (p === 'chat') { st.mUnread = 0; paintBadge(); }
+}
+function paintBadge() { const b = $('#chatBadge'); if (b) { b.textContent = st.mUnread ? st.mUnread : ''; b.hidden = !st.mUnread; } }
 function memberRow(m, cls = '') {
-  return `<button class="vc-mrow ${cls}" type="button" data-user="${esc(m.id)}">${avatar(m, 24)}
-    <span class="vc-mname"${nameStyle(m)}>${esc(m.name)}</span>${m.host ? '<span class="vc-crown" title="Chủ phòng">👑</span>' : ''}
+  return `<button class="vc-mrow ${cls}" type="button" data-user="${esc(m.id)}">${avatar(m, 30)}
+    <span class="vc-mtx"><span class="vc-mname"${nameStyle(m)}>${esc(m.name)}${m.host ? ' <span class="vc-crown" title="Chủ phòng">👑</span>' : ''}</span>
+    <small>${esc(m.voice ? '🔊 ' + ((chanById(m.voice) || {}).name || '') : m.status || 'Đang online')}</small></span>
     <span class="vc-mic">${m.smute ? '<span class="vc-sm" title="Chủ phòng đã tắt mic">' + IC.micOff + '</span>' : m.mute ? IC.micOff : ''}${m.deaf ? IC.headOff : ''}</span></button>`;
 }
+const ROOM_COLORS = ['var(--cyan)', 'var(--pink)', 'var(--green)', 'var(--violet)', 'var(--yellow)', 'var(--red)'];
 function renderChans() {
   const ch = st.server.channels, host = isHost();
-  const add = kind => host ? `<button class="vc-add" type="button" data-addch="${kind}" title="Thêm kênh">＋</button>` : '';
-  const tools = c => host ? `<span class="vc-ctools"><button type="button" data-ren="${esc(c.id)}" title="Đổi tên">✎</button><button type="button" data-delch="${esc(c.id)}" title="Xóa kênh">🗑</button></span>` : '';
-  const editRow = (id, val, kind) => `<form class="vc-edit" data-editform="${esc(id)}" data-kind="${kind}"><input type="text" maxlength="40" value="${esc(val)}" placeholder="${kind === 'voice' ? 'Tên kênh thoại' : 'tên-kênh-chat'}" required></form>`;
-  let h = `<div class="vc-cat"><span>KÊNH CHAT</span>${add('text')}</div>`;
-  for (const c of ch.filter(x => x.kind === 'text')) {
-    if (st.editing === c.id) { h += editRow(c.id, c.name, 'text'); continue; }
-    const n = st.unread[c.id];
-    h += `<div class="vc-ch ${st.view === 't:' + c.id ? 'on' : ''} ${n ? 'unread' : ''}"><button type="button" data-text="${esc(c.id)}"><span class="vc-hash">#</span>${esc(c.name)}</button>
-      ${n ? `<span class="vc-badge">${n > 99 ? '99+' : n}</span>` : ''}${tools(c)}</div>`;
-  }
-  if (st.editing === 'new-text') h += editRow('new-text', '', 'text');
-  h += `<div class="vc-cat"><span>KÊNH THOẠI</span>${add('voice')}</div>`;
-  for (const c of ch.filter(x => x.kind === 'voice')) {
-    if (st.editing === c.id) { h += editRow(c.id, c.name, 'voice'); continue; }
-    const inside = st.members.filter(m => m.voice === c.id);
-    h += `<div class="vc-ch voice ${st.voice === c.id ? 'in' : ''} ${st.view === 'v:' + c.id ? 'on' : ''}"><button type="button" data-voice="${esc(c.id)}">${IC.spk}${esc(c.name)}</button>
-      ${inside.length ? `<span class="vc-cnt">${inside.length}/${st.voiceMax}</span>` : ''}${tools(c)}</div>
-      ${inside.length ? `<div class="vc-vlist">${inside.map(m => memberRow(m, 'sm')).join('')}</div>` : ''}`;
-  }
-  if (st.editing === 'new-voice') h += editRow('new-voice', '', 'voice');
+  const tools = c => host ? `<span class="vc-ctools"><button type="button" data-ren="${esc(c.id)}" title="Đổi tên">✎</button><button type="button" data-delch="${esc(c.id)}" title="Xóa">🗑</button></span>` : '';
+  const editRow = (id, val, kind) => `<form class="vc-edit" data-editform="${esc(id)}" data-kind="${kind}"><input type="text" maxlength="40" value="${esc(val)}" placeholder="${kind === 'voice' ? 'Tên phòng nói' : 'tên-chủ-đề'}" required></form>`;
+  // các phòng nói chuyện = thẻ
+  const voices = ch.filter(x => x.kind === 'voice');
+  let h = voices.map((c, i) => {
+    if (st.editing === c.id) return `<div class="lg-card editing">${editRow(c.id, c.name, 'voice')}</div>`;
+    const inside = st.members.filter(m => m.voice === c.id), here = st.voice === c.id;
+    return `<div class="lg-card ${here ? 'here' : ''} ${inside.length ? 'busy' : ''}" style="--rc:${ROOM_COLORS[i % ROOM_COLORS.length]}">
+      <div class="lg-card-h"><span class="lg-card-ic">${IC.spk}</span><b>${esc(c.name)}</b>${tools(c)}</div>
+      <div class="lg-faces">${inside.length ? inside.map(m => `<span class="lg-face" data-user="${esc(m.id)}" title="${esc(m.name)}">${avatar(m, 40)}${m.mute || m.smute ? '<i class="lg-fmute">' + IC.micOff + '</i>' : ''}</span>`).join('')
+        : '<span class="hint">Chưa có ai – vào trước rồi rủ bạn nhé</span>'}</div>
+      <div class="lg-card-f"><small>${inside.length}/${st.voiceMax} người</small>
+        ${here ? '<span class="lg-here">● Bạn đang ở đây</span>' : `<button class="btn sm green" type="button" data-voice="${esc(c.id)}">Vào phòng</button>`}</div></div>`;
+  }).join('');
+  if (st.editing === 'new-voice') h += `<div class="lg-card editing">${editRow('new-voice', '', 'voice')}</div>`;
+  else if (host) h += `<button class="lg-card lg-add" type="button" data-addch="voice"><span>＋</span>Phòng nói mới</button>`;
   $('#chList').innerHTML = h;
+  // chủ đề trò chuyện = tab
+  let t = '';
+  for (const c of ch.filter(x => x.kind === 'text')) {
+    if (st.editing === c.id) { t += editRow(c.id, c.name, 'text'); continue; }
+    const n = st.unread[c.id];
+    t += `<span class="lg-tab ${st.view === 't:' + c.id ? 'on' : ''}"><button type="button" data-text="${esc(c.id)}">#${esc(c.name)}</button>${n ? `<i class="vc-badge">${n > 99 ? '99+' : n}</i>` : ''}${st.view === 't:' + c.id ? tools(c) : ''}</span>`;
+  }
+  if (st.editing === 'new-text') t += editRow('new-text', '', 'text');
+  else if (host) t += '<button class="lg-tab-add" type="button" data-addch="text" title="Thêm chủ đề">＋</button>';
+  $('#chatTabs').innerHTML = t;
   const f = $('.vc-edit input'); if (f) { f.focus(); f.select(); }
 }
 function renderMain() {
-  const [kind, id] = (st.view || ':').split(':');
-  const c = chanById(id);
-  $('#headIc').innerHTML = kind === 'v' ? IC.spk : '#';
-  $('#headName').textContent = c ? c.name : '';
-  $('#headSub').textContent = kind === 'v' ? (st.voice === id ? 'Đang ở trong kênh' : 'Bấm Vào kênh để nói chuyện') : '';
-  $('#textView').hidden = kind !== 't';
-  $('#voiceView').hidden = kind !== 'v';
-  if (kind === 't') renderLog(id); else renderTiles();
+  renderLog((st.view || ':').split(':')[1]);
+  renderTiles();
 }
 function linkify(s) {
   return esc(s).replace(/https?:\/\/[^\s<>"']+/g, u => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
@@ -486,30 +497,31 @@ function linkify(s) {
 function timeStr(at) {
   const d = new Date(at * 1000), now = new Date();
   const hm = d.toLocaleTimeString('vi-VN', {hour: '2-digit', minute: '2-digit'});
-  return d.toDateString() === now.toDateString() ? 'Hôm nay ' + hm : d.toLocaleDateString('vi-VN') + ' ' + hm;
+  return d.toDateString() === now.toDateString() ? hm : d.toLocaleDateString('vi-VN') + ' ' + hm;
 }
 function msgHtml(m, prev) {
   const grouped = prev && prev.uid === m.uid && m.at - prev.at < 300;
   const who = st.members.find(x => x.uid === m.uid) || {id: '', name: m.name, color: m.color};
   const mine = m.uid === UID, canDel = mine || isHost();
   const del = canDel ? `<button class="vc-del" type="button" data-del="${esc(m.mid)}" title="Xóa tin">✕</button>` : '';
-  if (grouped) return `<div class="vc-msg g" data-mid="${esc(m.mid)}"><span class="vc-t2">${esc(new Date(m.at * 1000).toLocaleTimeString('vi-VN', {hour: '2-digit', minute: '2-digit'}))}</span><p>${linkify(m.text)}</p>${del}</div>`;
-  return `<div class="vc-msg" data-mid="${esc(m.mid)}" data-uid="${esc(m.uid)}" data-at="${m.at}">${avatar({...who, name: m.name, color: m.color || who.color}, 38)}
-    <div><div class="vc-mh"><b${nameStyle(m)} data-user="${esc(who.id)}">${esc(m.name)}</b>${m.host ? ' <span class="vc-crown">👑</span>' : ''}<small>${esc(timeStr(m.at))}</small></div>
-    <p>${linkify(m.text)}</p></div>${del}</div>`;
+  const self = mine ? {...who, self: true} : who;
+  return `<div class="lg-msg ${mine ? 'me' : ''} ${grouped ? 'g' : ''}" data-mid="${esc(m.mid)}" data-uid="${esc(m.uid)}" data-at="${m.at}">
+    ${grouped ? '<span class="lg-gap"></span>' : avatar({...self, name: m.name, color: m.color || who.color}, 30)}
+    <div class="lg-bub">${grouped ? '' : `<div class="vc-mh"><b${nameStyle(m)} data-user="${esc(who.id)}">${esc(mine ? 'Bạn' : m.name)}</b>${m.host ? ' <span class="vc-crown">👑</span>' : ''}</div>`}
+      <p>${linkify(m.text)}</p><small>${esc(timeStr(m.at))}</small>${del}</div></div>`;
 }
 function renderLog(cid) {
   const h = st.history[cid] || [];
   st.unread[cid] = 0;
   const c = chanById(cid);
-  let html = `<div class="vc-welcome"><span class="vc-big">#</span><h3>Chào mừng tới #${esc(c ? c.name : '')}</h3><p class="hint">Đây là đầu kênh. Tin nhắn được lưu trên máy của chủ phòng.</p></div>`;
+  let html = `<div class="vc-welcome"><b>#${esc(c ? c.name : '')}</b><p class="hint">Bắt đầu trò chuyện ở đây. Tin nhắn lưu trên máy của chủ phòng.</p></div>`;
   h.forEach((m, i) => { html += msgHtml(m, h[i - 1]); });
   const log = $('#log');
   log.innerHTML = html;
   log.scrollTop = log.scrollHeight;
-  $('#msgIn').placeholder = `Nhắn vào #${c ? c.name : ''}`;
+  $('#msgIn').placeholder = `Nhắn vào #${c ? c.name : ''}…`;
   $('#msgIn').disabled = !st.me;
-  jset('cv-voice-last-' + code, cid);
+  if (cid) jset('cv-voice-last-' + code, cid);
 }
 function appendMsg(m) {
   const log = $('#log'), h = st.history[st.view.slice(2)] || [];
@@ -518,50 +530,44 @@ function appendMsg(m) {
   if (near || m.uid === UID) log.scrollTop = log.scrollHeight;
 }
 function renderTiles() {
-  const id = (st.view || '').slice(2), c = chanById(id);
-  if (!c || c.kind !== 'voice') return;
+  const id = st.voice, c = id ? chanById(id) : null;
+  $('#voiceView').hidden = !c;
+  $('#app').classList.toggle('in-voice', !!c);
+  if (!c) return;
+  $('#headName').textContent = c.name;
   const inside = st.members.filter(m => m.voice === id);
-  const joined = st.voice === id;
-  let h = '';
-  if (!joined) {
-    h = `<div class="vc-enter"><div class="vc-big">${IC.spk}</div><h3>${esc(c.name)}</h3>
-      <p class="hint">${inside.length ? inside.length + ' người đang nói chuyện' : 'Chưa có ai trong kênh'}</p>
-      <div class="vc-faces">${inside.map(m => avatar(m, 44)).join('')}</div>
-      <button class="btn green" type="button" data-joinv="${esc(id)}">VÀO KÊNH</button></div>`;
-  } else {
-    h = inside.map(m => {
-      const P0 = st.peers[m.id], self = st.me && m.id === st.me.id;
-      const bad = !self && P0 && ['failed', 'disconnected'].includes(P0.pc.connectionState);
-      const wait = !self && (!P0 || ['new', 'connecting'].includes(P0.pc.connectionState));
-      return `<button class="vc-tile ${st.talking.has(m.id) ? 'talk' : ''}" type="button" data-tile="${esc(m.id)}" data-user="${esc(m.id)}" style="--c:${esc(m.color || '#19bde8')}">
-        ${avatar(m, 84)}<span class="vc-tname"${nameStyle(m)}>${esc(m.name)}${self ? ' (bạn)' : ''}</span>
-        <span class="vc-ticons">${m.smute || m.mute ? IC.micOff : ''}${m.deaf ? IC.headOff : ''}</span>
-        ${bad ? '<span class="vc-tbad">Mất kết nối – đang thử lại</span>' : wait ? '<span class="vc-tbad wait">Đang kết nối…</span>' : ''}</button>`;
-    }).join('');
-  }
-  $('#tiles').innerHTML = h;
-  $('#tiles').className = 'vc-tiles' + (joined ? ' n' + Math.min(inside.length, 9) : ' idle');
-  $('.vc-bar').hidden = !joined;
+  $('#tiles').innerHTML = inside.map(m => {
+    const P0 = st.peers[m.id], self = st.me && m.id === st.me.id;
+    const bad = !self && P0 && ['failed', 'disconnected'].includes(P0.pc.connectionState);
+    const wait = !self && (!P0 || ['new', 'connecting'].includes(P0.pc.connectionState));
+    return `<button class="vc-tile ${st.talking.has(m.id) ? 'talk' : ''}" type="button" data-tile="${esc(m.id)}" data-user="${esc(m.id)}" style="--c:${esc(m.color || '#19bde8')}">
+      ${avatar(self ? {...m, self: true} : m, 76)}<span class="vc-tname"${nameStyle(m)}>${esc(m.name)}${self ? ' (bạn)' : ''}</span>
+      <span class="vc-ticons">${m.smute || m.mute ? IC.micOff : ''}${m.deaf ? IC.headOff : ''}</span>
+      ${bad ? '<span class="vc-tbad">Mất kết nối – đang thử lại</span>' : wait ? '<span class="vc-tbad wait">Đang kết nối…</span>' : ''}</button>`;
+  }).join('');
+  $('#tiles').className = 'vc-tiles n' + Math.min(inside.length, 9);
 }
 function renderMembers() {
   const on = st.members;
-  const group = (title, list) => list.length ? `<div class="vc-cat"><span>${title} — ${list.length}</span></div>${list.map(m => memberRow(m)).join('')}` : '';
-  $('#members').innerHTML = group('CHỦ PHÒNG', on.filter(m => m.host)) + group('ĐANG TRỰC TUYẾN', on.filter(m => !m.host));
+  $('#onCount').textContent = on.length ? on.length + ' online' : '';
+  $('#stack').innerHTML = on.slice(0, 5).map(m => avatar(st.me && m.id === st.me.id ? {...m, self: true} : m, 28)).join('') + (on.length > 5 ? `<span class="lg-more">+${on.length - 5}</span>` : '');
+  const group = (title, list) => list.length ? `<div class="lg-ph">${title} · ${list.length}</div>${list.map(m => memberRow(m)).join('')}` : '';
+  $('#people').innerHTML = group('Chủ phòng', on.filter(m => m.host)) + group('Đang nói chuyện', on.filter(m => !m.host && m.voice))
+    + group('Đang online', on.filter(m => !m.host && !m.voice));
+  $('#roomsHint').textContent = `${on.filter(m => m.voice).length} người đang nói chuyện`;
 }
 function renderMe() {
   const m = meM() || {name: P.name || 'Khách', color: P.color, frame: P.frame};
-  $('#meWho').innerHTML = `${avatar({...m, self: true, id: st.me ? st.me.id : 'me'}, 32)}<span><b${nameStyle(m)}>${esc(P.name || m.name || 'Khách')}</b>
-    <small>${esc(A.err ? 'Lỗi micro' : P.status || (st.voice ? 'Trong kênh thoại' : 'Trực tuyến'))}</small></span>`;
+  $('#meWho').innerHTML = `${avatar({...m, self: true, id: st.me ? st.me.id : 'me'}, 34)}<span><b${nameStyle(m)}>${esc(P.name || m.name || 'Khách')}</b>
+    <small>${esc(A.err ? 'Lỗi micro' : P.status || (st.voice ? 'Đang nói chuyện' : 'Đang online'))}</small></span>`;
   const muted = S.selfMute || S.selfDeaf || (m && m.smute) || !A.raw;
-  for (const b of ['#micBtn', '#barMic']) {
-    $(b).innerHTML = muted ? IC.micOff : IC.mic;
-    $(b).classList.toggle('off', !!muted);
-    $(b).title = m && m.smute ? 'Chủ phòng đã tắt mic của bạn' : !A.raw ? (A.err || 'Chưa bật micro') : muted ? 'Bật mic (Ctrl+Shift+M)' : 'Tắt mic (Ctrl+Shift+M)';
-  }
-  for (const b of ['#deafBtn', '#barDeaf']) {
-    $(b).innerHTML = S.selfDeaf ? IC.headOff : IC.head;
-    $(b).classList.toggle('off', !!S.selfDeaf);
-  }
+  const mb = $('#micBtn');
+  mb.innerHTML = muted ? IC.micOff : IC.mic;
+  mb.classList.toggle('off', !!muted);
+  mb.title = m && m.smute ? 'Chủ phòng đã tắt mic của bạn' : !A.raw ? (A.err || 'Chưa bật micro') : muted ? 'Bật mic (Ctrl+Shift+M)' : 'Tắt mic (Ctrl+Shift+M)';
+  const db = $('#deafBtn');
+  db.innerHTML = S.selfDeaf ? IC.headOff : IC.head;
+  db.classList.toggle('off', !!S.selfDeaf);
 }
 function renderConn() {
   const box = $('#conn');
@@ -571,8 +577,8 @@ function renderConn() {
   const peers = Object.values(st.peers);
   const ok = peers.every(p => p.pc.connectionState === 'connected');
   const rtt = st.rtt;
-  $('#connState').textContent = !peers.length ? 'Đã vào kênh' : ok ? 'Đã kết nối giọng nói' : 'Đang kết nối…';
-  $('#connName').textContent = (c ? c.name : '') + (rtt != null ? ` · ${rtt} ms` : '');
+  $('#connState').textContent = (c ? c.name : '') + ' · ' + (!peers.length ? 'đã vào' : ok ? 'đã kết nối' : 'đang kết nối…');
+  $('#connName').textContent = rtt != null ? `${rtt} ms` : '';
   const q = rtt == null ? (ok ? 3 : 1) : rtt < 120 ? 3 : rtt < 250 ? 2 : 1;
   $('#connSig').className = 'vc-sig q' + q;
   $('#connNs').innerHTML = `🎚 ${esc(A.nsOn ? NS[A.nsOn][0] : 'Không lọc ồn')}${S.mode === 'ptt' ? ` · Nhấn để nói: <kbd>${esc(keyName(S.pttKey))}</kbd>` : ''}`;
@@ -824,8 +830,10 @@ document.addEventListener('click', e => {
   const t = e.target;
   if (!t.closest('#pop') && !$('#pop').hidden && !t.closest('[data-user]')) $('#pop').hidden = true;
   let el;
-  if ((el = t.closest('[data-text]'))) { st.view = 't:' + el.dataset.text; $('#app').classList.remove('show-chans'); render(); if (window.innerWidth > 700) $('#msgIn').focus(); return; }
-  if ((el = t.closest('[data-voice]'))) { const id = el.dataset.voice; $('#app').classList.remove('show-chans'); if (st.voice === id) { st.view = 'v:' + id; render(); } else joinVoice(id); return; }
+  if ((el = t.closest('[data-text]'))) { st.view = 't:' + el.dataset.text; render(); if (window.innerWidth > 800) $('#msgIn').focus(); return; }
+  if ((el = t.closest('[data-voice]'))) { joinVoice(el.dataset.voice); return; }
+  if ((el = t.closest('[data-gopane]'))) { setPane(el.dataset.gopane); return; }
+  if (!t.closest('#people') && !t.closest('#memBtn') && !t.closest('#pop')) $('#people').hidden = true;
   if ((el = t.closest('[data-joinv]'))) { joinVoice(el.dataset.joinv); return; }
   if ((el = t.closest('[data-user]'))) { if (el.dataset.user) openPop(el.dataset.user, el); return; }
   if ((el = t.closest('[data-del]'))) { if (confirm('Xóa tin nhắn này?')) send({t: 'del', cid: st.view.slice(2), mid: el.dataset.del}); return; }
@@ -853,17 +861,16 @@ $('#compose').addEventListener('submit', e => {
   send({t: 'chat', cid: st.view.slice(2), text: v});
   $('#msgIn').value = '';
 });
-$('#micBtn').onclick = $('#barMic').onclick = toggleMute;
-$('#deafBtn').onclick = $('#barDeaf').onclick = toggleDeaf;
+$('#micBtn').onclick = toggleMute;
+$('#deafBtn').onclick = toggleDeaf;
 $('#setBtn').onclick = () => openSettings('voice');
-$('#barSet').onclick = () => openSettings('voice');
-$('#leaveBtn').onclick = $('#barLeave').onclick = () => leaveVoice();
+$('#leaveBtn').onclick = () => leaveVoice();
 $('#meWho').onclick = () => openSettings('prof');
 $('#setClose').onclick = () => { if (testEl) toggleTest(); $('#setDlg').close(); };
 $('#setDlg').addEventListener('close', () => { if (testEl) toggleTest(); if (setTab === 'prof') saveProfile(); });
 $$('[data-stab]').forEach(b => b.onclick = () => openSettings(b.dataset.stab));
-$('#menuBtn').onclick = () => $('#app').classList.toggle('show-chans');
-$('#memBtn').onclick = () => $('#app').classList.toggle('hide-members');
+$('#memBtn').onclick = () => { $('#people').hidden = !$('#people').hidden; };
+setPane('rooms');
 $('#invBtn').onclick = async () => {
   if (EMBED) { post({invite: true}); return; }
   const url = location.origin + location.pathname;

@@ -76,13 +76,15 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   - `websites.py`: "Trang phim đã lưu" (`/api/web-sites`, chỉ máy này, `DATA/web-sites.json`, trùng tên miền thì thay): nút ☆ Lưu
     trang trên thanh công cụ trình duyệt (`saveSite` lưu gốc tên miền), ô ☆ Lưu ở Xem Online; chip bấm nhanh ở Xem Online (mở trang)
     và Xem Chung → Link trang phim (mở trang + tự tạo phòng).
-  - `voice.py`: **Phòng Thoại** kiểu Discord. Một máy chủ (`DATA/voice/server.json`: tên, `code` mời, `host_key`, kênh `text`/`voice`,
+  - `voice.py`: **Phòng Thoại** (chức năng như Discord, giao diện riêng). Một máy chủ (`DATA/voice/server.json`: tên, `code` mời, `host_key`, kênh `text`/`voice`,
     `bans` theo uid, `turn`) + tin nhắn `DATA/voice/msgs/<kênh>.jsonl` (gửi 150 tin gần nhất khi vào). Trang `/v/<code>` + WS `/v/<code>/ws`
     gắn vào `party.party_app` (cùng cổng/đường hầm với Xem Chung; `tunnel.stop` chỉ khi cả hai không dùng). WS: hello/profile/join/leave/
     sig (chỉ chuyển giữa 2 người CÙNG kênh thoại)/state/speak/chat/del + lệnh chủ phòng (mod smute|move-out|kick|ban, chan add|rename|del|move).
     Ảnh đại diện giữ trong bộ nhớ, phục vụ `/v/<code>/av/<id>`. API app `/api/voice` (local_only): trạng thái + link, PUT tên/mở-đóng,
     `/new-link`, `/turn` (Cloudflare: khóa API chỉ ở máy này, bạn bè nhận ICE tạm 24 giờ; hoặc TURN tĩnh), `/tunnel`. `VOICE_MAX`=10/kênh (mesh).
-    Giao diện `frontend/voice.html` + `js/voice.js` + `css/voice.css`: WebRTC perfect negotiation, LỌC GIỌNG ở máy từng người
+    Giao diện `frontend/voice.html` + `js/voice.js` + `css/voice.css` (kiểu "phòng khách", KHÔNG giống Discord – người dùng yêu cầu: phòng nói = thẻ màu
+    `.lg-card` trong `#chList`, sân khấu `#voiceView` khi đang nói, chat bong bóng `.lg-msg` + chủ đề = tab `#chatTabs`, thanh nổi `.lg-hud`,
+    online = cụm ảnh `#memBtn` → ngăn `#people`; màn hẹp chuyển `data-gopane` rooms/chat): WebRTC perfect negotiation, LỌC GIỌNG ở máy từng người
     (high-pass 90 Hz → RNNoise/GTCRN/Speex qua `vendor/ns` = @sapphi-red/web-noise-suppressor 0.4.1 → gain → analyser → cổng mic theo
     ngưỡng tự động/tay hoặc Nhấn để nói → MediaStreamDestination; track gửi đi không đổi khi đổi bộ lọc/micro), nghe ≤100% qua <audio>
     (giữ khử vọng), >100% qua Web Audio; âm lượng/tắt tiếng riêng theo uid (localStorage). Hồ sơ trong phòng: tên, trạng thái, ảnh (160px),
@@ -134,6 +136,11 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     của app; nút Tải video/MP3 (`/api/tasks`), Xem chung, Mở bằng trình duyệt YouTube (bị chặn nhúng). `browser.js` `mirrorToMain`
     chép cookie YouTube/Google sang `session.defaultSession` để trình phát nhúng nhận tài khoản (Premium không quảng cáo).
     Mở video thì phát sự kiện `cv-video-play` → music.js tạm dừng nhạc.
+    Giao diện tab là **CVTube** (thanh `.yt-top` + tab `.yt-tab`, thẻ Nổi bật `.yt-grid.hero`, huy hiệu kênh `.yv-av`) – khác YouTube.
+    Danh sách kết hợp: `ytinner._list_lockup`/`_list_renderer` (lockup playlist/radioRenderer → `_type: list`, video đầu từ watchEndpoint),
+    `ytvideo._pl` → thẻ `kind: list` (`.yl`, chồng lớp); mở = `/video?v=<đầu>&list=` → `watch_next(v, plist)` trả `queue` (playlistPanelRenderer)
+    → khung `#ywQueue`; `/list?l=` lấy video đầu khi thiếu. Tự phát (`cv-yt-auto`): hết video → bài sau trong queue / video Tiếp theo.
+    Làm mới (`refresh=1`): `ytinner.home(6, 160)` + `_fresh` (mục chưa hiện trong `_SHOWN` lên trước, mục cũ đảo).
   - `discover.py`: Khám phá nhạc (`/api/music/discover/*`, chỉ máy này, thư viện ytmusicapi): `home` (Gợi ý cho bạn = trộn radio của
     bài trên máy hay nghe/mới tải có [id], Mix, trang chủ YouTube Music khi đã đăng nhập – cookie `YT_COOKIES` → header SAPISIDHASH,
     bảng xếp hạng + ca sĩ theo `config.music_country` (mặc định VN), chip tâm trạng = tìm kiếm), `radio?v=` (bài tương tự; nút ≈ và tự
