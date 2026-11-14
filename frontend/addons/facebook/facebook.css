@@ -57,3 +57,8 @@ body.fbx-on .yt-rail{flex:0 0 auto;max-width:none;padding:8px}
 body.fbx-on .yt-ri{font-size:0;gap:0;justify-content:center;padding:10px}
 body.fbx-on .yt-rsep,body.fbx-on .yt-rh,body.fbx-on #ytChans{display:none}
 @media (max-width: 1000px){ body.fbx-on{padding-right:0} .fbx{left:12px;width:auto} }
+.fbx-login{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:#e7f0ff;border-bottom:1px solid var(--fbx-line);color:#050505;font:400 13px "Segoe UI",Helvetica,Arial,sans-serif;position:relative;z-index:1}
+.fbx.dark .fbx-login{background:#263951;color:#e4e6eb}
+.fbx-login[hidden]{display:none}
+.fbx-login b{font-weight:700}
+.fbx-login button{align-self:flex-start;border:0;border-radius:6px;background:#0866ff;color:#fff;font:600 13px "Segoe UI",Helvetica,Arial,sans-serif;padding:7px 12px;cursor:pointer}

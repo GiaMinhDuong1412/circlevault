@@ -64,6 +64,11 @@ box.innerHTML = `
     <button class="fbx-ic" type="button" data-fb="hide" title="Ẩn Facebook">${IC.close}</button>
   </header>
   <nav class="fbx-nav">${NAV.map(([k, n]) => `<button type="button" data-fbnav="${k}" title="${n}"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">${NAV.find(x => x[0] === k)[4]}</svg></button>`).join('')}</nav>
+  <div class="fbx-login" id="fbxLogin" hidden>
+    <b>Đăng nhập nhanh, không cần mật khẩu</b>
+    <span>Đăng nhập Facebook trên Chrome/Edge có tiện ích CircleVault → bấm biểu tượng CircleVault → <b>Gửi ngay</b>. App tự nhận như với YouTube.</span>
+    <button type="button" data-fb="ext">Cài / cập nhật tiện ích</button>
+  </div>
   <div class="fbx-sub"><button class="fbx-sb" type="button" data-fb="back" id="fbxBack" title="Quay lại">${IC.back}</button>
     <button class="fbx-sb" type="button" data-fb="fwd" id="fbxFwd" title="Tiến tới">${IC.fwd}</button>
     <button class="fbx-sb" type="button" data-fb="reload" title="Tải lại">${IC.reload}</button><span class="fbx-title" id="fbxTitle">Facebook</span></div>
@@ -86,6 +91,7 @@ function paint() {
   box.querySelectorAll('[data-fbnav]').forEach(b => { const n = NAV.find(x => x[0] === b.dataset.fbnav); b.classList.toggle('on', n[3].test(path)); });
   $('#fbxMute').innerHTML = st.muted === false ? IC.vol : IC.mute;
   $('#fbxMute').classList.toggle('on', st.muted === false);
+  $('#fbxLogin').hidden = !(CAN && st.loggedIn === false);
   $('#fbxBack').disabled = !st.back; $('#fbxFwd').disabled = !st.fwd;
   $('#fbxTitle').textContent = st.loading ? 'Đang tải…' : (st.title || 'Facebook').replace(/\s*\|\s*Facebook$/, '');
   const dark = (() => { const c = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(); const m = c.match(/^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
@@ -135,6 +141,12 @@ box.addEventListener('click', e => {
   if (a === 'more') { F.menu = !F.menu; $('#fbxMenu').hidden = !F.menu; sync(); return; }
   F.menu = false; $('#fbxMenu').hidden = true;
   if (a === 'hide') return setOn(false);
+  if (a === 'ext') {
+    window.CV.api('/api/youtube/extension', {method: 'POST'}).then(r => window.CV.toast(
+      `Đã mở thư mục tiện ích (${r.path}). Chrome/Edge: mở chrome://extensions → bật Chế độ nhà phát triển → "Tải tiện ích đã giải nén" chọn thư mục đó. ` +
+      'Đã cài từ trước: bấm nút Tải lại (↻) của CircleVault để có quyền Facebook.')).catch(e => window.CV.toast(e.message, 'err'));
+    return;
+  }
   if (a === 'mute') return cmd({t: 'mute', on: F.st.muted === false});
   if (a === 'zoom+' || a === 'zoom-') return cmd({t: 'zoom', zoom: (F.st.zoom || 0.9) + (a === 'zoom+' ? 0.1 : -0.1)});
   if (a === 'off') { cmd({t: 'close'}); F.sent = ''; setOn(false); window.CV.toast('Đã tắt Facebook. Bấm nút Facebook ở tab Mạng xã hội để mở lại (vẫn giữ đăng nhập).'); return; }

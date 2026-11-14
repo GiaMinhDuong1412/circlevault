@@ -232,7 +232,11 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   index.html. **Facebook (chính thức từ 11/2026, người dùng đã test bản thử)**: nút xanh "f Facebook" (như bản vẽ B) chèn vào
   thanh YouTube → khung cố định bên phải (`.fbx`, giao diện kiểu Facebook, kéo mép đổi rộng, `body.fbx-on` chừa chỗ), trang facebook.com thật trong
   WebContentsView `persist:facebook` đè lên `.fbx-body` (vị trí báo mỗi 200 ms; ẩn khi có dialog/hộp theme/menu/toàn màn hình), mặc định tắt
-  tiếng; đang mở thì trang xem theo bản vẽ C (`body.fbx-on`: 1 cột, "Tiếp theo" thành lưới dưới video, cột mục trái chỉ còn biểu tượng), chỉ mở link facebook.com/messenger.com, link khác ra trình duyệt ngoài. App không đọc dữ liệu Facebook. Cách gỡ: `frontend/addons/facebook/GO-BO.txt`.
+  tiếng; đang mở thì trang xem theo bản vẽ C (`body.fbx-on`: 1 cột, "Tiếp theo" thành lưới dưới video, cột mục trái chỉ còn biểu tượng), chỉ mở link facebook.com/messenger.com, link khác ra trình duyệt ngoài. App không đọc dữ liệu Facebook. **Đăng nhập như YouTube**: tiện ích
+  Chrome (`backend/extension/`, v1.1: thêm quyền facebook/messenger) gửi cookie Facebook (có `c_user`) tới `POST /api/youtube/site-cookies?site=facebook`
+  (`ytmusic.SITES`, header X-CircleVault) → `DATA/cookies/facebook.txt` (0600) → addon Electron theo dõi file (`fs.watchFile`) và nạp vào
+  `persist:facebook` (cùng `c_user` thì thôi, không tải lại); Đăng xuất xóa cả file. `facebook-preload.js` tắt passkey/WebAuthn trong khung
+  (`addons/index.js` bỏ qua `*-preload.js`). Thư mục tiện ích trong DATA được chép bản mới khi app chạy (`_refresh_extension`). Cách gỡ: `frontend/addons/facebook/GO-BO.txt`.
 - `tools/dong_goi_app.py` chuẩn bị `desktop/res/`; `tools/kiem_tra.py` kiểm tra cú pháp + liên kết file + đường dẫn `/api/…` bị đổi thành địa chỉ ngoài (`kiem_url_la`).
 
 ## Quy trình

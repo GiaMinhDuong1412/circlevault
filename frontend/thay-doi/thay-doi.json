@@ -2,6 +2,16 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-14-fb-dang-nhap",
+      "date": "2026-11-14",
+      "title": "Đăng nhập Facebook như YouTube, sửa hộp giao diện",
+      "items": [
+        "Đăng nhập Facebook không cần mật khẩu: tiện ích CircleVault trên Chrome/Edge giờ gửi cả đăng nhập Facebook (như YouTube), app tự nhận vào khung Facebook. Đã cài tiện ích từ trước: mở chrome://extensions → bấm Tải lại (↻) ở CircleVault để tiện ích có quyền Facebook.",
+        "Khung Facebook không còn bật hộp passkey của Windows khi đăng nhập bằng tay – dùng email/số điện thoại + mật khẩu như bình thường.",
+        "Sửa hộp chọn giao diện (nút 🎨) bị chật: Kiểu giao diện và Font chữ trải đủ chiều ngang, hộp rộng hơn và cuộn được."
+      ]
+    },
+    {
       "id": "2026-11-14-facebook",
       "date": "2026-11-14",
       "title": "Lướt Facebook bên cạnh YouTube",

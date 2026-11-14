@@ -896,10 +896,10 @@ const STYLES = [
 ];
 /* font chữ: đổi ngay, không cần khởi động lại (CSS --f-body theo data-font) */
 const FONTS = [
-  ['', 'Mặc định', 'Be Vietnam Pro', '"Be Vietnam Pro","Segoe UI",sans-serif'],
-  ['tahoma', 'Tahoma', 'Gọn, dễ đọc', 'Tahoma,Verdana,sans-serif'],
-  ['consolas', 'Consolas', 'Chữ đều (lập trình)', 'Consolas,"Courier New",monospace'],
-  ['times', 'Times New Roman', 'Có chân, kiểu sách', '"Times New Roman",Times,serif'],
+  ['', 'Mặc định', 'gọn', '"Be Vietnam Pro","Segoe UI",sans-serif'],
+  ['tahoma', 'Tahoma', 'dễ đọc', 'Tahoma,Verdana,sans-serif'],
+  ['consolas', 'Consolas', 'chữ đều', 'Consolas,"Courier New",monospace'],
+  ['times', 'Times New Roman', 'có chân', '"Times New Roman",Times,serif'],
 ];
 function setFont(f) {
   const r = document.documentElement;

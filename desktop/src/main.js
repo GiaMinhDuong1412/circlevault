@@ -315,7 +315,7 @@ async function init() {
   ipcMain.on('open-screen-translate', () => screenTr.open());
   miniPlayer.setup({ userData: HOME, icon: ICON, log });
   voiceRoom.setup({ icon: ICON, log });
-  addons.setup({ icon: ICON, log, dataDir: HOME });
+  addons.setup({ icon: ICON, log, dataDir: DATA, userData: HOME });
   createWindow();
   if (SMOKE) return smoke();
   updater = createUpdater({

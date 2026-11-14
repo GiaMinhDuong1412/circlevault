@@ -6,6 +6,8 @@
  * Mặc định tắt tiếng (video Facebook tự phát không lẫn với YouTube).
  */
 const { WebContentsView, session, ipcMain, shell, Menu, clipboard } = require('electron');
+const fs = require('fs');
+const path = require('path');
 
 const NAME = 'facebook';
 const PARTITION = 'persist:facebook';
@@ -25,6 +27,10 @@ function setup(options) {
   ses.setUserAgent(CHROME_UA);
   // chỉ cho phép những quyền cần cho xem/nhắn tin; thông báo đẩy, vị trí… từ chối
   ses.setPermissionRequestHandler((_wc, perm, cb) => cb(['fullscreen', 'clipboard-sanitized-write', 'media'].includes(perm)));
+  // đăng nhập nhận từ Chrome (tiện ích CircleVault → backend ghi DATA/cookies/facebook.txt): tự nạp vào phiên Facebook của app
+  const f = cookieFile();
+  importCookies().catch(() => {});
+  fs.watchFile(f, { interval: 4000 }, (cur, prev) => { if (cur.mtimeMs !== prev.mtimeMs) importCookies().catch((e) => ctx.log('Facebook: lỗi nạp đăng nhập', e.message)); });
   ipcMain.on('addon', (e, name, m) => {
     if (name !== NAME || !main || main.isDestroyed() || e.sender !== main.webContents || !m || typeof m !== 'object') return;
     onMessage(m);
@@ -43,24 +49,68 @@ function okUrl(u) {
   try { const x = new URL(u); return x.protocol === 'https:' && OK_HOST.test(x.hostname); } catch { return false; }
 }
 
+const cookieFile = () => path.join(ctx.dataDir, 'cookies', 'facebook.txt');
+let loggedIn = false;
+async function checkLogin() {
+  try { loggedIn = (await session.fromPartition(PARTITION).cookies.get({ name: 'c_user' })).some((c) => /facebook\.com$/.test(c.domain)); }
+  catch { loggedIn = false; }
+  return loggedIn;
+}
+/** Nạp cookie từ file (Netscape). Đang đăng nhập ĐÚNG tài khoản đó thì thôi (không tải lại trang); khác/chưa đăng nhập thì nạp + tải lại. */
+async function importCookies() {
+  let text = '';
+  try { text = fs.readFileSync(cookieFile(), 'utf8'); } catch { return; }
+  const rows = [];
+  for (let line of text.split(/\r?\n/)) {
+    let httpOnly = false;
+    if (line.startsWith('#HttpOnly_')) { line = line.slice(10); httpOnly = true; }
+    if (!line || line.startsWith('#')) continue;
+    const [domain, sub, cpath, secure, expires, name, ...rest] = line.split('\t');
+    if (!name || !domain || !/(^|\.)(facebook\.com|messenger\.com)$/.test(domain.replace(/^\./, ''))) continue;
+    rows.push({ domain, sub, cpath, secure, expires, name, value: rest.join('\t'), httpOnly });
+  }
+  const fileUser = (rows.find((r) => r.name === 'c_user') || {}).value;
+  if (!fileUser) return;
+  const ses = session.fromPartition(PARTITION);
+  let cur = '';
+  try { cur = ((await ses.cookies.get({ name: 'c_user' })).find((c) => /facebook\.com$/.test(c.domain)) || {}).value || ''; } catch { /* bỏ qua */ }
+  if (cur === fileUser) { loggedIn = true; push(); return; }
+  for (const r of rows) {
+    const host = r.domain.replace(/^\./, '');
+    const c = { url: `https://${host}${r.cpath || '/'}`, name: r.name, value: r.value, path: r.cpath || '/', secure: r.secure === 'TRUE',
+      httpOnly: r.httpOnly || ['xs', 'fr', 'datr', 'sb'].includes(r.name), sameSite: 'no_restriction' };
+    if (r.name.startsWith('__Host-')) c.path = '/';
+    else if (r.sub === 'TRUE' || r.domain.startsWith('.')) c.domain = '.' + host;
+    if (Number(r.expires) > 0) c.expirationDate = Number(r.expires);
+    try { await ses.cookies.set(c); } catch (e) { ctx.log('Facebook: không nạp được cookie', r.name, e.message); }
+  }
+  await ses.cookies.flushStore();
+  loggedIn = true;
+  ctx.log('Facebook: đã nhận đăng nhập từ trình duyệt');
+  if (view) view.webContents.loadURL('https://www.facebook.com/');
+  push();
+}
+
 function push() {
   if (!main || main.isDestroyed() || !view) return;
   const wc = view.webContents;
   main.webContents.send('addon', NAME, {
-    t: 'state', url: wc.getURL(), title: wc.getTitle(), loading: wc.isLoading(), muted,
+    t: 'state', url: wc.getURL(), title: wc.getTitle(), loading: wc.isLoading(), muted, loggedIn,
     back: wc.navigationHistory.canGoBack(), fwd: wc.navigationHistory.canGoForward(), zoom,
   });
 }
 
 function ensure(url) {
   if (view) return view;
-  view = new WebContentsView({ webPreferences: { partition: PARTITION, contextIsolation: true, sandbox: true, nodeIntegration: false } });
+  view = new WebContentsView({ webPreferences: { partition: PARTITION, contextIsolation: true, sandbox: true, nodeIntegration: false,
+    preload: path.join(__dirname, 'facebook-preload.js') } });
   view.setBackgroundColor('#f0f2f5');
   main.contentView.addChildView(view);
   const wc = view.webContents;
   wc.setAudioMuted(muted);
   wc.setZoomFactor(zoom);
   ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading'].forEach((ev) => wc.on(ev, push));
+  wc.on('did-stop-loading', () => checkLogin().then(push));
   wc.on('did-finish-load', () => wc.setZoomFactor(zoom));
   wc.setWindowOpenHandler(({ url: u }) => {
     if (okUrl(u)) wc.loadURL(u); else if (/^https?:/i.test(u)) shell.openExternal(u);
@@ -120,6 +170,8 @@ function onMessage(m) {
       if (view) { try { main.contentView.removeChildView(view); view.webContents.close(); } catch { /* bỏ qua */ } view = null; }
       break;
     case 'logout':
+      try { fs.unlinkSync(cookieFile()); } catch { /* chưa có */ }   // đăng nhập nhận từ Chrome: bỏ luôn để không tự nạp lại
+      loggedIn = false;
       session.fromPartition(PARTITION).clearStorageData().then(() => { if (view) view.webContents.loadURL('https://www.facebook.com/'); });
       break;
     case 'state': push(); break;

@@ -36,31 +36,41 @@ async function setStatus(ok, text) {
   chrome.action.setBadgeBackgroundColor({ color: '#ff5a5f' });
 }
 
+async function post(port, path, text) {
+  const r = await fetch(`http://127.0.0.1:${port}${path}`, {
+    method: 'POST', headers: { 'content-type': 'text/plain', 'X-CircleVault': '1' }, body: text,
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : 'CircleVault báo lỗi ' + r.status);
+}
+const netscape = (list, tag) => ['# Netscape HTTP Cookie File', '# CircleVault: gửi từ tiện ích trình duyệt (' + tag + ')', '', ...list.map(line), ''].join('\n');
+
+// Gửi từng trang độc lập: YouTube (cookie youtube + google) và Facebook (facebook + messenger). Trang chưa đăng nhập thì bỏ qua.
 async function sync() {
   const yt = await chrome.cookies.getAll({ domain: 'youtube.com' });
-  if (!yt.some((c) => LOGIN.includes(c.name))) {
-    return setStatus(false, 'Trình duyệt này chưa đăng nhập YouTube. Mở youtube.com và đăng nhập.');
-  }
-  const gg = await chrome.cookies.getAll({ domain: 'google.com' });
-  const text = ['# Netscape HTTP Cookie File', '# CircleVault: gửi từ tiện ích trình duyệt', '', ...[...yt, ...gg].map(line), ''].join('\n');
+  const fb = await chrome.cookies.getAll({ domain: 'facebook.com' });
+  const ytIn = yt.some((c) => LOGIN.includes(c.name)), fbIn = fb.some((c) => c.name === 'c_user');
+  if (!ytIn && !fbIn) return setStatus(false, 'Trình duyệt này chưa đăng nhập YouTube hay Facebook.');
   const port = await findPort();
   if (!port) return setStatus(false, 'Không thấy app CircleVault. Mở app trên máy này rồi bấm Gửi ngay.');
-  try {
-    const r = await fetch(`http://127.0.0.1:${port}/api/youtube/import-file?source=extension`, {
-      method: 'POST', headers: { 'content-type': 'text/plain', 'X-CircleVault': '1' }, body: text,
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) return setStatus(false, typeof j.detail === 'string' ? j.detail : 'CircleVault báo lỗi ' + r.status);
-    return setStatus(true, 'Đã gửi đăng nhập YouTube cho CircleVault.');
-  } catch (e) {
-    return setStatus(false, 'Không gửi được cho CircleVault: ' + e.message);
+  const done = [], errs = [];
+  if (ytIn) {
+    try { await post(port, '/api/youtube/import-file?source=extension', netscape([...yt, ...await chrome.cookies.getAll({ domain: 'google.com' })], 'YouTube')); done.push('YouTube'); }
+    catch (e) { errs.push('YouTube: ' + e.message); }
   }
+  if (fbIn) {
+    try { await post(port, '/api/youtube/site-cookies?site=facebook', netscape([...fb, ...await chrome.cookies.getAll({ domain: 'messenger.com' })], 'Facebook')); done.push('Facebook'); }
+    catch (e) { errs.push('Facebook: ' + e.message); }
+  }
+  if (errs.length && !done.length) return setStatus(false, 'Không gửi được cho CircleVault – ' + errs.join(' · '));
+  return setStatus(!errs.length, 'Đã gửi đăng nhập ' + done.join(' + ') + ' cho CircleVault.' + (errs.length ? ' Lỗi: ' + errs.join(' · ') : ''));
 }
 
 chrome.runtime.onInstalled.addListener(() => { chrome.alarms.create('periodic', { periodInMinutes: 30 }); sync(); });
 chrome.runtime.onStartup.addListener(() => { chrome.alarms.create('periodic', { periodInMinutes: 30 }); sync(); });
 chrome.cookies.onChanged.addListener(({ cookie }) => {
-  if (/(^|\.)(youtube|google)\.com$/.test(cookie.domain.replace(/^\./, '')) && /SID|LOGIN_INFO/.test(cookie.name)) chrome.alarms.create('soon', { delayInMinutes: 0.5 });
+  if ((/(^|\.)(youtube|google)\.com$/.test(cookie.domain.replace(/^\./, '')) && /SID|LOGIN_INFO/.test(cookie.name))
+    || (/(^|\.)facebook\.com$/.test(cookie.domain.replace(/^\./, '')) && /^(c_user|xs)$/.test(cookie.name))) chrome.alarms.create('soon', { delayInMinutes: 0.5 });
 });
 chrome.alarms.onAlarm.addListener(() => sync());
 chrome.runtime.onMessage.addListener((m, _s, reply) => { if (m === 'sync') { sync().then(() => reply(true)); return true; } return false; });

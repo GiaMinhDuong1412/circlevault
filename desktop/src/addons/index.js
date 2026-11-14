@@ -11,7 +11,7 @@ const list = [];
 
 function setup(ctx) {
   for (const f of fs.readdirSync(__dirname).sort()) {
-    if (!f.endsWith('.js') || f === 'index.js') continue;
+    if (!f.endsWith('.js') || f === 'index.js' || f.endsWith('-preload.js')) continue;   // *-preload.js: script trang của addon
     try {
       const m = require(path.join(__dirname, f));
       m.setup(ctx);

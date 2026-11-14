@@ -6,6 +6,7 @@ Chỉ nhận yêu cầu từ chính máy này: các lệnh ở đây dùng cooki
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -608,6 +609,19 @@ EXT_SRC = config.Path(__file__).resolve().parent.parent / "extension"
 EXT_DIR = config.DATA / "tien-ich-trinh-duyet"
 
 
+def _refresh_extension() -> None:
+    """Đã chép tiện ích ra DATA trước đây → chép bản mới (cập nhật app); người dùng chỉ cần bấm Tải lại trong chrome://extensions."""
+    import shutil
+    if EXT_DIR.is_dir() and EXT_SRC.is_dir():
+        for f in EXT_SRC.iterdir():
+            if f.is_file():
+                with contextlib.suppress(OSError):
+                    shutil.copy2(f, EXT_DIR / f.name)
+
+
+_refresh_extension()
+
+
 @acct.post("/extension")
 def extension_folder(open_folder: bool = True):
     """Chép tiện ích ra thư mục cố định trong DATA (cập nhật app không đổi đường dẫn) rồi mở thư mục đó."""
@@ -621,6 +635,45 @@ def extension_folder(open_folder: bool = True):
     if open_folder and os.name == "nt":
         os.startfile(str(EXT_DIR))  # noqa: S606 – mở File Explorer cho người dùng
     return {"path": str(EXT_DIR)}
+
+
+# Đăng nhập trang khác do tiện ích trình duyệt gửi (hiện có Facebook – addon "Facebook bên cạnh"). Chỉ lưu cookie đúng tên miền,
+# app desktop (addon) tự nạp vào phiên riêng của trang đó. Không gửi đi đâu.
+SITES = {"facebook": (re.compile(r"(^|\.)(facebook\.com|messenger\.com)$"), "c_user")}
+
+
+@acct.post("/site-cookies")
+async def site_cookies(request: Request, site: str):
+    import http.cookiejar
+    import io
+    from yt_dlp.cookies import YoutubeDLCookieJar
+    if request.headers.get("x-circlevault") != "1":
+        raise HTTPException(403, "Thiếu header X-CircleVault.")
+    if site not in SITES:
+        raise HTTPException(400, "Trang không hỗ trợ.")
+    keep, login = SITES[site]
+    raw = (await request.body())[: 2 * 1024 * 1024].decode("utf-8", "replace")
+    if not re.match(r"#( Netscape)? HTTP Cookie File", raw.lstrip("\ufeff")):
+        raw = "# Netscape HTTP Cookie File\n" + raw.lstrip("\ufeff")
+    jar = YoutubeDLCookieJar()
+    try:
+        jar.load(io.StringIO(raw))
+    except (http.cookiejar.LoadError, ValueError) as e:
+        raise HTTPException(400, "Không đọc được cookie.") from e
+    out = YoutubeDLCookieJar()
+    for c in jar:
+        if keep.search(c.domain.lstrip(".")):
+            out.set_cookie(c)
+    if not any(c.name == login for c in out):
+        raise HTTPException(400, "Trình duyệt chưa đăng nhập trang này.")
+    f = config.DATA / "cookies" / f"{site}.txt"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp")
+    out.save(str(tmp))
+    with contextlib.suppress(OSError):
+        os.chmod(tmp, 0o600)
+    tmp.replace(f)
+    return {"ok": True}
 
 
 @acct.post("/import-file")
