@@ -136,9 +136,10 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     của app; nút Tải video/MP3 (`/api/tasks`), Xem chung, Mở bằng trình duyệt YouTube (bị chặn nhúng). `browser.js` `mirrorToMain`
     chép cookie YouTube/Google sang `session.defaultSession` để trình phát nhúng nhận tài khoản (Premium không quảng cáo).
     Mở video thì phát sự kiện `cv-video-play` → music.js tạm dừng nhạc.
-    Tab tên **Mạng xã hội** (hash vẫn `#youtube`), trang ghi "YouTube" (người dùng bỏ tên CVTube; đang chờ chọn bản vẽ giao diện mới – artifact
-    "Mạng xã hội – YouTube (bản xem trước)": A thanh bên trái / B kệ ngang / C trang xem + Facebook). Hiện tại: thanh `.yt-top` + tab `.yt-tab`,
-    thẻ Nổi bật `.yt-grid.hero`, huy hiệu kênh `.yv-av`. **Phát nền**: rời tab không dừng video; thanh `#ytBar` (`.pbar.ytbar`, `body.yt-bar` ẩn
+    Tab tên **Mạng xã hội** (hash vẫn `#youtube`), trang ghi "YouTube" (người dùng bỏ tên CVTube). Giao diện theo **bản vẽ A** người dùng chọn (artifact
+    "Mạng xã hội – YouTube (bản xem trước)"): thanh `.yt-top` gọn, cột mục trái `.yt-rail` (`data-yfeed` + kênh đăng ký `#ytChans` lấy nền từ
+    feed subs), chip `.yt-chipbar` (`data-yonly` lọc list/video tại chỗ, chủ đề = tìm kiếm), lưới thẻ + huy hiệu kênh `.yv-av`; trang xem không có cột trái.
+    Khi mở Facebook (addon) trang xem theo **bản vẽ C** (CSS trong addon). **Phát nền**: rời tab không dừng video; thanh `#ytBar` (`.pbar.ytbar`, `body.yt-bar` ẩn
     thanh nhạc) điều khiển `#ywV`/`ytAudio`; ✕ = `stopPlayer` + `barOff`; music.js phát → sự kiện `cv-music-play` → video dừng.
     Danh sách kết hợp: `ytinner._list_lockup`/`_list_renderer` (lockup playlist/radioRenderer → `_type: list`, video đầu từ watchEndpoint),
     `ytvideo._pl` → thẻ `kind: list` (`.yl`, chồng lớp); mở = `/video?v=<đầu>&list=` → `watch_next(v, plist)` trả `queue` (playlistPanelRenderer)
