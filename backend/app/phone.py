@@ -53,7 +53,7 @@ def running() -> dict:
     return {"host": host, "port": port}
 
 
-# ------------------------------------------------------------------ thông tin cho tab Lưu Trữ
+# ------------------------------------------------------------------ thông tin cho tab Cài đặt
 @router.get("/info", dependencies=[Depends(devices.local_only)])
 def info():
     r = running()

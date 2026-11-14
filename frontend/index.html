@@ -40,13 +40,13 @@ const f=localStorage.getItem('cv-font');if(f)r.dataset.font=f}catch(e){}</script
       <a class="tab" href="#queue" data-view="queue">Hàng Đợi <span class="mono" id="qCount"></span></a>
       <a class="tab" href="#library" data-view="library">Thư Viện</a>
       <a class="tab" href="#music" data-view="music">Nghe Nhạc</a>
-      <a class="tab" href="#youtube" data-view="youtube">YouTube</a>
+      <a class="tab" href="#youtube" data-view="youtube">Mạng xã hội</a>
       <a class="tab" href="#online" data-view="online">Xem Online</a>
       <a class="tab" href="#party" data-view="party">Xem Chung</a>
       <a class="tab" href="#voice" data-view="voice">Phòng Thoại</a>
       <a class="tab" href="#translate" data-view="translate">Dịch</a>
       <a class="tab" href="#learn" data-view="learn">Học</a>
-      <a class="tab" href="#storage" data-view="storage">Lưu Trữ</a>
+      <a class="tab" href="#storage" data-view="storage">Cài đặt</a>
     </div>
     <form class="search" id="searchForm" role="search">
       <input id="searchInput" type="search" placeholder="Tìm trong kho đã tải… (Ctrl+K)" aria-label="Tìm trong kho">
@@ -133,7 +133,7 @@ const f=localStorage.getItem('cv-font');if(f)r.dataset.font=f}catch(e){}</script
                 <select id="mSort" aria-label="Sắp xếp"><option value="recent">Mới thêm</option><option value="title">Tên bài</option><option value="artist">Ca sĩ</option></select>
                 <button class="btn green" type="button" id="playAll">PHÁT TẤT CẢ</button>
                 <button class="btn plain" type="button" id="shuffleAll">Trộn bài</button>
-                <button class="btn plain" type="button" id="toDrive" title="Lưu lên Google Drive (tài khoản đang chọn ở tab Lưu Trữ)">☁ Lưu lên Drive</button>
+                <button class="btn plain" type="button" id="toDrive" title="Lưu lên Google Drive (tài khoản đang chọn ở tab Cài đặt)">☁ Lưu lên Drive</button>
               </div>
             </div>
             <div class="btn-row" id="plTools" hidden>

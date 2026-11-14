@@ -2,7 +2,7 @@
 
 - Máy tính (127.0.0.1 / ::1) luôn được phép. Thiết bị khác phải được GHÉP: trên máy tính bấm "Thêm thiết bị" → QR chứa
   mã ghép dùng một lần (10 phút) → điện thoại mở /dt?pair=<mã>, đặt tên → nhận cookie `cv_dev` (mã bí mật dài, chỉ lưu
-  bản băm SHA-256 ở DATA/devices.json). Thu hồi ở tab Lưu Trữ thì thiết bị mất quyền ngay.
+  bản băm SHA-256 ở DATA/devices.json). Thu hồi ở tab Cài đặt thì thiết bị mất quyền ngay.
 - Quyền mỗi thiết bị: `phone` = chỉ trang Mang theo (/dt + /api/phone/*, chỉ đọc/tải về); `full` = như trên máy tính
   (trừ các API chỉ-máy-này như Dịch, YouTube, quản lý thiết bị).
 - `Guard` là middleware ASGI bọc toàn bộ app chính (cả websocket). Phòng xem chung chạy app riêng (cổng+1), không qua đây.
@@ -191,8 +191,8 @@ class Guard:
             return await send({"type": "websocket.close", "code": 4403})
         if path == "/" and scope.get("method") in ("GET", "HEAD"):       # mở trang chính từ điện thoại → trang Mang theo
             return await _send(send, 302, b"", [(b"location", b"/dt")])
-        msg = ("Thiết bị này chưa được phép. Trên máy tính: tab Lưu Trữ → Mang theo điện thoại → Thêm thiết bị, rồi quét mã."
-               if not dev else "Thiết bị này chỉ được dùng trang Mang theo điện thoại. Đổi quyền ở tab Lưu Trữ trên máy tính.")
+        msg = ("Thiết bị này chưa được phép. Trên máy tính: tab Cài đặt → Mang theo điện thoại → Thêm thiết bị, rồi quét mã."
+               if not dev else "Thiết bị này chỉ được dùng trang Mang theo điện thoại. Đổi quyền ở tab Cài đặt trên máy tính.")
         body = json.dumps({"detail": msg}, ensure_ascii=False).encode()
         return await _send(send, 401 if not dev else 403, body, [(b"content-type", b"application/json; charset=utf-8")])
 

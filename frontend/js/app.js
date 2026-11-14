@@ -135,7 +135,7 @@ async function analyze(playlist) {
     renderAnalysis();
   } catch (e) {
     box.innerHTML = `<div class="box notice err"><b>Không đọc được link này</b><span>${esc(e.message)}</span>
-      <span class="hint">Nếu là YouTube: thử cập nhật yt-dlp ở trang Lưu Trữ, hoặc bật cookie trình duyệt cho video giới hạn tuổi.</span></div>`;
+      <span class="hint">Nếu là YouTube: thử cập nhật yt-dlp ở tab Cài đặt, hoặc bật cookie trình duyệt cho video giới hạn tuổi.</span></div>`;
   } finally { $('#analyzeBtn').disabled = false; }
 }
 function renderAnalysis() {
@@ -825,7 +825,7 @@ function renderDriveSetup(box) {
 window.CV.drive = {upload: async (body, label) => {
   try {
     const j = await api('/api/gdrive/upload', {method: 'POST', body});
-    toast(`Đang lưu ${j.total} bài${label ? ` của "${label}"` : ''} lên Google Drive (${j.email} / ${j.folder}). Xem tiến độ ở tab Lưu Trữ.`);
+    toast(`Đang lưu ${j.total} bài${label ? ` của "${label}"` : ''} lên Google Drive (${j.email} / ${j.folder}). Xem tiến độ ở tab Cài đặt.`);
   } catch (err) { toast(err.message, 'err'); }
 }};
 

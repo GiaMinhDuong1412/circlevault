@@ -4,9 +4,11 @@
     {
       "id": "2026-11-14-font-chu",
       "date": "2026-11-14",
-      "title": "Chọn font chữ",
+      "title": "Font chữ, xem YouTube khi ở tab khác, đổi tên tab",
       "items": [
-        "Bấm nút 🎨 (cạnh Ổ đĩa & Cài đặt) → Font chữ: Mặc định (Be Vietnam Pro), Tahoma, Consolas hoặc Times New Roman. Đổi là thấy ngay, không cần mở lại app; Phòng Thoại và Xem Chung dùng cùng font.",
+        "Bấm nút 🎨 (cạnh Ổ đĩa & Cài đặt) → Font chữ: Mặc định (Be Vietnam Pro), Tahoma, Consolas hoặc Times New Roman. Đổi là thấy ngay, không cần mở lại app.",
+        "Đang xem YouTube mà chuyển sang tab khác: video vẫn phát (Mix vẫn tự chuyển bài), dưới đáy app hiện thanh điều khiển như khi nghe nhạc – phát/dừng, tua ±10 giây, video tiếp theo, âm lượng, Xem video để quay lại, ✕ để dừng. Bật nhạc ở Nghe Nhạc thì video tự dừng.",
+        "Tab YouTube đổi tên thành Mạng xã hội; tab Lưu Trữ đổi tên thành Cài đặt. Trang YouTube bỏ tên CVTube, ghi YouTube như bình thường.",
         "Bản Android tạm dừng cập nhật tới tháng sau; app trên điện thoại vẫn dùng bình thường."
       ]
     },
