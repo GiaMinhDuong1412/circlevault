@@ -12,6 +12,8 @@ const path = require('path');
 const NAME = 'facebook';
 const PARTITION = 'persist:facebook';
 const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome.split('.')[0]}.0.0.0 Safari/537.36`;
+// giao diện điện thoại (m.facebook.com): hợp khung hẹp bên cạnh YouTube hơn bản máy tính co lại
+const MOBILE_UA = `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome.split('.')[0]}.0.0.0 Mobile Safari/537.36`;
 const OK_HOST = /(^|\.)(facebook\.com|fb\.com|messenger\.com|fbcdn\.net|fb\.watch)$/;
 
 let ctx = null;
@@ -23,6 +25,17 @@ let zoom = 0.9;
 let dark = null;          // trang Facebook đang ở chế độ tối? (để thanh của khung đổi màu theo khi dùng giao diện Facebook gốc)
 let skinCss = '';         // CSS "giao diện app": ẩn thanh trên của Facebook + tô màu/font theo theme CircleVault
 let skinKey = null;
+let mobile = true;        // giao diện điện thoại (mặc định) hay máy tính
+/** Đổi tên miền cho khớp giao diện: điện thoại = m.facebook.com, máy tính = www.facebook.com */
+function fitUrl(u) {
+  try {
+    const x = new URL(u);
+    if (mobile && /^(www\.|web\.)?facebook\.com$/.test(x.hostname)) x.hostname = 'm.facebook.com';
+    else if (!mobile && /^(m|mobile|touch)\.facebook\.com$/.test(x.hostname)) x.hostname = 'www.facebook.com';
+    return x.toString();
+  } catch { return u; }
+}
+const HOME = () => (mobile ? 'https://m.facebook.com/' : 'https://www.facebook.com/');
 
 function setup(options) {
   ctx = options;
@@ -90,7 +103,7 @@ async function importCookies() {
   await ses.cookies.flushStore();
   loggedIn = true;
   ctx.log('Facebook: đã nhận đăng nhập từ trình duyệt');
-  if (view) view.webContents.loadURL('https://www.facebook.com/');
+  if (view) view.webContents.loadURL(HOME());
   push();
 }
 
@@ -99,15 +112,19 @@ function push() {
   const wc = view.webContents;
   main.webContents.send('addon', NAME, {
     t: 'state', url: wc.getURL(), title: wc.getTitle(), loading: wc.isLoading(), muted, loggedIn,
-    back: wc.navigationHistory.canGoBack(), fwd: wc.navigationHistory.canGoForward(), zoom, dark, skin: !!skinCss,
+    back: wc.navigationHistory.canGoBack(), fwd: wc.navigationHistory.canGoForward(), zoom, dark, skin: !!skinCss, mobile,
   });
 }
 
 /** Facebook đang bật chế độ tối? (lớp __fb-dark-mode trên <html>; chỉ đọc lớp giao diện, không đọc dữ liệu) */
 function checkDark() {
   if (!view) return;
-  view.webContents.executeJavaScript("document.documentElement.classList.contains('__fb-dark-mode')", false)
-    .then((d) => { if (d !== dark) { dark = !!d; push(); } }).catch(() => {});
+  view.webContents.executeJavaScript(`(() => { const h = document.documentElement;
+      if (h.classList.contains('__fb-dark-mode')) return true; if (h.classList.contains('__fb-light-mode')) return false;
+      const c = (getComputedStyle(document.body || h).backgroundColor.match(/[\\d.]+/g) || []).map(Number);
+      if (c.length < 3 || (c.length > 3 && c[3] === 0)) return null;
+      return c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11 < 110; })()`, false)
+    .then((d) => { if (d !== dark) { dark = d; push(); } }).catch(() => {});
 }
 
 /* ---- giao diện app: chỉ là CSS chèn thêm (như tiện ích Stylus), Facebook đổi tên lớp thì phần nào không khớp sẽ tự về như cũ */
@@ -156,6 +173,7 @@ function ensure(url) {
   view.setBackgroundColor('#f0f2f5');
   main.contentView.addChildView(view);
   const wc = view.webContents;
+  wc.setUserAgent(mobile ? MOBILE_UA : CHROME_UA);
   wc.setAudioMuted(muted);
   wc.setZoomFactor(zoom);
   ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading'].forEach((ev) => wc.on(ev, push));
@@ -177,7 +195,7 @@ function ensure(url) {
     Menu.buildFromTemplate(items).popup({ window: main });
   });
   wc.on('render-process-gone', () => { try { wc.reload(); } catch { /* bỏ qua */ } });
-  wc.loadURL(okUrl(url) ? url : 'https://www.facebook.com/');
+  wc.loadURL(okUrl(url) ? fitUrl(url) : HOME());
   return view;
 }
 
@@ -200,11 +218,12 @@ function onMessage(m) {
   switch (m.t) {
     case 'rect':
       rect = sanitize(m.rect);
+      if (typeof m.mobile === 'boolean' && !view) mobile = m.mobile;
       if (rect) ensure(m.url);
       layout();
       break;
     case 'go':
-      if (okUrl(m.url)) { ensure(m.url); view.webContents.loadURL(m.url); }
+      if (okUrl(m.url)) { ensure(m.url); view.webContents.loadURL(fitUrl(m.url)); }
       break;
     case 'back': if (view && view.webContents.navigationHistory.canGoBack()) view.webContents.navigationHistory.goBack(); break;
     case 'fwd': if (view && view.webContents.navigationHistory.canGoForward()) view.webContents.navigationHistory.goForward(); break;
@@ -223,7 +242,13 @@ function onMessage(m) {
     case 'logout':
       try { fs.unlinkSync(cookieFile()); } catch { /* chưa có */ }   // đăng nhập nhận từ Chrome: bỏ luôn để không tự nạp lại
       loggedIn = false;
-      session.fromPartition(PARTITION).clearStorageData().then(() => { if (view) view.webContents.loadURL('https://www.facebook.com/'); });
+      session.fromPartition(PARTITION).clearStorageData().then(() => { if (view) view.webContents.loadURL(HOME()); });
+      break;
+    case 'mobile':                      // đổi giao diện điện thoại ↔ máy tính: đổi UA rồi mở lại đúng trang ở tên miền kia
+      if (!!m.on === mobile) break;
+      mobile = !!m.on; dark = null;
+      if (view) { const wc = view.webContents; wc.setUserAgent(mobile ? MOBILE_UA : CHROME_UA); wc.loadURL(fitUrl(wc.getURL() || HOME())); }
+      push();
       break;
     case 'skin': {
       const css = m.on ? buildSkin(m.vars) : '';

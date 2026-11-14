@@ -39,7 +39,10 @@ const IC = {
 };
 
 const F = {on: load('cv-fbx-on', '0') === '1', w: +load('cv-fbx-w', '440') || 440, st: {}, sent: '', menu: false,
-  skin: load('cv-fbx-skin', '1') === '1', skinSent: ''};
+  skin: load('cv-fbx-skin', '1') === '1', skinSent: '', mobile: load('cv-fbx-mobile', '1') === '1'};
+/* giao diện điện thoại (m.facebook.com, mặc định): Facebook tự có thanh trên + hàng mục → khung chỉ giữ thanh mỏng ‹ › ↻.
+ * "Giao diện app" (tô theo theme CircleVault) chỉ áp dụng cho giao diện máy tính. */
+const skinOn = () => F.skin && !F.mobile;
 
 /* "Giao diện app": màu/font/viền theo theme CircleVault, thanh trên của Facebook ẩn đi (thanh của khung thay chỗ).
  * Đọc giá trị ĐÃ TÍNH (rgb…) qua một phần tử thử vì token có thể là color-mix(var(...)) – trang Facebook không hiểu var của app. */
@@ -61,7 +64,7 @@ function skinVars() {
   return out;
 }
 function sendSkin() {
-  const m = {t: 'skin', on: F.skin, vars: F.skin ? skinVars() : null};
+  const m = {t: 'skin', on: skinOn(), vars: skinOn() ? skinVars() : null};
   const k = JSON.stringify(m);
   if (k !== F.skinSent) { F.skinSent = k; cmd(m); }
 }
@@ -86,6 +89,7 @@ box.innerHTML = `
     <button class="fbx-ic" type="button" data-fb="mute" id="fbxMute" title="Bật / tắt tiếng Facebook">${IC.mute}</button>
     <span class="fbx-mw"><button class="fbx-ic" type="button" data-fb="more" title="Thêm">${IC.more}</button>
       <div class="fbx-menu" id="fbxMenu" hidden>
+        <button type="button" data-fb="mobile" id="fbxMobile">Dùng giao diện máy tính</button>
         <button type="button" data-fb="skin" id="fbxSkin">Dùng giao diện Facebook gốc</button>
         <button type="button" data-fb="reload">Tải lại trang</button>
         <button type="button" data-fb="zoom-">Chữ nhỏ hơn</button>
@@ -126,9 +130,11 @@ function paint() {
   const title = st.title || 'Facebook', cnt = (title.match(/^\((\d+\+?)\)/) || [])[1];
   $('#fbxTitle').textContent = st.loading ? 'Đang tải…' : title.replace(/^\(\d+\+?\)\s*/, '').replace(/\s*\|\s*Facebook$/, '');
   $('#fbxBadge').hidden = !cnt; $('#fbxBadge').textContent = cnt || '';
-  box.classList.toggle('skin', F.skin);
-  $('#fbxSkin').textContent = F.skin ? 'Dùng giao diện Facebook gốc' : 'Dùng giao diện CircleVault';
-  const dark = typeof st.dark === 'boolean' && !F.skin ? st.dark : (() => { const c = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(); const m = c.match(/^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
+  box.classList.toggle('skin', skinOn());
+  $('#fbxSkin').textContent = F.skin ? 'Dùng giao diện Facebook gốc' : 'Tô Facebook theo giao diện CircleVault';
+  $('#fbxSkin').hidden = F.mobile;
+  $('#fbxMobile').textContent = F.mobile ? 'Dùng giao diện máy tính' : 'Dùng giao diện điện thoại (gọn hơn)';
+  const dark = typeof st.dark === 'boolean' && !skinOn() ? st.dark : (() => { const c = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(); const m = c.match(/^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
     return m ? (parseInt(m[1], 16) * 0.3 + parseInt(m[2], 16) * 0.59 + parseInt(m[3], 16) * 0.11) < 110 : false; })();
   box.classList.toggle('dark', dark);
   if (vis) sendSkin();
@@ -147,7 +153,7 @@ function sync() {
   const key = JSON.stringify(r);
   if (key === F.sent) return;
   F.sent = key;
-  cmd({t: 'rect', rect: r, url: load('cv-fbx-url', FB + '/')});
+  cmd({t: 'rect', rect: r, url: load('cv-fbx-url', FB + '/'), mobile: F.mobile});
 }
 setInterval(sync, 200);
 window.addEventListener('resize', sync);
@@ -177,6 +183,7 @@ box.addEventListener('click', e => {
   if (a === 'more') { F.menu = !F.menu; $('#fbxMenu').hidden = !F.menu; sync(); return; }
   F.menu = false; $('#fbxMenu').hidden = true;
   if (a === 'hide') return setOn(false);
+  if (a === 'mobile') { F.mobile = !F.mobile; save('cv-fbx-mobile', F.mobile ? '1' : '0'); cmd({t: 'mobile', on: F.mobile}); return paint(); }
   if (a === 'skin') { F.skin = !F.skin; save('cv-fbx-skin', F.skin ? '1' : '0'); return paint(); }
   if (a === 'ext') {
     window.CV.api('/api/youtube/extension', {method: 'POST'}).then(r => window.CV.toast(

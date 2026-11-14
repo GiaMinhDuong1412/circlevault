@@ -2,6 +2,15 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-14-fb-dien-thoai",
+      "date": "2026-11-14",
+      "title": "Facebook giao diện điện thoại",
+      "items": [
+        "Khung Facebook giờ mở giao diện dành cho điện thoại (m.facebook.com): chữ, Reels, video vừa khung hẹp bên cạnh YouTube, không còn bị co nhỏ như bản máy tính.",
+        "Muốn bản máy tính (và tô màu theo theme CircleVault): ⋯ → \"Dùng giao diện máy tính\". Đăng nhập dùng chung, không phải đăng nhập lại."
+      ]
+    },
+    {
       "id": "2026-11-14-fb-giao-dien-app",
       "date": "2026-11-14",
       "title": "Facebook mặc giao diện CircleVault",
