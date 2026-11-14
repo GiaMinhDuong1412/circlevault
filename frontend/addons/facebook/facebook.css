@@ -40,8 +40,20 @@ body.fbx-drag{cursor:ew-resize;user-select:none}
 .fbx-spin{width:28px;height:28px;border-radius:50%;border:3px solid var(--fbx-btn);border-top-color:var(--fbx-blue);animation:fbxSpin .8s linear infinite}
 @keyframes fbxSpin{to{transform:rotate(360deg)}}
 /* nút bật trên thanh YouTube */
-.fbx-toggle{display:inline-flex;align-items:center;gap:7px;border:2px solid var(--ink);border-radius:calc(99px*var(--rk,1));background:var(--surface);color:var(--text);
-  font:800 13px var(--f-body);padding:6px 12px 6px 7px;cursor:pointer;box-shadow:var(--hs,2px 2px 0 var(--ink));white-space:nowrap}
-.fbx-toggle.on{background:#0866ff;color:#fff}
-.fbx-toggle.on .fbx-logo{background:#fff;color:#0866ff}
+.fbx-toggle{display:inline-flex;align-items:center;gap:8px;border:2px solid var(--ink);border-radius:calc(10px*var(--rk,1));background:#0866ff;color:#fff;
+  font:800 13px var(--f-body);padding:7px 14px 7px 8px;cursor:pointer;box-shadow:var(--hs,3px 3px 0 var(--ink));white-space:nowrap}
+.fbx-toggle .fbx-logo{background:#fff;color:#0866ff}
+.fbx-toggle:hover{transform:translate(-1px,-1px)}
+.fbx-toggle.on{background:#0650c9;box-shadow:inset 0 2px 0 rgba(0,0,0,.25)}
+.fbx-toggle.on::after{content:"đang mở";font:700 11px var(--f-body);opacity:.85;margin-left:2px}
+/* bản vẽ C: đang mở Facebook thì trang xem 1 cột – danh sách phát / "Tiếp theo" xuống dưới video dạng lưới; đóng Facebook = như cũ */
+body.fbx-on .yt-watch{grid-template-columns:minmax(0,1fr)}
+body.fbx-on .yt-side{display:flex;flex-direction:column;gap:12px}
+body.fbx-on #ywRel{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px 14px}
+body.fbx-on #ywRel .yv.sm{flex-direction:column;gap:8px}
+body.fbx-on #ywRel .yv.sm .yv-th{width:auto;box-shadow:var(--sh-sm);border-width:var(--bw)}
+body.fbx-on .yt-q-l{max-height:240px}
+body.fbx-on .yt-rail{flex:0 0 auto;max-width:none;padding:8px}
+body.fbx-on .yt-ri{font-size:0;gap:0;justify-content:center;padding:10px}
+body.fbx-on .yt-rsep,body.fbx-on .yt-rh,body.fbx-on #ytChans{display:none}
 @media (max-width: 1000px){ body.fbx-on{padding-right:0} .fbx{left:12px;width:auto} }
