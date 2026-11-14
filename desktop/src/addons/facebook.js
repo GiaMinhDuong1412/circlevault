@@ -20,6 +20,9 @@ let view = null;
 let rect = null;
 let muted = true;
 let zoom = 0.9;
+let dark = null;          // trang Facebook đang ở chế độ tối? (để thanh của khung đổi màu theo khi dùng giao diện Facebook gốc)
+let skinCss = '';         // CSS "giao diện app": ẩn thanh trên của Facebook + tô màu/font theo theme CircleVault
+let skinKey = null;
 
 function setup(options) {
   ctx = options;
@@ -96,8 +99,54 @@ function push() {
   const wc = view.webContents;
   main.webContents.send('addon', NAME, {
     t: 'state', url: wc.getURL(), title: wc.getTitle(), loading: wc.isLoading(), muted, loggedIn,
-    back: wc.navigationHistory.canGoBack(), fwd: wc.navigationHistory.canGoForward(), zoom,
+    back: wc.navigationHistory.canGoBack(), fwd: wc.navigationHistory.canGoForward(), zoom, dark, skin: !!skinCss,
   });
+}
+
+/** Facebook đang bật chế độ tối? (lớp __fb-dark-mode trên <html>; chỉ đọc lớp giao diện, không đọc dữ liệu) */
+function checkDark() {
+  if (!view) return;
+  view.webContents.executeJavaScript("document.documentElement.classList.contains('__fb-dark-mode')", false)
+    .then((d) => { if (d !== dark) { dark = !!d; push(); } }).catch(() => {});
+}
+
+/* ---- giao diện app: chỉ là CSS chèn thêm (như tiện ích Stylus), Facebook đổi tên lớp thì phần nào không khớp sẽ tự về như cũ */
+const SKIN_KEYS = ['bg', 'surface', 'surface2', 'ink', 'text', 'muted', 'accent', 'accentFill', 'hover', 'font', 'bw', 'radius', 'shadow'];
+const SAFE = /^[\w\s#(),.%"'+/-]{1,240}$/;   // không có ; { } : * \ nên không thoát được khỏi giá trị CSS
+function buildSkin(v) {
+  if (!v || typeof v !== 'object') return '';
+  const c = {};
+  for (const k of SKIN_KEYS) {
+    const x = String(v[k] ?? '').trim();
+    if (!x || !SAFE.test(x) || /url|expression|image/i.test(x)) return '';
+    c[k] = x;
+  }
+  const vars = {
+    'web-wash': c.bg, 'surface-background': c.surface, 'card-background': c.surface, 'popover-background': c.surface,
+    'comment-background': c.surface2, 'secondary-button-background': c.surface2, 'input-background': c.surface2,
+    'secondary-button-background-floating': c.surface2, 'hover-overlay': c.hover, 'press-overlay': c.hover,
+    'primary-text': c.text, 'secondary-text': c.muted, 'placeholder-text': c.muted, 'primary-icon': c.text, 'secondary-icon': c.muted,
+    'divider': c.hover, 'accent': c.accent, 'primary-button-background': c.accent, 'blue-link': c.accent,
+    'primary-deemphasized-button-background': c.accentFill, 'primary-deemphasized-button-text': c.accent,
+    'card-corner-radius': c.radius,
+  };
+  const decl = Object.entries(vars).map(([k, x]) => `--${k}:${x}!important`).join(';');
+  return [
+    // thanh trên của Facebook trùng với thanh của khung CircleVault → ẩn, nội dung lên sát mép trên
+    ':root{--header-height:0px!important}',
+    'div[role="banner"]{display:none!important}',
+    `:root,.__fb-light-mode,.__fb-dark-mode{${decl}}`,
+    `html,body{background:${c.bg}!important}`,
+    `body,input,textarea,button,select,[contenteditable]{font-family:${c.font}!important}`,
+    // bài viết trên bảng feed: viền + bóng như thẻ của app
+    `div[role="article"][aria-posinset]{border:${c.bw} solid ${c.ink}!important;border-radius:${c.radius}!important;box-shadow:${c.shadow}!important;overflow:hidden}`,
+  ].join('\n');
+}
+async function applySkin() {
+  if (!view) return;
+  const wc = view.webContents;
+  if (skinKey) { const k = skinKey; skinKey = null; try { await wc.removeInsertedCSS(k); } catch { /* trang đã đổi */ } }
+  if (skinCss) { try { skinKey = await wc.insertCSS(skinCss, { cssOrigin: 'author' }); } catch { /* bỏ qua */ } }
 }
 
 function ensure(url) {
@@ -110,7 +159,9 @@ function ensure(url) {
   wc.setAudioMuted(muted);
   wc.setZoomFactor(zoom);
   ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading'].forEach((ev) => wc.on(ev, push));
-  wc.on('did-stop-loading', () => checkLogin().then(push));
+  wc.on('did-stop-loading', () => { checkLogin().then(push); checkDark(); });
+  wc.on('did-navigate-in-page', checkDark);
+  wc.on('dom-ready', () => { skinKey = null; applySkin(); });   // trang mới = CSS chèn cũ đã mất
   wc.on('did-finish-load', () => wc.setZoomFactor(zoom));
   wc.setWindowOpenHandler(({ url: u }) => {
     if (okUrl(u)) wc.loadURL(u); else if (/^https?:/i.test(u)) shell.openExternal(u);
@@ -174,9 +225,14 @@ function onMessage(m) {
       loggedIn = false;
       session.fromPartition(PARTITION).clearStorageData().then(() => { if (view) view.webContents.loadURL('https://www.facebook.com/'); });
       break;
+    case 'skin': {
+      const css = m.on ? buildSkin(m.vars) : '';
+      if (css !== skinCss) { skinCss = css; applySkin().then(push); }
+      break;
+    }
     case 'state': push(); break;
     default:
   }
 }
 
-module.exports = { setup, attach };
+module.exports = { setup, attach, buildSkin };

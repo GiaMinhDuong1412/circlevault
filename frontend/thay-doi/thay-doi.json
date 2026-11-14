@@ -2,6 +2,16 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-14-fb-giao-dien-app",
+      "date": "2026-11-14",
+      "title": "Facebook mặc giao diện CircleVault",
+      "items": [
+        "Khung Facebook chỉ còn một thanh trên: thanh của Facebook được ẩn, thanh của app (tìm kiếm + Trang chủ, Video, Reels, Nhóm, Tin nhắn, Thông báo kèm số chưa đọc, Menu) thay chỗ – không còn hai thanh chồng nhau.",
+        "Trang Facebook trong khung đổi màu, font chữ và viền bài viết theo theme/kiểu giao diện bạn chọn trong app; đổi theme là Facebook đổi theo ngay.",
+        "Muốn dùng giao diện Facebook gốc: ⋯ → \"Dùng giao diện Facebook gốc\" (thanh nhỏ của khung tự đổi sáng/tối theo Facebook)."
+      ]
+    },
+    {
       "id": "2026-11-14-fb-dang-nhap",
       "date": "2026-11-14",
       "title": "Đăng nhập Facebook như YouTube, sửa hộp giao diện",

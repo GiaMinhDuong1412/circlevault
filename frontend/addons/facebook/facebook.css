@@ -26,14 +26,13 @@ body.fbx-drag{cursor:ew-resize;user-select:none}
 .fbx-menu button{border:0;background:none;text-align:left;padding:9px 10px;border-radius:6px;font:600 14.5px "Segoe UI",Helvetica,Arial,sans-serif;color:var(--fbx-tx);cursor:pointer}
 .fbx-menu button:hover{background:var(--fbx-bg)}
 .fbx-nav{display:flex;background:var(--fbx-bg2);border-top:1px solid var(--fbx-line);position:relative;z-index:1}
-.fbx-nav button{flex:1;height:48px;border:0;background:none;color:var(--fbx-mu);cursor:pointer;border-bottom:3px solid transparent;border-top:3px solid transparent;display:grid;place-items:center;border-radius:0}
+.fbx-nav button{flex:1;position:relative;height:48px;border:0;background:none;color:var(--fbx-mu);cursor:pointer;border-bottom:3px solid transparent;border-top:3px solid transparent;display:grid;place-items:center;border-radius:0}
 .fbx-nav button:hover{background:var(--fbx-bg)}
 .fbx-nav button.on{color:var(--fbx-blue);border-bottom-color:var(--fbx-blue)}
-.fbx-sub{display:flex;align-items:center;gap:2px;padding:4px 8px;background:var(--fbx-bg2);border-top:1px solid var(--fbx-line);border-bottom:1px solid var(--fbx-line)}
 .fbx-sb{width:30px;height:30px;border:0;border-radius:50%;background:none;color:var(--fbx-tx);display:grid;place-items:center;cursor:pointer}
 .fbx-sb:hover:not(:disabled){background:var(--fbx-btn)}
 .fbx-sb:disabled{opacity:.35;cursor:default}
-.fbx-title{flex:1;min-width:0;margin-left:6px;font:600 13px "Segoe UI",Helvetica,Arial,sans-serif;color:var(--fbx-mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fbx-title{flex:1;min-width:0;margin-left:4px;font:600 13px "Segoe UI",Helvetica,Arial,sans-serif;color:var(--fbx-mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fbx-body{flex:1;min-height:0;position:relative;background:var(--fbx-bg)}
 .fbx-wait{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;color:var(--fbx-mu);font:600 14px "Segoe UI",Helvetica,Arial,sans-serif}
 .fbx-wait a{color:var(--fbx-blue);font-weight:700}
@@ -62,3 +61,32 @@ body.fbx-on .yt-rsep,body.fbx-on .yt-rh,body.fbx-on #ytChans{display:none}
 .fbx-login[hidden]{display:none}
 .fbx-login b{font-weight:700}
 .fbx-login button{align-self:flex-start;border:0;border-radius:6px;background:#0866ff;color:#fff;font:600 13px "Segoe UI",Helvetica,Arial,sans-serif;padding:7px 12px;cursor:pointer}
+/* thanh trên: một hàng. Giao diện Facebook gốc (Facebook tự có thanh trên) = ‹ › ↻ tiêu đề; giao diện app = ‹ f [tìm kiếm] + hàng mục */
+.fbx-top{gap:4px;padding:6px 8px}
+.fbx-top .fbx-ic{width:36px;height:36px}
+.fbx:not(.skin) .fbx-app,.fbx.skin .fbx-orig{display:none}
+.fbx:not(.skin) .fbx-top{border-bottom:1px solid var(--fbx-line)}
+.fbx.skin .fbx-logo{margin:0 2px}
+.fbx-badge{position:absolute;top:5px;left:calc(50% + 4px);min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:999px;
+  background:#e41e3f;color:#fff;font:700 11px/18px "Segoe UI",Helvetica,Arial,sans-serif;font-style:normal;text-align:center}
+.fbx-badge[hidden]{display:none}
+/* giao diện app: khung theo theme CircleVault (trang Facebook bên trong được tô cùng màu/font bằng CSS chèn từ app) */
+.fbx.skin{--fbx-blue:var(--accent-line);--fbx-bg:var(--bg);--fbx-bg2:var(--surface);--fbx-btn:var(--surface-2);
+  --fbx-btn-h:color-mix(in srgb,var(--surface-2) 82%,var(--text));--fbx-tx:var(--text);--fbx-mu:var(--muted);--fbx-line:var(--ink);font-family:var(--f-body)}
+.fbx.skin .fbx-top{box-shadow:none;border-bottom:var(--bw) solid var(--ink);padding:7px 8px}
+.fbx.skin .fbx-logo{width:36px;height:36px;font-size:30px;padding-top:5px;background:var(--cyan);color:var(--on-accent);border:2px solid var(--ink);box-sizing:border-box}
+.fbx.skin .fbx-search{height:36px;border:2px solid var(--ink);border-radius:calc(10px*var(--rk,1));background:var(--surface-2)}
+.fbx.skin .fbx-search input,.fbx.skin .fbx-menu button,.fbx.skin .fbx-title{font-family:var(--f-body)}
+.fbx.skin .fbx-ic{border:2px solid var(--ink);border-radius:calc(10px*var(--rk,1));background:var(--surface);box-shadow:var(--hs,2px 2px 0 var(--ink))}
+.fbx.skin .fbx-ic:hover{background:var(--surface-2)}
+.fbx.skin .fbx-ic.on{background:var(--green);color:var(--on-accent)}
+.fbx.skin .fbx-sb{border-radius:calc(8px*var(--rk,1))}
+.fbx.skin .fbx-nav{border-top:0;border-bottom:var(--bw) solid var(--ink);padding:5px 6px;gap:4px}
+.fbx.skin .fbx-nav button{height:38px;border:2px solid transparent;border-radius:calc(8px*var(--rk,1));color:var(--muted)}
+.fbx.skin .fbx-nav button:hover{background:var(--surface-2);color:var(--text)}
+.fbx.skin .fbx-nav button.on{background:var(--yellow);color:var(--on-accent);border-color:var(--ink);box-shadow:var(--hs,2px 2px 0 var(--ink))}
+.fbx.skin .fbx-badge{top:1px;border:1.5px solid var(--ink);background:var(--red)}
+.fbx.skin .fbx-menu{border:2px solid var(--ink);border-radius:calc(10px*var(--rk,1));box-shadow:var(--sh)}
+.fbx.skin .fbx-menu button{border-radius:calc(6px*var(--rk,1))}
+.fbx.skin .fbx-login{background:var(--accent-fill);color:var(--text);border-bottom:var(--bw) solid var(--ink);font-family:var(--f-body)}
+.fbx.skin .fbx-login button{background:var(--cyan);color:var(--on-accent);border:2px solid var(--ink);border-radius:calc(8px*var(--rk,1));font-family:var(--f-body)}
