@@ -2,6 +2,17 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-14-facebook",
+      "date": "2026-11-14",
+      "title": "Lướt Facebook bên cạnh YouTube",
+      "items": [
+        "Tab Mạng xã hội có nút xanh Facebook: mở Facebook trong khung bên phải app (giao diện kiểu Facebook: tìm kiếm, Trang chủ, Video, Reels, Nhóm, Tin nhắn, Thông báo). Kéo mép trái để đổi độ rộng.",
+        "Đang xem video mà mở Facebook: video chiếm cả cột, danh sách Tiếp theo xuống dưới; đóng Facebook là về như cũ.",
+        "Facebook mặc định tắt tiếng để không lẫn với YouTube (bấm loa để bật). Nút ⋯: chữ to/nhỏ, mở bằng trình duyệt ngoài, đăng xuất, tắt hẳn để giải phóng bộ nhớ.",
+        "Đăng nhập Facebook lưu riêng trong app, không lẫn với YouTube/Google; app không đọc dữ liệu Facebook."
+      ]
+    },
+    {
       "id": "2026-11-14-font-chu",
       "date": "2026-11-14",
       "title": "Font chữ, xem YouTube khi ở tab khác, đổi tên tab",

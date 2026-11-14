@@ -1,4 +1,4 @@
-/* ADDON THỬ NGHIỆM – Facebook bên cạnh YouTube (tab Mạng xã hội).
+/* ADDON – Facebook bên cạnh YouTube (tab Mạng xã hội).
  * Gỡ: xóa thư mục frontend/addons/facebook/, dòng <script> của nó trong index.html và desktop/src/addons/facebook.js.
  * Không sửa mã của tab YouTube: tự chèn nút "Facebook" vào thanh YouTube và một khung cố định bên phải trang.
  * Trang facebook.com thật hiện trong khung (Electron WebContentsView đè lên .fbx-body), app chỉ báo vị trí + lệnh điều hướng. */
@@ -71,7 +71,7 @@ box.innerHTML = `
     : `<div class="fbx-wait"><b>Facebook chỉ mở được trong app CircleVault trên máy tính.</b><a href="${FB}" target="_blank" rel="noopener">Mở facebook.com ở tab mới</a></div>`}</div>`;
 document.body.appendChild(box);
 const toggle = document.createElement('button');
-toggle.type = 'button'; toggle.className = 'fbx-toggle'; toggle.title = 'Lướt Facebook bên cạnh khi xem YouTube (thử nghiệm)';
+toggle.type = 'button'; toggle.className = 'fbx-toggle'; toggle.title = 'Lướt Facebook bên cạnh khi xem YouTube';
 toggle.innerHTML = '<span class="fbx-logo sm" aria-hidden="true">f</span>Facebook';
 
 function cmd(m) { if (CAN) desk.addon('facebook', m); }

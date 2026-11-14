@@ -1,6 +1,6 @@
 'use strict';
 /**
- * ADDON THỬ NGHIỆM – Facebook bên cạnh (gỡ: xóa file này + thư mục frontend/addons/facebook/ + dòng <script> của nó trong index.html).
+ * ADDON – Facebook bên cạnh (gỡ: xóa file này + thư mục frontend/addons/facebook/ + dòng <script> của nó trong index.html).
  * Trang facebook.com thật chạy trong một WebContentsView riêng (bộ cookie riêng `persist:facebook`, không lẫn YouTube/Google),
  * đặt đè lên khung `.fbx-body` mà trang CircleVault báo vị trí. App KHÔNG đọc/ghi dữ liệu Facebook, chỉ hiển thị trang.
  * Mặc định tắt tiếng (video Facebook tự phát không lẫn với YouTube).

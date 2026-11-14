@@ -1,4 +1,4 @@
-/* ADDON THỬ NGHIỆM – khung Facebook (giao diện theo kiểu Facebook: nền xám nhạt, thanh trắng, xanh #0866FF) */
+/* ADDON – khung Facebook (giao diện theo kiểu Facebook: nền xám nhạt, thanh trắng, xanh #0866FF) */
 .fbx{--fbx-blue:#0866ff;--fbx-bg:#f0f2f5;--fbx-bg2:#ffffff;--fbx-btn:#e4e6eb;--fbx-btn-h:#d8dadf;--fbx-tx:#050505;--fbx-mu:#65676b;--fbx-line:#dadde1;
   position:fixed;top:12px;right:12px;bottom:12px;width:var(--fbx-w,440px);z-index:40;display:flex;flex-direction:column;background:var(--fbx-bg);color:var(--fbx-tx);
   border:var(--bw) solid var(--ink);border-radius:calc(12px*var(--rk,1));box-shadow:var(--sh);overflow:hidden;font-family:"Segoe UI",Helvetica,Arial,sans-serif}
