@@ -22,6 +22,7 @@ const browser = require('./browser');
 const screenTr = require('./screen');
 const miniPlayer = require('./mini');
 const voiceRoom = require('./voice');
+const addons = require('./addons');   // thành phần gắn thêm (thư mục addons/, gỡ được)
 
 const APP_ID = 'vn.circlevault.app';
 const APP_NAME = 'CircleVault';
@@ -181,6 +182,7 @@ function createWindow() {
   if (cfg.maximized) win.maximize();
   miniPlayer.attach(win);
   voiceRoom.attach(win);
+  addons.attach(win);
   win.on('page-title-updated', (e, title) => { e.preventDefault(); win.setTitle(title.includes('CircleVault') ? title : APP_NAME); });
   win.once('ready-to-show', () => { if (!SMOKE) win.show(); closeSplash(); });
   const keep = () => { if (!win.isMaximized() && !win.isMinimized()) cfg.bounds = win.getBounds(); cfg.maximized = win.isMaximized(); };
@@ -313,6 +315,7 @@ async function init() {
   ipcMain.on('open-screen-translate', () => screenTr.open());
   miniPlayer.setup({ userData: HOME, icon: ICON, log });
   voiceRoom.setup({ icon: ICON, log });
+  addons.setup({ icon: ICON, log, dataDir: HOME });
   createWindow();
   if (SMOKE) return smoke();
   updater = createUpdater({

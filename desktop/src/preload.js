@@ -29,5 +29,8 @@ contextBridge.exposeInMainWorld('cvDesktop', {
   // phòng thoại: trạng thái (khung nổi khi chơi game, phím tắt toàn cục) ↔ lệnh từ phím tắt toàn cục
   voiceState: (st) => ipcRenderer.send('voice-state', st),
   onVoiceCmd: (cb) => ipcRenderer.on('voice-cmd', (_e, c) => cb(c)),
+  // addon (thư mục desktop/src/addons): kênh chung theo tên addon
+  addon: (name, msg) => ipcRenderer.send('addon', name, msg),
+  onAddon: (cb) => ipcRenderer.on('addon', (_e, name, msg) => cb(name, msg)),
   quit: () => ipcRenderer.send('quit'),
 });

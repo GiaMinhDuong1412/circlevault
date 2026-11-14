@@ -1,0 +1,47 @@
+/* ADDON THỬ NGHIỆM – khung Facebook (giao diện theo kiểu Facebook: nền xám nhạt, thanh trắng, xanh #0866FF) */
+.fbx{--fbx-blue:#0866ff;--fbx-bg:#f0f2f5;--fbx-bg2:#ffffff;--fbx-btn:#e4e6eb;--fbx-btn-h:#d8dadf;--fbx-tx:#050505;--fbx-mu:#65676b;--fbx-line:#dadde1;
+  position:fixed;top:12px;right:12px;bottom:12px;width:var(--fbx-w,440px);z-index:40;display:flex;flex-direction:column;background:var(--fbx-bg);color:var(--fbx-tx);
+  border:var(--bw) solid var(--ink);border-radius:calc(12px*var(--rk,1));box-shadow:var(--sh);overflow:hidden;font-family:"Segoe UI",Helvetica,Arial,sans-serif}
+.fbx.dark{--fbx-bg:#18191a;--fbx-bg2:#242526;--fbx-btn:#3a3b3c;--fbx-btn-h:#4e4f50;--fbx-tx:#e4e6eb;--fbx-mu:#b0b3b8;--fbx-line:#393a3b;--fbx-blue:#2d88ff}
+.fbx[hidden]{display:none}
+body.fbx-on{padding-right:calc(var(--fbx-w,440px) + 24px)}
+body.fbx-on #toasts{right:calc(var(--fbx-w,440px) + 36px)}
+body.fbx-on .tabs{flex-wrap:wrap}
+body.fbx-drag{cursor:ew-resize;user-select:none}
+.fbx-grip{position:absolute;left:0;top:0;bottom:0;width:7px;cursor:ew-resize;z-index:3}
+.fbx-grip:hover{background:color-mix(in srgb,var(--fbx-blue) 35%,transparent)}
+.fbx-top{display:flex;align-items:center;gap:8px;padding:8px 10px 8px 12px;background:var(--fbx-bg2);box-shadow:0 1px 2px rgba(0,0,0,.12);position:relative;z-index:2}
+.fbx-logo{width:40px;height:40px;flex:none;border-radius:50%;background:var(--fbx-blue,#0866ff);color:#fff;display:grid;place-items:end center;
+  font:800 34px/1 "Segoe UI",Helvetica,Arial,sans-serif;overflow:hidden;padding-top:6px;box-sizing:border-box}
+.fbx-logo.sm{width:20px;height:20px;font-size:17px;padding-top:3px;background:#0866ff}
+.fbx-search{flex:1;min-width:0;display:flex;align-items:center;gap:6px;background:var(--fbx-bg);border-radius:999px;padding:0 12px;height:40px;color:var(--fbx-mu)}
+.fbx-search input{flex:1;min-width:0;border:0;background:none;outline:none;font:400 15px "Segoe UI",Helvetica,Arial,sans-serif;color:var(--fbx-tx);padding:0;box-shadow:none}
+.fbx-search input::placeholder{color:var(--fbx-mu)}
+.fbx-ic{width:40px;height:40px;flex:none;border:0;border-radius:50%;background:var(--fbx-btn);color:var(--fbx-tx);display:grid;place-items:center;cursor:pointer;padding:0}
+.fbx-ic:hover{background:var(--fbx-btn-h)}
+.fbx-ic.on{color:var(--fbx-blue);background:color-mix(in srgb,var(--fbx-blue) 18%,var(--fbx-btn))}
+.fbx-mw{position:relative}
+.fbx-menu{position:absolute;right:0;top:46px;min-width:230px;background:var(--fbx-bg2);border-radius:8px;box-shadow:0 12px 28px rgba(0,0,0,.2),0 2px 4px rgba(0,0,0,.1);padding:8px;display:flex;flex-direction:column;z-index:5}
+.fbx-menu[hidden]{display:none}
+.fbx-menu button{border:0;background:none;text-align:left;padding:9px 10px;border-radius:6px;font:600 14.5px "Segoe UI",Helvetica,Arial,sans-serif;color:var(--fbx-tx);cursor:pointer}
+.fbx-menu button:hover{background:var(--fbx-bg)}
+.fbx-nav{display:flex;background:var(--fbx-bg2);border-top:1px solid var(--fbx-line);position:relative;z-index:1}
+.fbx-nav button{flex:1;height:48px;border:0;background:none;color:var(--fbx-mu);cursor:pointer;border-bottom:3px solid transparent;border-top:3px solid transparent;display:grid;place-items:center;border-radius:0}
+.fbx-nav button:hover{background:var(--fbx-bg)}
+.fbx-nav button.on{color:var(--fbx-blue);border-bottom-color:var(--fbx-blue)}
+.fbx-sub{display:flex;align-items:center;gap:2px;padding:4px 8px;background:var(--fbx-bg2);border-top:1px solid var(--fbx-line);border-bottom:1px solid var(--fbx-line)}
+.fbx-sb{width:30px;height:30px;border:0;border-radius:50%;background:none;color:var(--fbx-tx);display:grid;place-items:center;cursor:pointer}
+.fbx-sb:hover:not(:disabled){background:var(--fbx-btn)}
+.fbx-sb:disabled{opacity:.35;cursor:default}
+.fbx-title{flex:1;min-width:0;margin-left:6px;font:600 13px "Segoe UI",Helvetica,Arial,sans-serif;color:var(--fbx-mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fbx-body{flex:1;min-height:0;position:relative;background:var(--fbx-bg)}
+.fbx-wait{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;color:var(--fbx-mu);font:600 14px "Segoe UI",Helvetica,Arial,sans-serif}
+.fbx-wait a{color:var(--fbx-blue);font-weight:700}
+.fbx-spin{width:28px;height:28px;border-radius:50%;border:3px solid var(--fbx-btn);border-top-color:var(--fbx-blue);animation:fbxSpin .8s linear infinite}
+@keyframes fbxSpin{to{transform:rotate(360deg)}}
+/* nút bật trên thanh CVTube */
+.fbx-toggle{display:inline-flex;align-items:center;gap:7px;border:2px solid var(--ink);border-radius:calc(99px*var(--rk,1));background:var(--surface);color:var(--text);
+  font:800 13px var(--f-body);padding:6px 12px 6px 7px;cursor:pointer;box-shadow:var(--hs,2px 2px 0 var(--ink));white-space:nowrap}
+.fbx-toggle.on{background:#0866ff;color:#fff}
+.fbx-toggle.on .fbx-logo{background:#fff;color:#0866ff}
+@media (max-width: 1000px){ body.fbx-on{padding-right:0} .fbx{left:12px;width:auto} }

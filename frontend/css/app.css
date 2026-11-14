@@ -972,18 +972,18 @@ div.ln-ti{cursor:default}
 .yt-sec{margin:26px 0 12px;font-size:17px}
 .yt-note{margin:-4px 0 14px;max-width:900px}
 /* ---- CVTube: giao diện riêng cho tab YouTube (khác YouTube) */
-.yt-top{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:12px 16px;padding:14px 16px 0;position:sticky;top:64px;z-index:4;
+.yt-top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 14px;padding:14px 16px 0;position:sticky;top:64px;z-index:4;
   background:var(--surface);border:var(--bw) solid var(--ink);border-radius:calc(10px*var(--rk,1));box-shadow:var(--sh)}
 .yt-top .sp{display:none}
 .yt-brand{display:flex;align-items:center;gap:8px;font:900 19px var(--f-body);letter-spacing:-.02em}
 .yt-brand span{color:var(--accent-line)}
 .yt-logo{width:34px;height:26px;display:grid;place-items:center;background:var(--red);color:#fff;border:2px solid var(--ink);border-radius:calc(8px*var(--rk,1));font-size:13px;box-shadow:var(--hs,2px 2px 0 var(--ink));transform:rotate(-6deg)}
-.yt-search{max-width:640px;flex:none;width:100%}
+.yt-search{max-width:640px;flex:1 1 280px;width:auto}
 .yt-search input{padding-left:34px;border-radius:calc(99px*var(--rk,1));background:var(--surface-2)}
 .yt-search .btn{border-radius:calc(99px*var(--rk,1))}
 .yt-sic{position:absolute;left:12px;top:50%;transform:translateY(-52%);font-size:18px;color:var(--muted);pointer-events:none}
 .yt-acc{font:800 12.5px var(--f-body);color:var(--accent-line);white-space:nowrap}
-.yt-tabs{grid-column:1/-1;display:flex;gap:4px;overflow-x:auto;margin:0 -16px;padding:0 12px;border-top:2px solid var(--ink);background:var(--surface-2);border-radius:0 0 calc(8px*var(--rk,1)) calc(8px*var(--rk,1))}
+.yt-tabs{flex:1 0 calc(100% + 32px);display:flex;gap:4px;overflow-x:auto;margin:0 -16px;padding:0 12px;border-top:2px solid var(--ink);background:var(--surface-2);border-radius:0 0 calc(8px*var(--rk,1)) calc(8px*var(--rk,1))}
 .yt-tab{display:inline-flex;align-items:center;gap:7px;border:0;background:none;color:var(--muted);font:800 13.5px var(--f-body);padding:11px 14px 9px;cursor:pointer;border-bottom:4px solid transparent;white-space:nowrap}
 .yt-tab i{font-style:normal;font-size:15px}
 .yt-tab:hover{color:var(--text)}
@@ -1008,7 +1008,7 @@ div.ln-ti{cursor:default}
 .yt-grid.hero>.yv:first-child .yv-bd b{font-size:19px;-webkit-line-clamp:3}
 .yt-grid.hero>.yv:first-child .yv-th::before{content:"NỔI BẬT";position:absolute;left:10px;top:10px;z-index:1;font:900 11px/1 var(--f-body);letter-spacing:.06em;
   background:var(--red);color:#fff;border:2px solid var(--ink);border-radius:calc(4px*var(--rk,1));padding:5px 7px}
-@media (max-width: 700px){ .yt-grid.hero>.yv:first-child{grid-column:auto;grid-row:auto} .yt-top{grid-template-columns:1fr} .yt-brand{display:none} }
+@media (max-width: 700px){ .yt-grid.hero>.yv:first-child{grid-column:auto;grid-row:auto} .yt-brand{display:none} }
 /* thẻ danh sách kết hợp: các lớp chồng phía sau + dải bên phải */
 .yl .yv-th{overflow:visible;margin-top:8px;isolation:isolate}
 .yl .yv-th img{border-radius:inherit}

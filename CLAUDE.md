@@ -223,6 +223,12 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   Phát hành: job `android` trong release.yml đính `CircleVault-Android.apk` vào Release 2 repo; link cố định
   `…/circlevault-releases/releases/latest/download/CircleVault-Android.apk`.
 - **Có gì mới**: `frontend/thay-doi/thay-doi.json` (`entries`, mục MỚI NHẤT ở đầu, `id` không trùng) – MỖI LẦN PHÁT HÀNH thêm một mục. PC: `showWhatsNew` (app.js) hiện cuộn giấy `dialog.scroll-dlg` với mục chưa xem (`cv-notes-seen`), nút "📜 Có gì mới" ở Lưu Trữ. APK: file đóng gói vào assets (`sourceSets…assets.srcDirs`), `ui/WhatsNew.kt` (`ScrollNotes`, Prefs.notesSeen), nút ở Cài đặt. release.yml lấy mục đầu làm ghi chú Release. APK có **Kiểu giao diện** (`UiStyle` trong Theme.kt đọc Prefs.uiStyle MỘT LẦN, `brutal()` đổi bo góc/viền/bóng theo kiểu; đổi kiểu → `restartApp`).
+- **Addon (thành phần gỡ được)**: `desktop/src/addons/<tên>.js` (`setup(ctx)`, `attach(win)`, tự nạp bởi `addons/index.js`; kênh chung
+  `cvDesktop.addon(tên, tin)` / `onAddon`) + `frontend/addons/<tên>/` (tự chèn giao diện, không sửa mã tab khác) + 1 dòng `<script>` trong
+  index.html. **Facebook (THỬ NGHIỆM, nhánh `thu-nghiem-facebook`, CHƯA vào main – chờ người dùng test)**: nút "Facebook" chèn vào thanh
+  CVTube → khung cố định bên phải (`.fbx`, giao diện kiểu Facebook, kéo mép đổi rộng, `body.fbx-on` chừa chỗ), trang facebook.com thật trong
+  WebContentsView `persist:facebook` đè lên `.fbx-body` (vị trí báo mỗi 200 ms; ẩn khi có dialog/hộp theme/menu/toàn màn hình), mặc định tắt
+  tiếng, chỉ mở link facebook.com/messenger.com, link khác ra trình duyệt ngoài. App không đọc dữ liệu Facebook. Cách gỡ: `frontend/addons/facebook/GO-BO.txt`.
 - `tools/dong_goi_app.py` chuẩn bị `desktop/res/`; `tools/kiem_tra.py` kiểm tra cú pháp + liên kết file + đường dẫn `/api/…` bị đổi thành địa chỉ ngoài (`kiem_url_la`).
 
 ## Quy trình

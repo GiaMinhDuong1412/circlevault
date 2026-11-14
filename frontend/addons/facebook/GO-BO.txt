@@ -1,0 +1,11 @@
+ADDON THỬ NGHIỆM: Facebook bên cạnh tab YouTube (CVTube)
+
+Gỡ hoàn toàn (app vẫn chạy bình thường):
+  1. Xóa thư mục frontend/addons/facebook/
+  2. Xóa file desktop/src/addons/facebook.js
+  3. Xóa 2 dòng có chữ "addons/facebook" trong frontend/index.html (dòng chú thích + <script>)
+Phần dùng chung giữ lại cũng không sao: desktop/src/addons/index.js (tự nạp addon trong thư mục, không có addon thì không làm gì)
+và kênh cvDesktop.addon / onAddon trong desktop/src/preload.js.
+
+Dữ liệu: đăng nhập Facebook nằm riêng trong phiên "persist:facebook" của app (không lẫn YouTube/Google);
+nút ⋯ → "Đăng xuất Facebook khỏi app" xóa sạch. localStorage: cv-fbx-on, cv-fbx-w, cv-fbx-url.
