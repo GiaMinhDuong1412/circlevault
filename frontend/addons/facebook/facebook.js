@@ -1,6 +1,6 @@
-/* ADDON THỬ NGHIỆM – Facebook bên cạnh tab YouTube (CVTube).
+/* ADDON THỬ NGHIỆM – Facebook bên cạnh YouTube (tab Mạng xã hội).
  * Gỡ: xóa thư mục frontend/addons/facebook/, dòng <script> của nó trong index.html và desktop/src/addons/facebook.js.
- * Không sửa mã của tab YouTube: tự chèn nút "Facebook" vào thanh CVTube và một khung cố định bên phải trang.
+ * Không sửa mã của tab YouTube: tự chèn nút "Facebook" vào thanh YouTube và một khung cố định bên phải trang.
  * Trang facebook.com thật hiện trong khung (Electron WebContentsView đè lên .fbx-body), app chỉ báo vị trí + lệnh điều hướng. */
 (() => {
 'use strict';
@@ -116,7 +116,7 @@ function setOn(on) {
   paint();
 }
 toggle.addEventListener('click', () => setOn(!F.on));
-/* chèn nút vào thanh CVTube mỗi lần tab YouTube vẽ lại (không sửa youtube.js) */
+/* chèn nút vào thanh YouTube mỗi lần tab YouTube vẽ lại (không sửa youtube.js) */
 const yt = document.getElementById('ytBox');
 function placeToggle() {
   const top = yt && yt.querySelector('.yt-top');
@@ -137,7 +137,7 @@ box.addEventListener('click', e => {
   if (a === 'hide') return setOn(false);
   if (a === 'mute') return cmd({t: 'mute', on: F.st.muted === false});
   if (a === 'zoom+' || a === 'zoom-') return cmd({t: 'zoom', zoom: (F.st.zoom || 0.9) + (a === 'zoom+' ? 0.1 : -0.1)});
-  if (a === 'off') { cmd({t: 'close'}); F.sent = ''; setOn(false); window.CV.toast('Đã tắt Facebook. Bấm nút Facebook ở CVTube để mở lại (vẫn giữ đăng nhập).'); return; }
+  if (a === 'off') { cmd({t: 'close'}); F.sent = ''; setOn(false); window.CV.toast('Đã tắt Facebook. Bấm nút Facebook ở tab Mạng xã hội để mở lại (vẫn giữ đăng nhập).'); return; }
   if (a === 'logout') { if (confirm('Đăng xuất Facebook khỏi app CircleVault?')) cmd({t: 'logout'}); return; }
   cmd({t: a});
 });

@@ -39,7 +39,7 @@ body.fbx-drag{cursor:ew-resize;user-select:none}
 .fbx-wait a{color:var(--fbx-blue);font-weight:700}
 .fbx-spin{width:28px;height:28px;border-radius:50%;border:3px solid var(--fbx-btn);border-top-color:var(--fbx-blue);animation:fbxSpin .8s linear infinite}
 @keyframes fbxSpin{to{transform:rotate(360deg)}}
-/* nút bật trên thanh CVTube */
+/* nút bật trên thanh YouTube */
 .fbx-toggle{display:inline-flex;align-items:center;gap:7px;border:2px solid var(--ink);border-radius:calc(99px*var(--rk,1));background:var(--surface);color:var(--text);
   font:800 13px var(--f-body);padding:6px 12px 6px 7px;cursor:pointer;box-shadow:var(--hs,2px 2px 0 var(--ink));white-space:nowrap}
 .fbx-toggle.on{background:#0866ff;color:#fff}

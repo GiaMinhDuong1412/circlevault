@@ -1,4 +1,4 @@
-ADDON THỬ NGHIỆM: Facebook bên cạnh tab YouTube (CVTube)
+ADDON THỬ NGHIỆM: Facebook bên cạnh YouTube (tab Mạng xã hội)
 
 Gỡ hoàn toàn (app vẫn chạy bình thường):
   1. Xóa thư mục frontend/addons/facebook/
