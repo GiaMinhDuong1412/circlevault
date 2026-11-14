@@ -35,18 +35,54 @@ function listCard(v, small) {
       <span class="yv-mt">${esc(v.sub)}</span></span></span></a>`;
 }
 
-const FEED_IC = {home: '⌂', subs: '★', later: '◷', liked: '♥', history: '↺'};
+/* bản vẽ A: thanh trên gọn + cột mục bên trái (mục + kênh đăng ký) + chip chủ đề + lưới video */
+const FEED_IC = {
+  home: 'M3 11 12 3l9 8v10h-6v-6H9v6H3z',
+  subs: 'M4 6h16v12H4zM10 9l5 3-5 3z',
+  later: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
+  liked: 'M7 10v10H3V10zm0 0 5-7c2 0 3 1 3 3l-1 4h6c1 0 2 1 2 2l-2 7c0 1-1 1-2 1H7',
+  history: 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5',
+};
 function head() {
   const p = Y.page, st = Y.status || {};
   return `<div class="yt-top">
-    <div class="yt-brand"><span class="yt-logo" aria-hidden="true">▶</span><b>YouTube</b></div>
-    <form class="yt-search" id="ytQ" autocomplete="off"><span class="yt-sic" aria-hidden="true">⌕</span><input type="search" id="ytQin" placeholder="Tìm video, kênh, bài hát…" value="${p.t === 'search' ? esc(p.q) : ''}" aria-label="Tìm trên YouTube">
+    <div class="yt-brand"><span class="yt-logo" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M3 1.5v9l7-4.5z" fill="#fff"/></svg></span><b>YouTube</b></div>
+    <form class="yt-search" id="ytQ" autocomplete="off"><input type="search" id="ytQin" placeholder="Tìm video, kênh, bài hát…" value="${p.t === 'search' ? esc(p.q) : ''}" aria-label="Tìm trên YouTube">
       <button class="btn yellow" type="submit" aria-label="Tìm">Tìm</button><div class="yt-sug" id="ytSug" hidden></div></form>
     <span class="sp"></span>
-    ${st.logged_in ? '<span class="yt-acc" title="Đã đăng nhập YouTube">● Tài khoản</span>' : '<button class="btn sm red" type="button" id="ytIn">Đăng nhập YouTube</button>'}
     ${desk ? '<button class="btn sm plain" type="button" id="ytBrowser" title="Mở trình duyệt YouTube đầy đủ trong app">Trình duyệt YouTube</button>' : ''}
-    <nav class="yt-tabs">${FEEDS.map(([k, n]) => `<button class="yt-tab${p.t === 'feed' && p.kind === k ? ' on' : ''}" type="button" data-yfeed="${k}"><i>${FEED_IC[k]}</i>${n}</button>`).join('')}</nav>
+    ${st.logged_in ? '<span class="yt-me" title="Đã đăng nhập YouTube" aria-label="Đã đăng nhập YouTube">✓</span>' : '<button class="btn sm red" type="button" id="ytIn">Đăng nhập YouTube</button>'}
   </div>`;
+}
+function rail() {
+  const p = Y.page;
+  return `<nav class="yt-rail" aria-label="Mục YouTube">
+    ${FEEDS.map(([k, n]) => `<button class="yt-ri${p.t === 'feed' && p.kind === k ? ' on' : ''}" type="button" data-yfeed="${k}">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="${FEED_IC[k]}"/></svg>${n}</button>`).join('')}
+    <div class="yt-rsep"></div>
+    <div class="yt-rh">KÊNH ĐĂNG KÝ</div>
+    <div id="ytChans">${chansHtml()}</div>
+  </nav>`;
+}
+function chansHtml() {
+  if (!(Y.status || {}).logged_in) return '<p class="hint yt-rnote">Đăng nhập để thấy kênh bạn đăng ký.</p>';
+  if (!Y.chans) return '<p class="hint yt-rnote">Đang tải…</p>';
+  if (!Y.chans.length) return '<p class="hint yt-rnote">Chưa có.</p>';
+  return Y.chans.map(c => `<button class="yt-rc" type="button" data-ych="${esc(c.id)}">${chDot(c.name)}<span>${esc(c.name)}</span></button>`).join('');
+}
+/* kênh đăng ký cho cột trái: lấy từ mục Kênh đăng ký (máy chủ nhớ 5 phút), tải nền */
+let chansLoading = false;
+async function loadChans() {
+  if (Y.chans || chansLoading || !(Y.status || {}).logged_in) return;
+  chansLoading = true;
+  try {
+    const d = await api('/api/yt/feed?kind=subs');
+    const seen = new Set();
+    Y.chans = (d.items || []).filter(v => v.channel_id && !seen.has(v.channel_id) && seen.add(v.channel_id))
+      .slice(0, 10).map(v => ({id: v.channel_id, name: v.channel}));
+  } catch (e) { Y.chans = []; }
+  chansLoading = false;
+  const box = $('#ytChans'); if (box) box.innerHTML = chansHtml();
 }
 
 async function render() {
@@ -54,7 +90,8 @@ async function render() {
   if (!Y.status) { try { Y.status = await api('/api/yt/status'); } catch (e) { Y.status = {}; } }
   const p = Y.page, my = ++Y.seq;
   if (p.t === 'watch') return renderWatch(my);
-  box.innerHTML = head() + `<div class="yt-body"><div class="empty"><span class="spin"></span> ${p.refresh ? 'Đang lấy đề xuất mới…' : 'Đang tải…'}</div></div>`;
+  box.innerHTML = head() + `<div class="yt-a">${rail()}<div class="yt-body"><div class="empty"><span class="spin"></span> ${p.refresh ? 'Đang lấy đề xuất mới…' : 'Đang tải…'}</div></div></div>`;
+  loadChans();
   bindHead();
   let d;
   try {
@@ -89,8 +126,16 @@ async function render() {
        <div class="btn-row"><button class="btn sm red" type="button" data-ylogin>Đăng nhập YouTube lại</button>
        <button class="btn sm plain" type="button" data-yrefresh>⟳ Thử lại</button></div></div>`
     : d.note ? `<p class="hint yt-note">${esc(d.note)}</p>` : '';
-  body.innerHTML = title + note
-    + (d.items.length ? `<div class="yt-grid${p.t === 'feed' && p.kind === 'home' && d.items[0].kind !== 'list' ? ' hero' : ''}">${d.items.map(v => card(v)).join('')}</div>`
+  const isHome = p.t === 'feed' && p.kind === 'home';
+  const lists = d.items.filter(x => x.kind === 'list').length;
+  const chips = isHome && d.items.length ? `<div class="yt-chipbar">
+      <button class="yt-chip${!p.only ? ' on' : ''}" type="button" data-yonly="">Tất cả</button>
+      ${lists ? `<button class="yt-chip${p.only === 'list' ? ' on' : ''}" type="button" data-yonly="list">Danh sách kết hợp</button>` : ''}
+      <button class="yt-chip${p.only === 'video' ? ' on' : ''}" type="button" data-yonly="video">Chỉ video</button>
+      ${(d.topics || []).map(t => `<button class="yt-chip" type="button" data-yq="${esc(t)}">${esc(t)}</button>`).join('')}</div>` : '';
+  if (isHome && p.only) d = {...d, items: d.items.filter(x => p.only === 'list' ? x.kind === 'list' : x.kind !== 'list')};
+  body.innerHTML = chips + title + note
+    + (d.items.length ? `<div class="yt-grid">${d.items.map(v => card(v)).join('')}</div>`
       : secs.length ? secs.map(x => `<h4 class="yt-sec">${esc(x.title)}</h4><div class="yt-grid">${x.items.map(v => card(v)).join('')}</div>`).join('')
       : `<div class="empty"><h3>Chưa có video nào</h3>${p.t === 'feed' ? '<p>Thử bấm Làm mới, hoặc tìm video ở ô phía trên. Nếu vẫn trống: Đăng nhập YouTube lại (đăng nhập có thể đã hết hạn).</p>' : ''}</div>`);
 }
@@ -499,6 +544,8 @@ document.addEventListener('click', e => {
   if (e.target.closest('[data-yretry]')) return render();
   if (e.target.closest('[data-ylogin]')) return window.CV.ytLogin && window.CV.ytLogin();
   if (e.target.closest('[data-yrefresh]')) { Y.page.refresh = true; return render(); }
+  const only = e.target.closest('[data-yonly]');
+  if (only) { Y.page.only = only.dataset.yonly || undefined; return render(); }
   if (e.target.closest('[data-yembed]')) { stopPlayer(); $('#ywPlayer').innerHTML = embedHtml(Y.page.v, encodeURIComponent(location.origin)); $('#ywNote').hidden = true; return; }
   const a = e.target.closest('[data-ya]');
   if (a) return act(a.dataset.ya);

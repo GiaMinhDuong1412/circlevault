@@ -1153,3 +1153,31 @@ body.yt-bar #toasts{bottom:calc(110px + env(safe-area-inset-bottom,0px))}
 .ytbar.embed .pb-ctrl,.ytbar.embed .pb-seek,.ytbar.embed #ybMute,.ytbar.embed #ybVol{display:none}
 .ytbar.embed .pb-center::before{content:"Đang phát bằng trình phát YouTube";font:600 12.5px var(--f-body);color:var(--muted)}
 @media (max-width: 760px){ .ytbar{grid-template-columns:minmax(0,1fr) auto} .ytbar .pb-center{grid-column:1/-1;order:3} .ytbar #ybVol{display:none} }
+
+/* ------------------------------------------------------------ YouTube – bản vẽ A (thanh trên gọn + cột mục bên trái) */
+.yt-top{padding:12px 16px}
+.yt-logo{transform:none;width:36px;height:26px;background:#ff0033}
+.yt-brand b{font-size:20px}
+.yt-search input{padding-left:16px}
+.yt-me{width:36px;height:36px;border-radius:50%;border:2px solid var(--ink);background:var(--violet);color:var(--on-accent);display:grid;place-items:center;font:900 15px var(--f-body);flex:none}
+.yt-a{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.yt-rail{flex:1 1 200px;max-width:220px;display:flex;flex-direction:column;gap:4px;background:var(--surface);border:var(--bw) solid var(--ink);
+  border-radius:calc(10px*var(--rk,1));box-shadow:var(--sh);padding:10px;position:sticky;top:150px}
+.yt-ri{display:flex;align-items:center;gap:12px;padding:10px 12px;border:2px solid transparent;border-radius:calc(8px*var(--rk,1));background:none;
+  color:var(--text);font:800 14.5px var(--f-body);cursor:pointer;text-align:left}
+.yt-ri:hover{background:var(--surface-2)}
+.yt-ri.on{background:var(--yellow);color:var(--on-accent);border-color:var(--ink)}
+.yt-rsep{height:2px;background:var(--surface-2);margin:8px 4px}
+.yt-rh{font:800 11px var(--f-body);letter-spacing:.06em;color:var(--muted);padding:4px 10px}
+.yt-rc{display:flex;align-items:center;gap:10px;width:100%;padding:6px 10px;border:0;border-radius:calc(8px*var(--rk,1));background:none;color:var(--text);
+  font:600 14px var(--f-body);cursor:pointer;text-align:left;min-width:0}
+.yt-rc:hover{background:var(--surface-2)}
+.yt-rc span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.yt-rc .yv-av{width:26px;height:26px;font-size:11px;margin:0}
+.yt-rnote{margin:2px 10px;font-size:12.5px}
+.yt-a>.yt-body{flex:999 1 560px;min-width:0}
+.yt-chipbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.yt-chip{font:800 13px var(--f-body);padding:7px 14px;border:2px solid var(--ink);border-radius:calc(99px*var(--rk,1));background:var(--surface);color:var(--text);cursor:pointer}
+.yt-chip:hover{background:var(--surface-2)}
+.yt-chip.on{background:var(--ink);color:var(--surface)}
+@media (max-width: 760px){ .yt-rail{max-width:none;position:static;flex-direction:row;flex-wrap:wrap} .yt-rail .yt-rsep,.yt-rail .yt-rh,.yt-rail #ytChans{display:none} }
