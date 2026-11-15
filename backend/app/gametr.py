@@ -31,7 +31,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from . import config, fontcheck, langscan, translate, unitygame, unreal, xunity
+from . import config, fontcheck, langscan, translate, unitygame, unityload, unreal, xunity
 
 router = APIRouter(prefix="/api/translate/games", dependencies=[Depends(translate._local_only)])
 GAMES = config.DATA / "translate" / "games"
@@ -1316,6 +1316,7 @@ class OptsIn(BaseModel):
     name: str | None = None
     brief: str | None = None          # bối cảnh game (thể loại, nhân vật, xưng hô…) gửi kèm mỗi lô cho Claude
     glossary: str | None = None       # thuật ngữ riêng của game: "gốc = dịch" mỗi dòng
+    vi_mode: str | None = None        # font game thiếu dấu: full | safe | nodau | en
 
 
 @router.patch("/{pid}")
@@ -1325,6 +1326,9 @@ def set_opts(pid: str, body: OptsIn):
         for k, v in body.model_dump(exclude_none=True).items():
             if k in ("brief", "glossary"):
                 p[k] = v[:8000]
+            elif k == "vi_mode":
+                if v in fontcheck.VI_MODES:
+                    p["opts"]["vi_mode"] = v
             elif k == "name":
                 p["name"] = v.strip()[:120] or p["name"]
             else:
@@ -1719,21 +1723,88 @@ def _final(p: dict) -> list[dict]:
     return out
 
 
+_apply_jobs: dict[str, dict] = {}
+
+
+def _font_have(p: dict) -> set[str] | None:
+    """Chữ Việt mà MỌI font thiếu dấu của game đều có (để chế độ "Giữ dấu font có" chỉ dùng chữ hiển thị được)."""
+    fonts = [f for f in (p.get("fontscan") or {}).get("fonts", []) if not f.get("ok")]
+    if not fonts:
+        return None
+    have = None
+    for f in fonts:
+        if f.get("missing", -1) < 0 or "have" not in f:
+            return None
+        h = set(f["have"])
+        have = h if have is None else have & h
+    return have
+
+
 @router.post("/{pid}/apply")
 def apply(pid: str):
+    """Ghi bản dịch vào game – chạy nền (file Unity lớn mất vài chục giây), trang hỏi GET /apply để vẽ tiến độ."""
     p = _load(pid)
     if WORKER.current == pid:
         raise HTTPException(409, "Đang dịch, bấm Dừng hoặc đợi dịch xong rồi áp dụng.")
     root = Path(p["root"])
     if not root.exists():
         raise HTTPException(400, f"Không thấy thư mục game: {root}")
+    groot = Path(p.get("groot") or root)
+    if groot.is_dir() and not can_write(groot):
+        raise perm_error(groot)
+    job = _apply_jobs.get(pid)
+    if job and job.get("state") == "running":
+        return {"job": job}
+    job = {"state": "running", "text": "Đang chuẩn bị…", "done": 0, "total": 0, "started": time.time(), "name": p["name"]}
+    _apply_jobs[pid] = job
+    threading.Thread(target=_apply_run, args=(pid, job), daemon=True, name="gametr-apply").start()
+    return {"job": job}
+
+
+@router.get("/{pid}/apply")
+def apply_state(pid: str):
+    return {"job": _apply_jobs.get(pid)}
+
+
+def _apply_run(pid: str, job: dict):
+    def prog(text, done=None, total=None):
+        job["text"] = text
+        if total:
+            job["done"], job["total"] = done or 0, total
+    try:
+        res = _apply_do(pid, prog)
+        job.update(state="done", text="Xong", result=res, done=job.get("total", 0), finished=time.time())
+    except HTTPException as e:
+        job.update(state="error", error=e.detail, status=e.status_code, finished=time.time())
+    except Exception as e:      # báo lên trang
+        job.update(state="error", error=f"{type(e).__name__}: {e}", status=500, finished=time.time())
+
+
+def _apply_do(pid: str, prog) -> dict:
+    p = _load(pid)
+    root = Path(p["root"])
+    mode = p["opts"].get("vi_mode") or "full"
+    if mode == "en":                                # người dùng chọn chơi tiếng Anh: gỡ bản dịch, giữ dự án
+        prog("Đang trả game về tiếng Anh…")
+        n = _restore_do(p)
+        with _lock:
+            q = _load(pid)
+            q["applied"] = None
+            _save(q)
+        return {"engine": p["engine"], "restored": n, "mode": "en"}
     try:
         final = _final(p)
+        if mode in ("safe", "nodau"):               # font của game thiếu dấu: đổi chữ cho hiển thị được
+            have = _font_have(p)
+            for it in final:
+                if it.get("final"):
+                    it["final"] = fontcheck.fit_text(it["final"], mode, have)
         res = {}
+        prog("Đang ghi bản dịch…")
         if p["engine"] == "renpy":
             res = apply_renpy(root, final, p["opts"])
         elif p["engine"] == "unity":
-            res = unitygame.apply(root, final, p.get("unity") or {})
+            res = unitygame.apply(root, final, p.get("unity") or {}, prog)
         elif p["engine"] == "xunity":
             xunity.write_config(root, p["id"], p.get("lang") or "en")
             res = xunity.apply(root, final)
@@ -1743,7 +1814,7 @@ def apply(pid: str):
         elif p["engine"] not in ("files", "unreal"):
             res = apply_rpg(root, final, p["opts"])
         if p.get("extra"):
-            ex = langscan.apply(Path(p.get("groot") or p["path"]), final, p["extra"], p.get("lang") or "en")
+            ex = langscan.apply(Path(p.get("groot") or p["path"]), final, p["extra"], p.get("lang") or "en", prog)
             res["texts"] = res.get("texts", 0) + ex["texts"]
             res["files"] = res.get("files", 0) + ex["files"]
             if ex["errors"]:
@@ -1754,7 +1825,7 @@ def apply(pid: str):
             for t in fix["targets"]:
                 groups.setdefault(t.get("cid") or fix.get("cid") or "", []).append(t)
             for cid, ts in groups.items():
-                fr = fontcheck.apply(_font_root(p), cid, ts, _aes(p))
+                fr = fontcheck.apply(_font_root(p), cid, ts, _aes(p), prog)
                 res["fonts"] = res.get("fonts", 0) + fr["fonts"]
                 if fr["errors"]:
                     res["errors"] = (res.get("errors") or []) + fr["errors"]
@@ -1766,7 +1837,7 @@ def apply(pid: str):
         p = _load(pid)
         p["applied"] = time.time()
         _save(p)
-    return {**res, "engine": p["engine"]}
+    return {**res, "engine": p["engine"], "mode": mode}
 
 
 @router.post("/{pid}/restore")
@@ -1774,17 +1845,7 @@ def restore(pid: str):
     p = _load(pid)
     root = Path(p["root"])
     try:
-        n = 0
-        if p.get("extra"):
-            n += langscan.restore(Path(p.get("groot") or p["path"]), p["extra"])
-        if p.get("fontfix"):
-            n += fontcheck.restore(_font_root(p), p["fontfix"])
-        if p["engine"] == "xunity":
-            n += xunity.restore(root)
-        elif p["engine"] == "unreal":
-            n += unreal.restore(root, (p.get("unreal") or {}).get("sources") or [])
-        elif p["engine"] not in ("files", "unreal"):
-            n += restore_renpy(root) if p["engine"] == "renpy" else unitygame.restore(root) if p["engine"] == "unity" else restore_rpg(root)
+        n = _restore_do(p)
     except PermissionError as e:
         raise perm_error(Path(p.get("groot") or root), err=e)
     with _lock:
@@ -1792,6 +1853,22 @@ def restore(pid: str):
         p["applied"] = None
         _save(p)
     return {"ok": True, "files": n}
+
+
+def _restore_do(p: dict) -> int:
+    root = Path(p["root"])
+    n = 0
+    if p.get("extra"):
+        n += langscan.restore(Path(p.get("groot") or p["path"]), p["extra"])
+    if p.get("fontfix"):
+        n += fontcheck.restore(_font_root(p), p["fontfix"])
+    if p["engine"] == "xunity":
+        n += xunity.restore(root)
+    elif p["engine"] == "unreal":
+        n += unreal.restore(root, (p.get("unreal") or {}).get("sources") or [])
+    elif p["engine"] not in ("files", "unreal"):
+        n += restore_renpy(root) if p["engine"] == "renpy" else unitygame.restore(root) if p["engine"] == "unity" else restore_rpg(root)
+    return n
 
 
 # ================================================================== quyền ghi thư mục game
@@ -1851,6 +1928,159 @@ def grant(pid: str):
     return {"ok": True}
 
 
+# ================================================================== tìm chữ chưa dịch trong file game
+_find_jobs: dict[str, dict] = {}
+FIND_TYPES = ("MonoBehaviour", "TextAsset")
+
+
+class FindIn(BaseModel):
+    q: str
+
+
+def _unity_files(root: Path) -> list[Path]:
+    out = []
+    for d in [x for x in root.iterdir() if x.is_dir() and x.name.endswith("_Data")]:
+        for f in d.rglob("*"):
+            n = f.name.lower()
+            if any(part.lower() in (langscan.BACKUP_DIR.lower(), langscan.PATCH_BACKUP.lower()) for part in f.relative_to(root).parts):
+                continue
+            if f.is_file() and (f.suffix.lower() in (".assets", ".bundle") or n in ("resources.assets", "globalgamemanagers")
+                                or re.fullmatch(r"level\d+", n)):
+                out.append(f)
+    return sorted(out, key=lambda f: f.stat().st_size)
+
+
+@router.post("/{pid}/find")
+def find_text(pid: str, body: FindIn):
+    """Tìm một chữ trong game (vd "New Game") – chạy nền: câu đã có trong dự án, file chữ và đối tượng Unity chứa nó."""
+    q = body.q.strip()
+    if len(q) < 2:
+        raise HTTPException(400, "Gõ ít nhất 2 ký tự.")
+    p = _load(pid)
+    ql = q.lower()
+    known = [{"i": i, "t": it["t"][:160], "skip": bool(it.get("skip")), "why": it.get("why"), "vi": it.get("vi")}
+             for i, it in enumerate(p["items"]) if ql in it["t"].lower()][:20]
+    job = {"state": "running", "q": q, "text": "Đang tìm…", "done": 0, "total": 0, "known": known, "hits": [], "started": time.time()}
+    _find_jobs[pid] = job
+    threading.Thread(target=_find_run, args=(p, job), daemon=True, name="gametr-find").start()
+    return job
+
+
+@router.get("/{pid}/find")
+def find_state(pid: str):
+    return _find_jobs.get(pid) or {}
+
+
+def _find_run(p: dict, job: dict):
+    root = Path(p.get("groot") or p["path"])
+    needle = job["q"].lower().encode("utf-8")
+    have = {(x.get("rel"), x.get("path_id")) for x in p.get("extra") or []}
+    try:
+        texts = [f for f in root.rglob("*") if f.is_file() and f.suffix.lower() in langscan.TEXT_EXT and f.stat().st_size <= langscan.MAX_TEXT
+                 and not any(part.lower() in (langscan.BACKUP_DIR.lower(), langscan.PATCH_BACKUP.lower()) for part in f.relative_to(root).parts)]
+        unity = _unity_files(root) if any(x.is_dir() and x.name.endswith("_Data") for x in root.iterdir()) else []
+        job["total"] = len(texts) + len(unity)
+        for f in texts:
+            rel = str(f.relative_to(root)).replace("\\", "/")
+            job["text"], job["done"] = f"Đang tìm trong {rel}", job["done"] + 1
+            try:
+                if needle in langscan._src(root, f).read_bytes().lower():
+                    job["hits"].append({"rel": rel, "kind": "file", "label": rel, "in": any(h[0] == rel for h in have), "strings": None})
+            except OSError:
+                continue
+        for f in unity:
+            if job.get("cancel") or len(job["hits"]) >= 40:
+                break
+            rel = str(f.relative_to(root)).replace("\\", "/")
+            job["text"], job["done"] = f"Đang tìm trong {rel}", job["done"] + 1
+            try:
+                with unityload.open_env(langscan._src(root, f)) as env:
+                    for o in env.objects:
+                        if o.type.name not in FIND_TYPES or o.byte_size > 64 * 1024 * 1024:
+                            continue
+                        raw = o.get_raw_data()
+                        if needle not in raw.lower():
+                            continue
+                        strs = [x[2] for x in langscan.mb_strings(raw)]
+                        texts_ok = [x for x in strs if langscan.textlike(x, True) and not langscan.suspect(x)]
+                        match = next((x for x in strs if job["q"].lower() in x.lower()), "")
+                        af = getattr(o, "assets_file", None)
+                        job["hits"].append({"rel": rel, "path_id": int(o.path_id), "kind": "mono" if o.type.name == "MonoBehaviour" else "textasset",
+                                            "label": langscan._mb_label(af, o, raw) if o.type.name == "MonoBehaviour" else (o.peek_name() or "TextAsset"),
+                                            "strings": len(texts_ok), "match": match[:160], "sample": [x[:80] for x in texts_ok[:4]],
+                                            "in": (rel, int(o.path_id)) in have})
+                        if len(job["hits"]) >= 40:
+                            break
+            except Exception:       # file không đọc được: bỏ qua
+                continue
+        job.update(state="done", text="Xong")
+    except Exception as e:      # báo lên trang
+        job.update(state="error", text=f"{type(e).__name__}: {e}")
+
+
+class FindAddIn(BaseModel):
+    rel: str
+    path_id: int | None = None
+    kind: str = "mono"
+
+
+@router.post("/{pid}/find/add")
+def find_add(pid: str, body: FindAddIn):
+    """Thêm chữ của một đối tượng Unity / file tìm được vào dự án (thành nguồn "extra", áp dụng như file chữ khác)."""
+    p = _load(pid)
+    root = Path(p.get("groot") or p["path"])
+    f = (root / body.rel).resolve()
+    if root.resolve() not in f.parents or not f.is_file():
+        raise HTTPException(400, "Không thấy file này trong thư mục game.")
+    lang = p.get("lang") or "en"
+    new: list[tuple[str, str]] = []
+    if body.kind == "file":
+        src = langscan._scan_text(root, f, body.rel, lang) or {}
+        if not src:
+            raise HTTPException(400, "Không đọc được câu chữ nào trong file này.")
+        src.update(id=f"x{int(time.time())}", on=True, loose=True)
+        new = [(it["t"], it.get("ctx") or Path(body.rel).name) for it in src.pop("_items")]
+        source = {k: v for k, v in src.items() if k != "sample"}
+    else:
+        if body.path_id is None:
+            raise HTTPException(400, "Thiếu mã đối tượng.")
+        with unityload.open_env(langscan._src(root, f)) as env:
+            o = next((x for x in env.objects if x.path_id == body.path_id), None)
+            if o is None:
+                raise HTTPException(404, "Không thấy đối tượng này trong file.")
+            raw = o.get_raw_data()
+            label = langscan._mb_label(getattr(o, "assets_file", None), o, raw) if o.type.name == "MonoBehaviour" else (o.peek_name() or "TextAsset")
+            if o.type.name == "TextAsset":
+                d = o.read()
+                fmt = langscan.sniff_fmt(d.m_Script, Path(label).suffix.lower())
+                ents = langscan.entries(d.m_Script, fmt, True, lang)
+                new = [(t, c or label) for t, c in langscan.texts_of(ents)]
+                source = {"kind": "textasset", "rel": body.rel, "path_id": body.path_id, "asset": label, "fmt": fmt, "loose": True,
+                          "count": len(new), "lang": lang, "label": f"{body.rel} → {label}", **({"col": ents["col"]} if isinstance(ents, dict) else {})}
+            else:
+                strs = [x[2] for x in langscan.mb_strings(raw)]
+                new = [(t, label[:80]) for t in dict.fromkeys(x for x in strs if langscan.textlike(x, True) and not langscan.suspect(x))]
+                source = {"kind": "mono", "rel": body.rel, "path_id": body.path_id, "asset": label, "fmt": "mono", "loose": True,
+                          "count": len(new), "lang": lang, "label": f"{body.rel} → {label}"}
+    if not new:
+        raise HTTPException(400, "Đối tượng này không có câu chữ nào dịch được.")
+    with _lock:
+        p = _load(pid)
+        p.setdefault("extra", [])
+        if not any(x.get("rel") == source.get("rel") and x.get("path_id") == source.get("path_id") for x in p["extra"]):
+            p["extra"].append(source)
+        seen = {it["t"] for it in p["items"]}
+        added = 0
+        for t, ctx in new:
+            if t in seen or not t.strip():
+                continue
+            seen.add(t)
+            p["items"].append({"t": t, "kind": "ui", "ctx": ctx, "who": "", "vi": None})
+            added += 1
+        _save(p)
+    return {**_summary(p), "added": added, "found": len(new)}
+
+
 # ================================================================== font tiếng Việt của game
 _font_jobs: dict[str, dict] = {}
 
@@ -1878,6 +2108,8 @@ def _font_state(p: dict) -> dict:
     script = p["engine"] in ("renpy", "rpgmv", "rpgmz")
     return {"scan": scan, "job": {k: v for k, v in job.items() if not k.startswith("_")} or None, "cat": main or "sans",
             "pick": p["opts"].get("font_pick"), "fix": p.get("fontfix"), "mode": "pick" if script else "replace",
+            "vi_mode": p["opts"].get("vi_mode") or "full", "vi_modes": fontcheck.VI_MODES,
+            "have": "".join(sorted(_font_have(p) or [])) or None,
             "engine": p["engine"], "cats": fontcheck.CATS}
 
 

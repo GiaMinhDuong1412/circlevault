@@ -71,6 +71,11 @@ def _games() -> list[dict]:
         out.append({"key": f"game:{pid}", "kind": "game", "label": "Việt hóa game", "title": s["name"], "pct": _pct(s["done"], s["total"]),
                     "status": st, "sub": f"{s['done']:,}/{s['total']:,} câu".replace(",", ".") + (" · đang chờ lượt" if st == "queued" else "")
                     + (f" · {s['note'][:60]}" if s.get("note") else ""), "open": {"tr": "game", "id": pid}})
+    for pid, job in list(gametr._apply_jobs.items()):
+        if job.get("state") == "running":
+            out.append({"key": f"apply:{pid}", "kind": "game", "label": "Áp dụng vào game", "title": job.get("name") or "",
+                        "pct": round(job["done"] / job["total"] * 100, 1) if job.get("total") else None, "status": "running",
+                        "sub": job.get("text") or "", "open": {"tr": "game", "id": pid}})
     for pid, job in list(gametr._font_jobs.items()):
         if job.get("state") == "running" and time.time() - job.get("started", 0) < 1800:
             out.append({"key": f"font:{pid}", "kind": "font", "label": "Kiểm tra font", "title": job.get("text") or "", "pct": None,

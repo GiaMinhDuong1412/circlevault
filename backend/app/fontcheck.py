@@ -147,6 +147,7 @@ def info(data: bytes) -> dict | None:
         weight, italic = 400, False
     return {"family": name, "style": _name(tt, (17, 2)) or "Regular", "cat": _cat(tt, name), "weight": weight, "italic": italic,
             "latin": latin, "missing": len(missing), "missing_sample": "".join(missing[:14]), "total": len(VI),
+            "have": "".join(c for c in VI if ord(c) in cmap),
             "variable": "fvar" in tt, "flavor": getattr(tt, "flavor", None)}
 
 
@@ -274,16 +275,36 @@ def _scan_objs(objs, rel: str, out: list, tmp_count: list):
                 e = _entry(f"u:{rel}:{o.path_id}", "unity", f"{name} ({rel})", info(data), rel=rel, path_id=int(o.path_id))
                 if e:
                     out.append(e)
-            elif tname == "MonoBehaviour" and 200 < o.byte_size < 64 * 1024 * 1024:
+            elif tname == "MonoBehaviour" and 2048 < o.byte_size < 32 * 1024 * 1024:
                 name = o.peek_name() or ""
-                if not re.search(r"(?i)\bSDF\b|TMP|TextMesh", name):
+                if re.search(r"(?i)settings", name):
                     continue
-                tmp_count[0] += 1
-                e = _tmp_entry(o, name, rel)
+                e = _tmp_entry(o, name, rel)              # font TMP nhận bằng bảng chữ thô, không dựa vào tên
                 if e:
+                    tmp_count[0] += 1
                     out.append(e)
         except Exception:       # đối tượng không đọc được: bỏ qua
             continue
+
+
+_TMP_REC16 = re.compile(rb"(?:\x01\x00\x00\x00..\x00\x00..\x00\x00\x00\x00\x80\x3f){24,}", re.S)   # TMP_Character: type=1, unicode, glyph, scale=1
+_TMP_REC12 = re.compile(rb"(?:..\x00\x00..\x00\x00\x00\x00\x80\x3f){24,}", re.S)                  # bản TMP cũ không có type
+
+
+def tmp_chars_raw(raw: bytes) -> set[int]:
+    """Bảng chữ của font TextMeshPro đọc thẳng từ dữ liệu thô (game IL2CPP không có typetree): dãy bản ghi
+    (unicode, chỉ số glyph, tỉ lệ 1.0) liền nhau trong m_CharacterTable."""
+    import struct
+    best: set[int] = set()
+    for rx, size, off in ((_TMP_REC16, 16, 4), (_TMP_REC12, 12, 0)):
+        for m in rx.finditer(raw):
+            chunk = m.group(0)
+            vals = {struct.unpack_from("<I", chunk, i + off)[0] for i in range(0, len(chunk) - size + 1, size)}
+            if len(vals) > len(best) and sum(1 for v in vals if 0x20 <= v < 0x7f) >= 20:
+                best = vals
+        if best:
+            break
+    return best
 
 
 def _tmp_entry(o, name: str, rel: str) -> dict | None:
@@ -294,19 +315,22 @@ def _tmp_entry(o, name: str, rel: str) -> dict | None:
             chars.add(int(it.get("m_Unicode", 0)))
         for it in tree.get("m_glyphInfoList") or []:
             chars.add(int(it.get("id", 0)))
-    except Exception:       # MonoBehaviour không có typetree (IL2CPP)
+    except Exception:       # MonoBehaviour không có typetree (IL2CPP): đọc thô
         pass
-    base = {"id": f"t:{rel}:{o.path_id}", "kind": "tmp", "label": f"{name} ({rel})", "family": name, "style": "TextMeshPro",
-            "cat": "sans", "weight": 400, "italic": False, "latin": True, "total": len(VI), "variable": False, "flavor": None,
-            "can_replace": False, "rel": rel, "path_id": int(o.path_id)}
     if not chars:
-        return {**base, "missing": -1, "missing_sample": "", "ok": False,
-                "note": "Không đọc được bảng chữ (game IL2CPP) – có thể thiếu dấu."}
-    if not all(ord(c) in chars for c in "aeo"):
-        return None
+        try:
+            chars = tmp_chars_raw(o.get_raw_data())
+        except Exception:       # không đọc được
+            chars = set()
+    if not chars or not all(ord(c) in chars for c in "aeo"):
+        return None                               # không phải font (TMP Settings, bảng màu…)
     miss = [c for c in VI if ord(c) not in chars]
-    return {**base, "missing": len(miss), "missing_sample": "".join(miss[:14]), "ok": not miss,
-            "note": "" if not miss else "Font TextMeshPro: chữ vẽ sẵn thành ảnh, app chưa thêm dấu được."}
+    return {"id": f"t:{rel}:{o.path_id}", "kind": "tmp", "label": f"{name or 'Font TextMeshPro'} ({rel})", "family": name or "TextMeshPro",
+            "style": "TextMeshPro", "cat": "sans", "weight": 400, "italic": False, "latin": True, "total": len(VI), "variable": False,
+            "flavor": None, "can_replace": False, "rel": rel, "path_id": int(o.path_id),
+            "missing": len(miss), "missing_sample": "".join(miss[:14]), "ok": not miss, "have": "".join(c for c in VI if ord(c) in chars),
+            "note": "" if not miss else "Font TextMeshPro: chữ đã vẽ sẵn thành ảnh nên app chưa thêm dấu được – chọn cách hiển thị ở mục "
+                                        "“Khi font thiếu dấu” bên dưới."}
 
 
 def _scan_unreal(root: Path, aes: bytes | None, notes: list[str]) -> list[dict]:
@@ -563,8 +587,9 @@ def _backup(root: Path, rel: str):
         shutil.copy2(src, b)
 
 
-def apply(root: Path, cid: str, targets: list[dict], aes: bytes | None = None) -> dict:
+def apply(root: Path, cid: str, targets: list[dict], aes: bytes | None = None, prog=None) -> dict:
     """Thay các font được chọn bằng font cid. targets = mục trong scan_game (đã lọc theo id người chọn)."""
+    prog = prog or (lambda *a: None)
     root = Path(root)
     done, errors, files = 0, [], set()
     cache: dict[int, bytes] = {}
@@ -597,6 +622,7 @@ def apply(root: Path, cid: str, targets: list[dict], aes: bytes | None = None) -
         except (OSError, FontError) as e:
             errors.append(f"{t['label']}: {e}")
     for rel, ts in unity.items():
+        prog(f"Đang đổi font trong {rel}", None, None)
         try:
             done += _apply_unity(root, rel, ts, src)
             files.add(rel)
@@ -745,3 +771,45 @@ def preview_bytes(root: Path, f: dict, aes: bytes | None = None) -> bytes:
         from . import unreal
         return unreal.Pak(root / f["pak"], aes).read(f["name"])
     raise FontError("Không có dữ liệu font.")
+
+
+# ================================================================== chữ Việt khi font của game thiếu dấu
+VI_MODES = {"full": "Đầy đủ dấu", "safe": "Giữ dấu font có", "nodau": "Không dấu", "en": "Giữ tiếng Anh"}
+LATIN1_VI = {c for c in VI if ord(c) < 256}           # à á â ã è é ê ì í ò ó ô õ ù ú ý… (font Latin thường có)
+
+
+def _strip(c: str) -> str:
+    import unicodedata
+    if c in "đĐ":
+        return "d" if c == "đ" else "D"
+    return "".join(x for x in unicodedata.normalize("NFD", c) if not unicodedata.combining(x))
+
+
+def fit_char(c: str, have: set[str]) -> str:
+    """Chữ Việt mà font không có → chữ gần nhất font CÓ: giữ dáng nguyên âm (â ê ô) trước, rồi dấu thanh, cuối cùng chữ không dấu."""
+    import unicodedata
+    if c in have or c not in VI_SET:
+        return c
+    if c in "đĐ":
+        return "Ð" if c == "Đ" and "Ð" in have else _strip(c)
+    d = unicodedata.normalize("NFD", c)
+    base, marks = d[0], d[1:]
+    shape = "".join(m for m in marks if m in "̛̂̆")
+    tone = "".join(m for m in marks if m in "̣̀́̃̉")
+    for cand in (base + shape, base + tone):
+        x = unicodedata.normalize("NFC", cand)
+        if len(x) == 1 and x in have:
+            return x
+    return base
+
+
+VI_SET = set(VI) | {"đ", "Đ"}
+
+
+def fit_text(s: str, mode: str, have: set[str] | None = None) -> str:
+    if not s or mode in ("full", "en", None):
+        return s
+    if mode == "nodau":
+        return "".join(_strip(c) if c in VI_SET else c for c in s)
+    h = have if have is not None else LATIN1_VI
+    return "".join(fit_char(c, h) if c in VI_SET else c for c in s)

@@ -183,12 +183,14 @@ def scan(root: Path) -> tuple[list[dict], dict]:
 
 
 # ================================================================== ghi chữ + tắt CRC
-def apply(root: Path, items: list[dict], unity: dict) -> dict:
+def apply(root: Path, items: list[dict], unity: dict, prog=None) -> dict:
+    prog = prog or (lambda *a: None)
     _unitypy()
     tr = {it["t"]: it["final"] for it in items if it.get("final") and it["final"] != it["t"]}
     code = unity.get("locale") or "en"
     changed, files, names = 0, 0, []
-    for rel in unity.get("bundles") or []:
+    for k, rel in enumerate(unity.get("bundles") or []):
+        prog(f"Đang ghi bảng chữ {Path(rel).name}", k, len(unity.get("bundles") or []))
         p = root / rel
         if not p.exists():
             continue

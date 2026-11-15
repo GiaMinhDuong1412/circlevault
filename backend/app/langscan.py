@@ -979,7 +979,9 @@ def _write(p: Path, data: bytes):
     config.write_file(p, data)            # thử lại / bỏ thuộc tính chỉ đọc / ghi thẳng khi Windows không cho thay file
 
 
-def apply(root: Path, items: list[dict], sources: list[dict], prefer: str = "en") -> dict:
+def apply(root: Path, items: list[dict], sources: list[dict], prefer: str = "en", prog=None) -> dict:
+    """prog(chữ, đã xong, tổng): báo tiến độ cho trang (áp dụng file Unity lớn mất vài chục giây)."""
+    prog = prog or (lambda *a: None)
     tr = {it["t"]: it["final"] for it in items if it.get("final") and it["final"] != it["t"]}
     texts = files = 0
     errors = []
@@ -990,6 +992,7 @@ def apply(root: Path, items: list[dict], sources: list[dict], prefer: str = "en"
             continue
         if s["kind"] != "file":
             continue
+        prog(f"Đang ghi {s['rel']}", None, None)
         p = root / s["rel"]
         if not p.exists():
             errors.append(f"Không thấy {s['rel']}")
@@ -1007,7 +1010,8 @@ def apply(root: Path, items: list[dict], sources: list[dict], prefer: str = "en"
         UnityPy = _unitypy()
         if not UnityPy:
             raise RuntimeError("Thiếu thư viện UnityPy để ghi file Unity.")
-        for rel, lst in by_asset.items():
+        for k, (rel, lst) in enumerate(by_asset.items()):
+            prog(f"Đang ghi {rel} (file Unity {k + 1}/{len(by_asset)})", k, len(by_asset))
             p = root / rel
             if not p.exists():
                 errors.append(f"Không thấy {rel}")

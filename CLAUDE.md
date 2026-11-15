@@ -55,6 +55,15 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     Ren'Py/RPG Maker chỉ chọn (`opts.font_pick`): Ren'Py ghi `circlevault_vi_font(_bold).ttf` + font_replacement_map, RPG chép vào `fonts/circlevault-vi.ttf`.
     API trong gametr: `/{pid}/fonts` (+`/scan` chạy nền `_font_jobs`, `/apply` {cid, ids}, `/restore`), `/fontlib/candidates|file|upload`.
     `p["fontfix"].targets` mỗi font kèm `cid`; Áp dụng vào game ghi bản dịch TRƯỚC rồi thay font lại; Khôi phục trả cả font.
+  - **Áp dụng chạy nền**: `POST /games/<id>/apply` kiểm quyền ghi (423 ngay) rồi chạy `_apply_run` trong luồng, tiến độ `_apply_jobs[pid]`
+    ({state,text,done,total,result|error,status}), `GET /games/<id>/apply`; langscan/unitygame/fontcheck `apply(..., prog)` báo từng file;
+    trang `watchApply` vẽ thanh tiến độ, khóa nút; thanh Tiến trình có mục "Áp dụng vào game". `opts.vi_mode` (font thiếu dấu):
+    full | safe (`fontcheck.fit_text`: chữ font không có → chữ gần nhất font CÓ, giữ dáng â/ê/ô trước dấu thanh; bộ chữ = `_font_have` giao
+    các font thiếu dấu, không rõ thì Latin-1) | nodau | en (= `_restore_do`, gỡ bản dịch, giữ dự án). Font TextMeshPro: `tmp_chars_raw` đọc
+    m_CharacterTable từ dữ liệu thô (bản ghi 16 byte type=1,unicode,glyph,1.0f hoặc 12 byte bản cũ) – nhận font TMP theo bảng chữ, không theo tên.
+  - **Tìm chữ chưa dịch** (`POST /games/<id>/find {q}` chạy nền `_find_jobs`, `GET …/find`): câu đã có trong dự án (kể cả đang skip → nút ↺)
+    + file chữ / đối tượng Unity (MonoBehaviour, TextAsset trong .assets/.bundle/levelN) chứa chữ đó; `POST …/find/add {rel, path_id, kind}`
+    thêm nguồn `extra` (mono = mọi chuỗi `mb_strings` textlike + không `suspect`) + câu mới.
   - `xunity.py`: Unity "dịch khi chơi" – `POST /games/xunity-setup` tải BepInEx (5 cho Mono, 6 IL2CPP) + XUnity.AutoTranslator từ
     GitHub vào game (nhớ file đã thêm trong `DATA/translate/xunity/` để gỡ), AutoTranslatorConfig.ini: Endpoint=CustomTranslate,
     Url=`/api/translate/games/<id>/xunity` (GET from/to/text → câu đã có hoặc dịch Google, câu mới lưu vào dự án engine `xunity`).

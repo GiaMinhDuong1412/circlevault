@@ -1277,3 +1277,21 @@ body.yt-bar #toasts{bottom:calc(110px + env(safe-area-inset-bottom,0px))}
 .ys-b:hover{background:var(--yellow);color:#121212}
 .ys-b:active{transform:translate(2px,2px);box-shadow:none}
 @media (max-width:640px){.ys-stage{flex-direction:column}.ys-side{flex-direction:row;flex-wrap:wrap;justify-content:center}.ys-gap{display:none}}
+/* Việt hóa game: cách hiển thị khi font thiếu dấu + tiến độ áp dụng */
+.fn-modes{border-top:2px dashed var(--grid);padding-top:10px;margin-top:8px;display:flex;flex-direction:column;gap:8px}
+.fn-modes h4{margin:0;font-size:15px}
+.fn-mode-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.fn-mode{display:flex;flex-direction:column;gap:4px;border:2px solid var(--ink);border-radius:calc(8px*var(--rk,1));padding:8px 10px;
+  background:var(--surface);cursor:pointer;position:relative}
+.fn-mode input{position:absolute;top:10px;right:10px;accent-color:var(--green)}
+.fn-mode.on{background:var(--yellow);color:#121212;box-shadow:var(--hs,3px 3px 0 var(--ink))}
+.fn-mode.on .hint{color:#3a3a3a}
+.fn-mode b{padding-right:22px}
+.fn-mode-ex{font-size:13.5px;border-top:1px dashed currentColor;padding-top:4px;margin-top:2px;overflow-wrap:anywhere}
+.vh-applying{display:flex;flex-direction:column;gap:6px;border-color:var(--cyan)}
+.vh-find-f{display:flex;gap:8px;flex-wrap:wrap}
+.vh-find-f input{flex:1 1 220px;min-width:0}
+.vf-known,.vf-hits{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.vf-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;border:2px solid var(--ink);border-radius:calc(8px*var(--rk,1));padding:6px 10px;background:var(--surface)}
+.vf-row>span:first-child{font-weight:700;overflow-wrap:anywhere}
+.vf-row .hint{flex:1 1 200px;overflow-wrap:anywhere}

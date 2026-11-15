@@ -2,6 +2,17 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-16-ap-dung-tien-do-font-tmp",
+      "date": "2026-11-16",
+      "title": "Việt hóa game: áp dụng có tiến độ, xử lý font thiếu dấu, tìm chữ chưa dịch",
+      "items": [
+        "Áp dụng vào game chạy nền và hiện thanh tiến độ (đang ghi file nào, bao nhiêu %) ở dự án và thanh Tiến trình – bấm một lần là đủ, không cần bấm lại.",
+        "Font chữ vẽ sẵn (TextMeshPro) giờ đọc được bảng chữ kể cả game IL2CPP, báo đúng font thiếu dấu nào. Mục mới “Khi font của game thiếu dấu”: Đầy đủ dấu / Giữ dấu font có (thay chữ thiếu bằng chữ gần nhất, hết lỗi kiểu “Qufc vffng”) / Không dấu / Giữ tiếng Anh – có chữ mẫu xem trước từng cách.",
+        "Tìm chữ chưa dịch: gõ chữ còn tiếng Anh trong game (vd “New Game”, “Start”), app tìm trong dự án và mọi file dữ liệu game rồi thêm cả nhóm chữ đó vào để dịch. Chữ bị app lọc nhầm thì bấm ↺ ngay tại đó.",
+        "Bỏ nhận nhầm “TMP Settings” là font."
+      ]
+    },
+    {
       "id": "2026-11-15-sua-ap-dung-unity",
       "date": "2026-11-15",
       "title": "Sửa lỗi “Không ghi vào được thư mục game” với game Unity",
