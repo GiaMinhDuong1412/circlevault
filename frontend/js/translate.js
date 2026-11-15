@@ -1155,6 +1155,12 @@ async function gameAct(e, id) {
     if (a === 'apply') {
       if (T.applying && T.applying[id]) return;              // đang ghi: không chạy lần nữa
       if (!confirm('Tắt game trước khi áp dụng. Áp dụng bản dịch vào game ngay?')) return;
+      const fs = FN.st && FN.pid === id ? FN.st : null;
+      const stuck = fs && fs.scan && (fs.scan.fonts || []).some(f => !f.ok && !f.can_replace);
+      if (stuck && fs.vi_mode === 'full' && confirm('Font của game không có đủ chữ Việt có dấu – để “Đầy đủ dấu” thì game sẽ hiện chữ lỗi kiểu “Qufc vffng”.\n\n'
+          + 'OK = đổi sang “Giữ dấu font có” (khuyên dùng) rồi áp dụng.\nHủy = vẫn áp dụng “Đầy đủ dấu”.')) {
+        try { await api(`/api/translate/games/${id}`, {method: 'PATCH', body: {vi_mode: 'safe'}}); fs.vi_mode = 'safe'; fs.vi_auto = false; } catch (err) { /* vẫn áp dụng */ }
+      }
       btn.disabled = true; btn.textContent = 'Đang ghi…';
       await withGrant(id, () => api(`/api/translate/games/${id}/apply`, {method: 'POST'}));
       return watchApply(id);
@@ -1196,7 +1202,7 @@ async function watchApply(id) {
     if (r.engine === 'unity' && !r.texts && r.mode !== 'en') toast('Không câu nào được thay – dịch xong trước rồi Áp dụng.', 'err');
     break;
   }
-  if (T.gp === id) refreshProject();
+  if (T.gp === id) { refreshProject(); loadFonts(false); }
 }
 
 /* ---------------------------------------------------------------- Việt hóa game: dịch bằng Claude chat (không cần API key) */
@@ -1580,6 +1586,14 @@ function fitText(s, mode, have) {
     return b;
   }).join('');
 }
+/* chế độ nào đang nằm trong game (lần Áp dụng gần nhất) – khác chế độ đang chọn thì nhắc bấm Áp dụng */
+function fnNow(st, cur) {
+  const n = st.vi_modes || {}, a = st.applied_mode;
+  if (!a) return `<p class="fn-now">Chưa áp dụng vào game. Chọn xong bấm <button class="btn sm green" type="button" data-fn-go>Áp dụng vào game</button></p>`;
+  if (a === cur) return `<p class="fn-now ok">✓ Trong game đang là <b>${esc(n[a] || a)}</b>.</p>`;
+  return `<p class="fn-now warn">Trong game vẫn đang là <b>${esc(n[a] || a)}</b> – bạn mới chọn <b>${esc(n[cur] || cur)}</b> nhưng chưa ghi vào game.
+    <button class="btn sm green" type="button" data-fn-go>Áp dụng vào game ngay</button></p>`;
+}
 function fnModes(st, fonts, sample) {
   const bad = fonts.filter(f => !f.ok), stuck = bad.filter(f => !f.can_replace);
   const cur = st.vi_mode || 'full';
@@ -1592,10 +1606,11 @@ function fnModes(st, fonts, sample) {
   return `<div class="fn-modes"><h4>Khi font của game thiếu dấu</h4>
     ${stuck.length ? `<p class="hint"><b>Gợi ý:</b> game dùng font chữ vẽ sẵn (TextMeshPro) thiếu ${esc(stuck[0].missing_sample || '')}… – app chưa thêm dấu được vào loại font này. Chọn <b>Giữ dấu font có</b> hoặc <b>Không dấu</b> để không bị lỗi chữ như “Qufc vffng”, hoặc <b>Giữ tiếng Anh</b>.</p>` : ''}
     <div class="fn-mode-list">${Object.entries(st.vi_modes || {}).map(([k, n]) => `<label class="fn-mode${k === cur ? ' on' : ''}">
-      <input type="radio" name="fnMode" value="${k}" ${k === cur ? 'checked' : ''}><b>${esc(n)}${k === 'safe' && stuck.length ? ' (gợi ý)' : ''}</b>
+      <input type="radio" name="fnMode" value="${k}" ${k === cur ? 'checked' : ''}><b>${esc(n)}${k === 'safe' && stuck.length ? ' (gợi ý)' : ''}${k === cur && st.vi_auto ? ' · app tự chọn' : ''}</b>
       <span class="hint">${esc(desc[k])}</span>
       ${k !== 'en' ? `<span class="fn-mode-ex">${esc(fitText(sample, k, st.have))}</span>` : ''}</label>`).join('')}</div>
-    <p class="hint">Áp dụng khi bấm <b>Áp dụng vào game</b>. Bản dịch trong app không đổi, đổi cách khác rồi áp dụng lại lúc nào cũng được.</p></div>`;
+    ${fnNow(st, cur)}
+    <p class="hint">Áp dụng khi bấm <b>Áp dụng vào game</b>. Bản dịch trong app không đổi – <b>không cần dịch lại</b>, đổi cách khác rồi áp dụng lại lúc nào cũng được.</p></div>`;
 }
 
 async function loadFonts(autoscan) {
@@ -1607,7 +1622,7 @@ async function loadFonts(autoscan) {
   if (!st.scan && !st.job && autoscan) {
     try { st = await api(`/api/translate/games/${pid}/fonts/scan`, {method: 'POST'}); } catch (e) { /* bỏ qua */ }
   }
-  FN.st = st;
+  FN.st = st; FN.pid = pid;
   clearTimeout(FN.timer);
   if (st.job && st.job.state === 'running') FN.timer = setTimeout(() => loadFonts(false), 1500);
   if (st.scan && (!FN.cands || FN.cat !== st.cat)) {
@@ -1670,6 +1685,10 @@ function paintFonts() {
     try { await api(`/api/translate/games/${T.gp}`, {method: 'PATCH', body: {vi_mode: r.value}}); FN.st.vi_mode = r.value; paintFonts();
       toast(r.value === 'en' ? 'Bấm “Áp dụng vào game” để trả game về tiếng Anh.' : 'Đã chọn. Bấm “Áp dụng vào game” để ghi lại.'); }
     catch (err) { toast(err.message, 'err'); }
+  }));
+  el.querySelectorAll('[data-fn-go]').forEach(b => b.addEventListener('click', () => {
+    const go = $('#vhHead [data-a="apply"]');
+    if (go) go.click(); else toast('Kéo lên đầu dự án và bấm “Áp dụng vào game”.');
   }));
   $('#fnSampleIn')?.addEventListener('change', e => { try { localStorage.setItem('cv-fn-sample', e.target.value.trim() || FN_SAMPLE); } catch (err) { /* bỏ qua */ } paintFonts(); });
   $('#fnApply')?.addEventListener('click', async e => {

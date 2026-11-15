@@ -1726,6 +1726,16 @@ def _final(p: dict) -> list[dict]:
 _apply_jobs: dict[str, dict] = {}
 
 
+def _vi_mode(p: dict) -> str:
+    """Chế độ dấu khi áp dụng: người dùng đã chọn thì theo đó; chưa chọn mà game có font vẽ sẵn (TextMeshPro) thiếu dấu
+    thì mặc định "Giữ dấu font có" – để Đầy đủ dấu thì game hiện chữ lỗi kiểu "Qufc vffng"."""
+    m = p["opts"].get("vi_mode")
+    if m:
+        return m
+    fonts = (p.get("fontscan") or {}).get("fonts", [])
+    return "safe" if any(not f.get("ok") and not f.get("can_replace") for f in fonts) else "full"
+
+
 def _font_have(p: dict) -> set[str] | None:
     """Chữ Việt mà MỌI font thiếu dấu của game đều có (để chế độ "Giữ dấu font có" chỉ dùng chữ hiển thị được)."""
     fonts = [f for f in (p.get("fontscan") or {}).get("fonts", []) if not f.get("ok")]
@@ -1783,13 +1793,14 @@ def _apply_run(pid: str, job: dict):
 def _apply_do(pid: str, prog) -> dict:
     p = _load(pid)
     root = Path(p["root"])
-    mode = p["opts"].get("vi_mode") or "full"
+    mode = _vi_mode(p)
     if mode == "en":                                # người dùng chọn chơi tiếng Anh: gỡ bản dịch, giữ dự án
         prog("Đang trả game về tiếng Anh…")
         n = _restore_do(p)
         with _lock:
             q = _load(pid)
             q["applied"] = None
+            q["applied_mode"] = "en"
             _save(q)
         return {"engine": p["engine"], "restored": n, "mode": "en"}
     try:
@@ -1836,6 +1847,7 @@ def _apply_do(pid: str, prog) -> dict:
     with _lock:
         p = _load(pid)
         p["applied"] = time.time()
+        p["applied_mode"] = mode
         _save(p)
     return {**res, "engine": p["engine"], "mode": mode}
 
@@ -1851,6 +1863,7 @@ def restore(pid: str):
     with _lock:
         p = _load(pid)
         p["applied"] = None
+        p["applied_mode"] = "en"
         _save(p)
     return {"ok": True, "files": n}
 
@@ -2108,7 +2121,8 @@ def _font_state(p: dict) -> dict:
     script = p["engine"] in ("renpy", "rpgmv", "rpgmz")
     return {"scan": scan, "job": {k: v for k, v in job.items() if not k.startswith("_")} or None, "cat": main or "sans",
             "pick": p["opts"].get("font_pick"), "fix": p.get("fontfix"), "mode": "pick" if script else "replace",
-            "vi_mode": p["opts"].get("vi_mode") or "full", "vi_modes": fontcheck.VI_MODES,
+            "vi_mode": _vi_mode(p), "vi_modes": fontcheck.VI_MODES, "vi_auto": not p["opts"].get("vi_mode"),
+            "applied_mode": p.get("applied_mode") or ("full" if p.get("applied") else None),
             "have": "".join(sorted(_font_have(p) or [])) or None,
             "engine": p["engine"], "cats": fontcheck.CATS}
 

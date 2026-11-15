@@ -57,7 +57,7 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     `p["fontfix"].targets` mỗi font kèm `cid`; Áp dụng vào game ghi bản dịch TRƯỚC rồi thay font lại; Khôi phục trả cả font.
   - **Áp dụng chạy nền**: `POST /games/<id>/apply` kiểm quyền ghi (423 ngay) rồi chạy `_apply_run` trong luồng, tiến độ `_apply_jobs[pid]`
     ({state,text,done,total,result|error,status}), `GET /games/<id>/apply`; langscan/unitygame/fontcheck `apply(..., prog)` báo từng file;
-    trang `watchApply` vẽ thanh tiến độ, khóa nút; thanh Tiến trình có mục "Áp dụng vào game". `opts.vi_mode` (font thiếu dấu):
+    trang `watchApply` vẽ thanh tiến độ, khóa nút; thanh Tiến trình có mục "Áp dụng vào game". `opts.vi_mode` (font thiếu dấu; chưa chọn mà có font TMP thiếu dấu → `_vi_mode` mặc định safe; `p["applied_mode"]` = chế độ đang trong game, mục font báo khác/chưa áp dụng):
     full | safe (`fontcheck.fit_text`: chữ font không có → chữ gần nhất font CÓ, giữ dáng â/ê/ô trước dấu thanh; bộ chữ = `_font_have` giao
     các font thiếu dấu, không rõ thì Latin-1) | nodau | en (= `_restore_do`, gỡ bản dịch, giữ dự án). Font TextMeshPro: `tmp_chars_raw` đọc
     m_CharacterTable từ dữ liệu thô (bản ghi 16 byte type=1,unicode,glyph,1.0f hoặc 12 byte bản cũ) – nhận font TMP theo bảng chữ, không theo tên.

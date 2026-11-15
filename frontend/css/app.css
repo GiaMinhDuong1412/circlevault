@@ -1287,6 +1287,10 @@ body.yt-bar #toasts{bottom:calc(110px + env(safe-area-inset-bottom,0px))}
 .fn-mode.on{background:var(--yellow);color:#121212;box-shadow:var(--hs,3px 3px 0 var(--ink))}
 .fn-mode.on .hint{color:#3a3a3a}
 .fn-mode b{padding-right:22px}
+.fn-now{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:14px;border:2px solid var(--ink);
+  border-radius:calc(8px*var(--rk,1));padding:6px 10px;background:var(--surface-2)}
+.fn-now.ok{background:var(--green);color:#121212}
+.fn-now.warn{background:var(--yellow);color:#121212;box-shadow:var(--hs,3px 3px 0 var(--ink))}
 .fn-mode-ex{font-size:13.5px;border-top:1px dashed currentColor;padding-top:4px;margin-top:2px;overflow-wrap:anywhere}
 .vh-applying{display:flex;flex-direction:column;gap:6px;border-color:var(--cyan)}
 .vh-find-f{display:flex;gap:8px;flex-wrap:wrap}
