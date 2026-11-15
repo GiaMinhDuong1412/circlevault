@@ -294,3 +294,44 @@ def _find(node, key: str, depth: int = 0):
             if (r := _find(x, key, depth + 1)) is not None:
                 return r
     return None
+
+
+def _seq_params(vid: str) -> str:
+    """sequenceParams của luồng Shorts bắt đầu từ một video (protobuf: field 1 = mã video, field 5 = {3: 8}) – như trang youtube.com/shorts/<mã>."""
+    import base64
+    return base64.urlsafe_b64encode(b"\x0a\x0b" + vid.encode("ascii") + b"\x2a\x02\x18\x08").decode("ascii").replace("=", "%3D")
+
+
+def shorts(seed: str = "", token: str = "") -> dict:
+    """Luồng Shorts như app YouTube (reel/reel_watch_sequence, theo tài khoản nếu đã đăng nhập).
+    Không có `seed`/`token`: mở youtube.com/shorts/ để YouTube chọn video đầu tiên. Trả {items: [{id, thumb}], token, seed}."""
+    with _tab() as (ie, log):
+        first = ""
+        if not token:
+            if not seed:
+                page, h = ie._download_webpage_handle("https://www.youtube.com/shorts/", "shorts", note="Shorts")
+                m = re.search(r"/shorts/([\w-]{11})", getattr(h, "url", "") or "") \
+                    or re.search(r'"reelWatchEndpoint":\{"videoId":"([\w-]{11})"', page) or re.search(r'"videoId":"([\w-]{11})"', page)
+                if not m:
+                    return {"items": [], "token": None, "seed": None}
+                seed = m.group(1)
+            first = seed
+            token = _seq_params(seed)
+        ytcfg = _ytcfg(ie)
+        headers = ie.generate_api_headers(ytcfg=ytcfg)
+        data = ie._extract_response(item_id=seed or "shorts", query={"sequenceParams": token}, ep="reel/reel_watch_sequence",
+                                    ytcfg=ytcfg, headers=headers, fatal=False, note="Shorts") or {}
+    items, seen = [], set()
+    if first:
+        items.append({"id": first, "thumb": f"https://i.ytimg.com/vi/{first}/frame0.jpg"})
+        seen.add(first)
+    for e in data.get("entries") or []:
+        ep = ((e.get("command") or {}).get("reelWatchEndpoint")) or {}
+        vid = ep.get("videoId")
+        if not vid or vid in seen or not re.fullmatch(r"[\w-]{11}", vid):
+            continue
+        seen.add(vid)
+        th = _thumb(ep.get("thumbnail") or {}) or f"https://i.ytimg.com/vi/{vid}/frame0.jpg"
+        items.append({"id": vid, "thumb": th})
+    nxt = (((data.get("continuationEndpoint") or {}).get("continuationCommand")) or {}).get("token")
+    return {"items": items, "token": nxt, "seed": seed or None}

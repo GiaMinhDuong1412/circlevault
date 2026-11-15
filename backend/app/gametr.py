@@ -921,12 +921,22 @@ def _summary(p: dict) -> dict:
                        if p["engine"] == "xunity" else None), "seen_at": p.get("seen_at")}
 
 
-def estimate(chars: int) -> dict:
-    """Ước tính chi phí Claude (USD) – thô: ~4 ký tự/token đầu vào, tiếng Việt ra ~1,6 lần token + suy nghĩ."""
-    tin = chars / 4 * 1.6 + chars / 4 / BATCH * 900 / 10
-    tout = chars / 4 * 1.6 * 1.3
+def estimate(chars: int, n: int = 0, ctx_chars: int = 0) -> dict:
+    """Ước tính chi phí Claude (USD), đã đối chiếu với hóa đơn thật: mỗi lô 60 câu gửi kèm hướng dẫn + bối cảnh + thuật ngữ;
+    câu tiếng Việt nhiều token (dấu) + vỏ JSON; phần "suy nghĩ" của Claude tính như chữ trả về."""
+    n = n or max(1, chars // 48)
+    batches = max(1, -(-n // BATCH))
+    tin = chars / 3.5 + n * 15 + batches * (1300 + ctx_chars / 3)
+    tout = (chars * 0.6 + n * 10) * 1.5
     price = {"claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10), "claude-haiku-5-5": (0.1, 0.5)}
     return {m: round(tin / 1e6 * a + tout / 1e6 * b, 2) for m, (a, b) in price.items()}
+
+
+def _est(p: dict, left: bool = False) -> dict:
+    todo = [it for it in p["items"] if not it.get("skip") and (not left or it.get("vi") is None)]
+    if not todo:
+        return {m: 0 for m in ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5")}
+    return estimate(sum(len(it["t"]) for it in todo), len(todo), len(p.get("brief") or "") + len(p.get("glossary") or ""))
 
 
 def _specials(root: Path, job: dict) -> list[dict]:
@@ -1110,7 +1120,7 @@ def create(body: ScanIn):
     if special and special["engine"] == "unreal":
         p["unreal"] = info["unreal"]
     _save(p)
-    return {**_summary(p), "estimate": estimate(sum(len(i["t"]) for i in items))}
+    return {**_summary(p), "estimate": _est(p)}
 
 
 @router.get("")
@@ -1146,7 +1156,7 @@ def get_project(pid: str, offset: int = 0, limit: int = 100, q: str = "", filter
             continue
         rows.append({"i": i, **it})
     s = _summary(p)
-    return {**s, "estimate": estimate(s["chars"]), "matched": len(rows), "rows": rows[offset:offset + max(1, min(limit, 500))]}
+    return {**s, "estimate": _est(p), "estimate_left": _est(p, True), "spent": translate.usage(f"game:{pid}"), "matched": len(rows), "rows": rows[offset:offset + max(1, min(limit, 500))]}
 
 
 class EditIn(BaseModel):
@@ -1237,6 +1247,7 @@ def review(pid: str):
 
 
 def _review_run(pid: str, todo: list[int], s: dict):
+    translate.USAGE_TAG.set(f"game:{pid}")
     s = {**s, "claude_model": REVIEW_MODEL}
     found = 0
     try:
@@ -1365,10 +1376,13 @@ def auto_brief(pid: str):
     s = translate.settings()
     if not (s.get("claude_key") or os.environ.get("ANTHROPIC_API_KEY")):
         raise HTTPException(400, "Cần API key của Claude (Cài đặt bộ dịch). Không có thì tự ghi bối cảnh vào ô bên dưới.")
+    tok = translate.USAGE_TAG.set(f"game:{pid}")
     try:
         data = translate.claude_json(s, BRIEF_SYSTEM, [{"type": "text", "text": _sample(p)}], BRIEF_SCHEMA, "medium", 6000)
     except translate.TranslateError as e:
         raise HTTPException(502, str(e))
+    finally:
+        translate.USAGE_TAG.reset(tok)
     terms = [f"{t['src'].strip()} = {t['vi'].strip()}" for t in data.get("terms", []) if t.get("src", "").strip()][:60]
     with _lock:
         p = _load(pid)
@@ -1642,7 +1656,7 @@ def xunity_setup(body: XunityIn):
     try:
         st = xunity.install(root, pid, lang)
     except PermissionError:
-        raise HTTPException(400, "Không ghi được vào thư mục game. Tắt game rồi thử lại, hoặc chép game ra ổ khác.")
+        raise perm_error(root)
     with _lock:
         p = _load(pid)
         p["xunity"] = {k: st[k] for k in ("il2cpp", "arch", "at")}
@@ -1747,8 +1761,7 @@ def apply(pid: str):
     except (GameError, unitygame.GameError, unreal.UEError, fontcheck.FontError, RuntimeError) as e:
         raise HTTPException(400, str(e))
     except PermissionError:
-        raise HTTPException(400, "Không ghi được vào thư mục game (đang mở game, hoặc game nằm trong Program Files). "
-                                 "Tắt game rồi thử lại, hoặc chép game ra ổ khác.")
+        raise perm_error(Path(p.get("groot") or root))
     with _lock:
         p = _load(pid)
         p["applied"] = time.time()
@@ -1773,12 +1786,67 @@ def restore(pid: str):
         elif p["engine"] not in ("files", "unreal"):
             n += restore_renpy(root) if p["engine"] == "renpy" else unitygame.restore(root) if p["engine"] == "unity" else restore_rpg(root)
     except PermissionError:
-        raise HTTPException(400, "Không ghi được vào thư mục game. Tắt game rồi thử lại.")
+        raise perm_error(Path(p.get("groot") or root))
     with _lock:
         p = _load(pid)
         p["applied"] = None
         _save(p)
     return {"ok": True, "files": n}
+
+
+# ================================================================== quyền ghi thư mục game
+def can_write(d: Path) -> bool:
+    """Thử tạo một file nhỏ: game trong Program Files (Steam) thì tài khoản thường không ghi được."""
+    t = Path(d) / f".circlevault-thu-ghi-{os.getpid()}.tmp"
+    try:
+        t.write_bytes(b"x")
+        t.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def perm_error(root: Path, what: str = "ghi vào") -> HTTPException:
+    """PermissionError khi ghi vào game: thư mục cần quyền quản trị (423, trang hỏi cấp quyền) hay file đang bị game giữ (400)."""
+    root = Path(root)
+    if root.is_dir() and not can_write(root):
+        return HTTPException(423, f"Thư mục game cần quyền quản trị mới {what} được ({root}). "
+                                  "Bấm Cho phép để Windows hỏi quyền một lần cho thư mục game này.")
+    return HTTPException(400, f"Không {what} được thư mục game: game đang mở hoặc file đang bị chương trình khác giữ. Tắt game rồi thử lại.")
+
+
+def grant_write(root: Path) -> None:
+    """Cho tài khoản Windows hiện tại quyền sửa thư mục game (icacls chạy bằng quyền quản trị – Windows hiện hộp UAC).
+    Chỉ thêm quyền cho đúng thư mục game này; file con kế thừa. Không đổi chủ sở hữu, không bỏ quyền của ai."""
+    import subprocess
+    if os.name != "nt":
+        raise HTTPException(400, "Chỉ cần trên Windows.")
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    out = subprocess.run(["whoami", "/user", "/fo", "csv", "/nh"], capture_output=True, text=True, creationflags=flags, timeout=20).stdout
+    m = re.search(r"(S-1-[\d-]+)", out or "")
+    if not m:
+        raise HTTPException(400, "Không đọc được tài khoản Windows hiện tại.")
+    target = str(Path(root).resolve())
+    args = f'"{target}" /grant *{m.group(1)}:(OI)(CI)M /C /Q'.replace("'", "''")
+    ps = (f"try {{ $p = Start-Process -FilePath icacls.exe -ArgumentList '{args}' -Verb RunAs -Wait -WindowStyle Hidden -PassThru; "
+          f"exit $p.ExitCode }} catch {{ exit 1223 }}")
+    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], capture_output=True, text=True,
+                       creationflags=flags, timeout=600)
+    if r.returncode == 1223:
+        raise HTTPException(400, "Bạn đã bấm Không ở hộp hỏi quyền của Windows nên app chưa ghi được vào game.")
+    if not can_write(Path(root)):
+        raise HTTPException(400, "Đã chạy cấp quyền nhưng vẫn chưa ghi được vào thư mục game. Thử chép game ra ổ khác (D:\\Games…) "
+                                 "rồi mở lại dự án từ đó.")
+
+
+@router.post("/{pid}/grant")
+def grant(pid: str):
+    p = _load(pid)
+    roots = {Path(p.get("groot") or p["path"]), Path(p["root"])}
+    for r in sorted(roots, key=lambda x: len(str(x))):
+        if r.is_dir() and not can_write(r):
+            grant_write(r)
+    return {"ok": True}
 
 
 # ================================================================== font tiếng Việt của game
@@ -1873,7 +1941,7 @@ def fonts_apply(pid: str, body: FontApplyIn):
     except fontcheck.FontError as e:
         raise HTTPException(400, str(e))
     except PermissionError:
-        raise HTTPException(400, "Không ghi được vào thư mục game (đang mở game?). Tắt game rồi thử lại.")
+        raise perm_error(_font_root(p))
     if not res["fonts"]:
         raise HTTPException(400, "Không đổi được font nào. " + "; ".join(res["errors"][:3]))
     with _lock:
@@ -1894,7 +1962,7 @@ def fonts_restore(pid: str):
         if p.get("fontfix"):
             n = fontcheck.restore(_font_root(p), p["fontfix"])
     except PermissionError:
-        raise HTTPException(400, "Không ghi được vào thư mục game (đang mở game?). Tắt game rồi thử lại.")
+        raise perm_error(_font_root(p))
     with _lock:
         p = _load(pid)
         p["fontfix"] = None
@@ -1990,6 +2058,7 @@ class Worker:
                 self.current = None
 
     def _project(self, pid):
+        translate.USAGE_TAG.set(f"game:{pid}")
         _status(pid, "running")
         s = translate.settings()
         p = _load(pid)

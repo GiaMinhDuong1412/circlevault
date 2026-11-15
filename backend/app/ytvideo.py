@@ -443,7 +443,10 @@ def _resolve_play(vid: str, force: bool = False) -> dict:
          for h in sorted(by_h, reverse=True)]
     entry = {"exp": time.time() + 4 * 3600, "table": table, "qualities": q, "audio": audio and audio["format_id"],
              "prog": prog and prog["format_id"], "live": info.get("is_live") or info.get("live_status") == "is_live",
-             "duration": info.get("duration"), "title": info.get("title")}
+             "duration": info.get("duration"), "title": info.get("title"),
+             "channel": info.get("channel") or info.get("uploader") or "", "channel_id": info.get("channel_id") or "",
+             "views": info.get("view_count"), "likes": info.get("like_count"),
+             "vertical": bool((info.get("height") or 0) > (info.get("width") or 0))}
     with _play_lock:
         _play[vid] = entry
         if len(_play) > 60:
@@ -457,15 +460,31 @@ def play(v: str):
     if not VID.match(v or ""):
         raise HTTPException(400, "Mã video không hợp lệ.")
     e = _resolve_play(v)
+    meta = {k: e.get(k) for k in ("title", "channel", "channel_id", "views", "likes", "vertical")}
     if e["live"]:
-        return {"mode": "embed", "why": "Video đang phát trực tiếp: xem bằng trình phát YouTube."}
+        return {"mode": "embed", "why": "Video đang phát trực tiếp: xem bằng trình phát YouTube.", **meta}
     if e["qualities"] and e["audio"]:
+        # video dọc (Shorts): "1080p" là chiều rộng 1080 → chiều cao 1920; chọn theo cạnh ngắn
+        side = (lambda x: x["h"] * 9 // 16) if e.get("vertical") else (lambda x: x["h"])
         return {"mode": "split", "qualities": e["qualities"], "audio": f"/api/yt/s/{v}/{e['audio']}",
-                "default": next((x["f"] for x in e["qualities"] if x["h"] <= 1080), e["qualities"][-1]["f"]),
-                "base": f"/api/yt/s/{v}/", "duration": e["duration"]}
+                "default": next((x["f"] for x in e["qualities"] if side(x) <= 1080), e["qualities"][-1]["f"]),
+                "base": f"/api/yt/s/{v}/", "duration": e["duration"], **meta}
     if e["prog"]:
-        return {"mode": "single", "src": f"/api/yt/s/{v}/{e['prog']}", "duration": e["duration"]}
-    return {"mode": "embed", "why": "Không lấy được luồng phát của video này."}
+        return {"mode": "single", "src": f"/api/yt/s/{v}/{e['prog']}", "duration": e["duration"], **meta}
+    return {"mode": "embed", "why": "Không lấy được luồng phát của video này.", **meta}
+
+
+@router.get("/shorts")
+def shorts(seed: str = "", token: str = ""):
+    """Luồng Shorts liên tục (như app YouTube). seed = bắt đầu từ Short này; token = trang tiếp theo."""
+    if seed and not VID.match(seed):
+        raise HTTPException(400, "Mã video không hợp lệ.")
+    if token and not re.fullmatch(r"[\w%=-]{8,2000}", token):
+        raise HTTPException(400, "Sai định dạng.")
+    try:
+        return ytinner.shorts(seed, token)
+    except Exception as e:      # YouTube đổi/ chặn: báo lỗi dễ hiểu
+        raise HTTPException(502, f"Không lấy được Shorts từ YouTube: {str(e)[:200]}")
 
 
 _RANGE = re.compile(r"bytes=(\d*)-(\d*)")

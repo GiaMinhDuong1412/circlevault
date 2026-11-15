@@ -529,6 +529,7 @@ class Worker:
                 self.current = None
 
     def _novel(self, nid):
+        translate.USAGE_TAG.set(f"novel:{nid}")
         _status(nid, "running")
         nv = _load(nid)
         a, b = nv.get("range") or [0, len(nv["chapters"]) - 1]

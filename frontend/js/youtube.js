@@ -6,7 +6,7 @@ const {api, esc, toast, fmtDur} = window.CV;
 const $ = (s, r = document) => r.querySelector(s);
 const desk = window.cvDesktop;
 const Y = {page: {t: 'feed', kind: 'home'}, stack: [], data: null, seq: 0, status: null, sugTimer: 0};
-const FEEDS = [['home', 'Trang chủ'], ['subs', 'Kênh đăng ký'], ['later', 'Xem sau'], ['liked', 'Đã thích'], ['history', 'Đã xem']];
+const FEEDS = [['home', 'Trang chủ'], ['shorts', 'Shorts'], ['subs', 'Kênh đăng ký'], ['later', 'Xem sau'], ['liked', 'Đã thích'], ['history', 'Đã xem']];
 
 const num = n => n == null ? '' : n >= 1e9 ? (n / 1e9).toFixed(1).replace('.0', '') + ' tỷ' : n >= 1e6 ? (n / 1e6).toFixed(1).replace('.0', '') + ' tr'
   : n >= 1e3 ? Math.round(n / 1e3) + ' N' : String(n);
@@ -17,7 +17,7 @@ function chDot(name) { return `<span class="yv-av" style="--h:${hue(name)}" aria
 const LIST_IC = '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M3 5h12v2H3zm0 6h12v2H3zm0 6h8v2H3zm14-6 6 4-6 4z"/></svg>';
 function card(v, small) {
   if (v.kind === 'list') return listCard(v, small);
-  return `<a class="yv${small ? ' sm' : ''}" href="#youtube" data-yv="${esc(v.id)}" data-yt-title="${esc(v.title)}">
+  return `<a class="yv${small ? ' sm' : ''}" href="#youtube" data-yv="${esc(v.id)}" data-yt-title="${esc(v.title)}"${v.short ? ' data-yshort="1"' : ''}>
     <span class="yv-th"><img src="${esc(v.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">
       ${v.live ? '<i class="yv-d live">TRỰC TIẾP</i>' : v.duration ? `<i class="yv-d">${fmtDur(v.duration)}</i>` : v.short ? '<i class="yv-d">Shorts</i>' : ''}
       <span class="yv-go" aria-hidden="true">▶</span></span>
@@ -38,6 +38,7 @@ function listCard(v, small) {
 /* bản vẽ A: thanh trên gọn + cột mục bên trái (mục + kênh đăng ký) + chip chủ đề + lưới video */
 const FEED_IC = {
   home: 'M3 11 12 3l9 8v10h-6v-6H9v6H3z',
+  shorts: 'M14.5 2.5 7 6.8a4 4 0 0 0 2 7.4L7.5 15a4 4 0 1 0 4 6.9l7.5-4.3a4 4 0 0 0-2-7.4l1.5-.8a4 4 0 1 0-4-6.9zM10 9l5 3-5 3z',
   subs: 'M4 6h16v12H4zM10 9l5 3-5 3z',
   later: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
   liked: 'M7 10v10H3V10zm0 0 5-7c2 0 3 1 3 3l-1 4h6c1 0 2 1 2 2l-2 7c0 1-1 1-2 1H7',
@@ -57,7 +58,7 @@ function head() {
 function rail() {
   const p = Y.page;
   return `<nav class="yt-rail" aria-label="Mục YouTube">
-    ${FEEDS.map(([k, n]) => `<button class="yt-ri${p.t === 'feed' && p.kind === k ? ' on' : ''}" type="button" data-yfeed="${k}">
+    ${FEEDS.map(([k, n]) => `<button class="yt-ri${(p.t === 'feed' && p.kind === k) || (k === 'shorts' && p.t === 'shorts') ? ' on' : ''}" type="button" data-yfeed="${k}">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="${FEED_IC[k]}"/></svg>${n}</button>`).join('')}
     <div class="yt-rsep"></div>
     <div class="yt-rh">KÊNH ĐĂNG KÝ</div>
@@ -90,6 +91,7 @@ async function render() {
   if (!Y.status) { try { Y.status = await api('/api/yt/status'); } catch (e) { Y.status = {}; } }
   const p = Y.page, my = ++Y.seq;
   if (p.t === 'watch') return renderWatch(my);
+  if (p.t === 'shorts') return renderShorts(my);
   box.innerHTML = head() + `<div class="yt-a">${rail()}<div class="yt-body"><div class="empty"><span class="spin"></span> ${p.refresh ? 'Đang lấy đề xuất mới…' : 'Đang tải…'}</div></div></div>`;
   loadChans();
   bindHead();
@@ -190,6 +192,104 @@ async function renderWatch(my) {
     $('.yt-q-l li.on')?.scrollIntoView({block: 'nearest'});
   } else $('#ywQueue').innerHTML = '';
 }
+/* ---- Shorts: luồng video dọc liên tục như app YouTube (/api/yt/shorts), cuộn chuột / ↑ ↓ / nút ▲ ▼ để chuyển */
+async function renderShorts(my) {
+  const box = $('#ytBox'), p = Y.page;
+  box.innerHTML = head() + `<div class="yt-a">${rail()}<div class="yt-body ys-body">
+    <div class="ys-stage" id="ysStage">
+      <div class="ys-col">
+        <div class="yt-player box ys-player" id="ywPlayer"><div class="yt-load"><span class="spin"></span> Đang mở Shorts…</div></div>
+        <div class="ys-info"><b id="ysTitle"></b><a href="#youtube" class="ys-ch" id="ysCh"></a><span class="hint" id="ysMeta"></span></div>
+        <div class="yt-pnote hint" id="ywNote" hidden></div>
+      </div>
+      <div class="ys-side">
+        <button class="ys-b" type="button" data-ysn="-1" aria-label="Short trước (↑)" title="Short trước (↑ hoặc cuộn lên)">▲</button>
+        <button class="ys-b" type="button" data-ysn="1" aria-label="Short tiếp theo (↓)" title="Short tiếp theo (↓ hoặc cuộn xuống)">▼</button>
+        <span class="ys-gap"></span>
+        <button class="ys-b sm" type="button" data-ya="video" title="Tải video về máy">⬇<small>Tải</small></button>
+        <button class="ys-b sm" type="button" data-ya="audio" title="Tải MP3">♪<small>MP3</small></button>
+        <button class="ys-b sm" type="button" data-yswatch title="Mở trang xem đầy đủ (mô tả, video liên quan)">▭<small>Mở</small></button>
+        ${desk ? '<button class="ys-b sm" type="button" data-ya="browser" title="Mở bằng trình duyệt YouTube">↗<small>YT</small></button>' : ''}
+      </div>
+    </div></div></div>`;
+  bindHead();
+  if (!Y.sh || Y.sh.key !== (p.seed || '')) {
+    Y.sh = {key: p.seed || '', items: [], i: 0, token: null, loading: false};
+    await shortsMore(p.seed || '');
+  }
+  if (my !== Y.seq) return;
+  if (!Y.sh.items.length) {
+    $('#ywPlayer').innerHTML = `<div class="empty"><h3>Không lấy được Shorts</h3><p>${esc(Y.sh.err || 'YouTube không trả video nào.')}</p>
+      <button class="btn plain" type="button" data-yretry>Thử lại</button></div>`;
+    Y.sh = null;
+    return;
+  }
+  const stage = $('#ysStage');
+  let wheelAt = 0;
+  stage.addEventListener('wheel', e => {
+    if (e.target.closest('.ytc')) return;
+    e.preventDefault();
+    if (Math.abs(e.deltaY) < 12 || Date.now() - wheelAt < 650) return;
+    wheelAt = Date.now();
+    shortsGo(e.deltaY > 0 ? 1 : -1);
+  }, {passive: false});
+  shortsPlay();
+}
+async function shortsMore(seed) {
+  const sh = Y.sh;
+  if (!sh || sh.loading || (sh.items.length && !sh.token)) return;
+  sh.loading = true;
+  try {
+    const d = await api('/api/yt/shorts?' + (sh.token ? 'token=' + encodeURIComponent(sh.token) : 'seed=' + encodeURIComponent(seed || '')));
+    const have = new Set(sh.items.map(x => x.id));
+    sh.items.push(...d.items.filter(x => !have.has(x.id)));
+    sh.token = d.token;
+  } catch (e) { sh.err = e.message; }
+  sh.loading = false;
+}
+async function shortsPlay() {
+  const sh = Y.sh; if (!sh || Y.page.t !== 'shorts') return;
+  const cur = sh.items[sh.i]; if (!cur) return;
+  const my = ++Y.seq;
+  Y.page.v = cur.id; Y.page.pre = {title: cur.title || ''};
+  $('#ysTitle').textContent = cur.title || '';
+  $('#ysCh').textContent = cur.channel || ''; $('#ysCh').dataset.ych = cur.channel_id || '';
+  $('#ysMeta').textContent = `${sh.i + 1}/${sh.items.length}${sh.token ? '+' : ''}`;
+  $('#ywNote').hidden = true;
+  $('#ywPlayer').innerHTML = `<img class="ys-poster" src="${esc(cur.thumb)}" alt="" referrerpolicy="no-referrer"><div class="yt-load"><span class="spin"></span></div>`;
+  window.dispatchEvent(new Event('cv-video-play'));
+  const r = await setupPlayer(cur.id, encodeURIComponent(location.origin), my);
+  if (my !== Y.seq || !r) return;
+  Object.assign(cur, {title: r.p.title || cur.title, channel: r.p.channel || '', channel_id: r.p.channel_id || ''});
+  Y.page.pre = {title: cur.title};
+  $('#ysTitle').textContent = cur.title || '';
+  $('#ysCh').textContent = cur.channel || ''; $('#ysCh').dataset.ych = cur.channel_id || '';
+  $('#ysMeta').textContent = `${r.p.views != null ? views(r.p.views) + ' · ' : ''}${r.p.likes ? '👍 ' + num(r.p.likes) + ' · ' : ''}${sh.i + 1}/${sh.items.length}${sh.token ? '+' : ''}`;
+  const host = $('#ywPlayer');
+  if (r.vid) {
+    r.vid.addEventListener('ended', () => { if (my === Y.seq) shortsGo(1); });
+    const k0 = host._keys;
+    host._keys = e => {
+      const k = e.key;
+      if ((k === 'ArrowUp' || k === 'ArrowDown') && !e.target.closest('input, textarea, select')) { e.preventDefault(); return shortsGo(k === 'ArrowDown' ? 1 : -1); }
+      return k0 && k0(e);
+    };
+  } else host._keys = e => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); shortsGo(e.key === 'ArrowDown' ? 1 : -1); } };
+  if (sh.items.length - sh.i < 4) shortsMore();
+}
+async function shortsGo(step) {
+  const sh = Y.sh; if (!sh || Y.page.t !== 'shorts') return;
+  const n = sh.i + step;
+  if (n < 0) return;
+  if (n >= sh.items.length) { await shortsMore(); if (n >= sh.items.length) return toast('Hết Shorts – bấm Shorts ở cột trái để lấy loạt mới.'); }
+  stopPlayer();
+  sh.i = n;
+  shortsPlay();
+}
+window.addEventListener('hashchange', () => {      // rời tab khi đang xem Shorts: dừng (Shorts không phát nền)
+  if (window.CV.S.view !== 'youtube' && Y.page.t === 'shorts') { const v = document.getElementById('ywV'); if (v && !v.paused) v.pause(); }
+});
+
 function autoNextNow() {
   const d = Y.data; if (!d || Y.page.t !== 'watch') return;
   const q = d.queue, list = Y.page.list;
@@ -273,7 +373,7 @@ async function setupPlayer(v, origin, my) {
     host.innerHTML = embedHtml(v, origin);
     note.hidden = false;
     note.innerHTML = `${esc(p.why || '')} Trình phát YouTube báo lỗi thì bấm <b>Mở bằng trình duyệt YouTube</b>.`;
-    return;
+    return {p, vid: null};
   }
   const split = p.mode === 'split';
   host.innerHTML = `<video id="ywV" playsinline preload="auto"></video>
@@ -393,6 +493,7 @@ async function setupPlayer(v, origin, my) {
   };
   paintVol(); paint();
   vid.play().catch(() => {});
+  return {p, vid};
 }
 document.addEventListener('keydown', e => {
   const h = document.getElementById('ywPlayer');
@@ -485,7 +586,15 @@ window.addEventListener('cv-music-play', () => { const v = curV(); if (v && !v.p
 function bindHead() {
   const f = $('#ytQ'); if (!f || f.dataset.b) return;
   f.dataset.b = '1';
-  f.addEventListener('submit', e => { e.preventDefault(); const q = $('#ytQin').value.trim(); $('#ytSug').hidden = true; if (q) go({t: 'search', q}); });
+  f.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = $('#ytQin').value.trim(); $('#ytSug').hidden = true;
+    if (!q) return;
+    const sh = q.match(/youtube\.com\/shorts\/([\w-]{11})/), w = q.match(/(?:[?&]v=|youtu\.be\/|\/live\/|\/embed\/)([\w-]{11})/);
+    if (sh) return go({t: 'shorts', seed: sh[1]});          // dán link Shorts / video: mở thẳng
+    if (w) return go({t: 'watch', v: w[1]});
+    go({t: 'search', q});
+  });
   $('#ytQin').addEventListener('input', () => {
     clearTimeout(Y.sugTimer);
     const q = $('#ytQin').value.trim();
@@ -528,6 +637,7 @@ document.addEventListener('click', e => {
   const ch = e.target.closest('[data-ych]');
   if (ch && ch.dataset.ych) { e.preventDefault(); return go({t: 'channel', c: ch.dataset.ych}); }
   const v = e.target.closest('[data-yv]');
+  if (v && v.dataset.yshort) { e.preventDefault(); return go({t: 'shorts', seed: v.dataset.yv}); }
   if (v) {
     e.preventDefault();
     const inList = v.dataset.yinlist;
@@ -537,7 +647,10 @@ document.addEventListener('click', e => {
   if (l) { e.preventDefault(); return openList(l.dataset.ylist, l.dataset.yfirst, l.dataset.ytTitle); }
   if (e.target.closest('[data-yqclose]')) { Y.page.list = undefined; $('#ywQueue').innerHTML = ''; if (Y.data) Y.data.queue = null; return; }
   const f = e.target.closest('[data-yfeed]');
-  if (f) return go({t: 'feed', kind: f.dataset.yfeed});
+  if (f) { if (f.dataset.yfeed === 'shorts') Y.sh = null; return go(f.dataset.yfeed === 'shorts' ? {t: 'shorts'} : {t: 'feed', kind: f.dataset.yfeed}); }
+  const sn = e.target.closest('[data-ysn]');
+  if (sn) return shortsGo(+sn.dataset.ysn);
+  if (e.target.closest('[data-yswatch]')) { const id = Y.page.v; return go({t: 'watch', v: id, pre: {title: (Y.page.pre || {}).title}}); }
   const q = e.target.closest('[data-yq]');
   if (q) { $('#ytSug') && ($('#ytSug').hidden = true); return go({t: 'search', q: q.dataset.yq}); }
   if (e.target.closest('[data-yback]')) return back();

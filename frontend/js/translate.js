@@ -491,7 +491,8 @@ async function novelRun(id, body) {
   const n = await api(`/api/translate/novels/${id}`);
   const left = n.chars - (n.done / Math.max(1, n.paras)) * n.chars;
   if (s.engine === 'claude' && left > 150000) {
-    const usdv = left / 4 * 1.6 / 1e6 * ({'claude-opus-5-5': 24, 'claude-sonnet-5-5': 12, 'claude-haiku-5-5': 0.6}[s.claude_model] || 12);
+    const pr = {'claude-opus-5-5': [4, 20], 'claude-sonnet-5-5': [2, 10], 'claude-haiku-5-5': [0.1, 0.5]}[s.claude_model] || [2, 10];
+    const usdv = (left / 3.5 * pr[0] + left * 0.6 * 1.5 * pr[1]) / 1e6 + left / 6000 * 1500 * pr[0] / 1e6;   // gửi + nhận (kể cả suy nghĩ) + hướng dẫn mỗi lô
     if (!confirm(`Còn khoảng ${Math.round(left).toLocaleString('vi-VN')} ký tự chưa dịch. Ước tính với ${engineName(s)}: ${usd(usdv)}. Dịch tiếp?`)) return;
   }
   await api(`/api/translate/novels/${id}/run`, {method: 'POST', body});
@@ -722,13 +723,14 @@ function renderSettings() {
           <select id="trModel">${Object.entries(s.models).map(([k, v]) => `<option value="${k}" ${k === s.claude_model ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
         </label>
         <label class="check"><input type="checkbox" id="trImg" ${s.send_image ? 'checked' : ''}> Gửi kèm ảnh trang cho AI (dịch sát hơn, tốn thêm khoảng gấp đôi)</label>
+        ${s.usage && s.usage.total ? `<p class="hint">App đã dùng Claude hết khoảng: hôm nay <b>${usd(s.usage.today)}</b> · tháng này <b>${usd(s.usage.month)}</b> (tính theo số token Claude báo về sau mỗi lượt; số dư chính xác xem ở Claude Console → Thanh toán).</p>` : ''}
         <details class="tr-help"><summary>Cách lấy API key và chi phí</summary>
           <ol class="steps">
             <li>Vào <b>console.anthropic.com</b>, đăng ký bằng email.</li>
             <li>Mục <b>Billing</b>: nạp tiền bằng thẻ Visa/Mastercard (tối thiểu 5 USD).</li>
             <li>Mục <b>API Keys</b> → <b>Create Key</b> → copy khóa bắt đầu bằng <code>sk-ant-</code> rồi dán vào ô trên.</li>
           </ol>
-          <p class="hint">Ước tính cho một chương 25 trang có gửi ảnh: Opus 5.5 khoảng 0,5–1 USD, Sonnet 5.5 khoảng một nửa, Haiku 5.5 chỉ vài cent. Câu đã dịch được nhớ lại, mở lại hay xuất lại không tốn thêm. Không chia sẻ API key cho người khác.</p>
+          <p class="hint">Ước tính cho một chương 25 trang có gửi ảnh: Opus 5.5 khoảng 0,5–1 USD, Sonnet 5.5 khoảng một nửa, Haiku 5.5 chỉ vài cent. Câu đã dịch được nhớ lại, mở lại hay xuất lại không tốn thêm. Tiền tính theo token: mỗi lượt gửi kèm hướng dẫn, bối cảnh, thuật ngữ; câu tiếng Việt tốn nhiều token hơn tiếng Anh; phần Claude "suy nghĩ" cũng tính tiền – nên con số thật thường cao hơn ước tính thô theo số chữ. Không chia sẻ API key cho người khác.</p>
         </details>
       </div>
 
@@ -1121,6 +1123,19 @@ function gameRow(g) {
     </div></div>`;
 }
 
+// Game trong Program Files (Steam…): máy chủ trả 423 → hỏi người dùng → cấp quyền ghi (Windows hiện hộp UAC) → làm lại.
+async function withGrant(pid, fn) {
+  try { return await fn(); }
+  catch (err) {
+    if (err.status !== 423) throw err;
+    if (!confirm(err.message + '\n\nCho phép ngay? Windows sẽ hỏi quyền quản trị – bấm Có (Yes).')) throw new Error('Chưa ghi vào game: thư mục game cần quyền quản trị.');
+    toast('Đang chờ bạn bấm Có trên hộp hỏi quyền của Windows…');
+    await api(`/api/translate/games/${pid}/grant`, {method: 'POST'});
+    toast('Đã cho phép ghi vào thư mục game.');
+    return await fn();
+  }
+}
+
 async function gameAct(e, id) {
   const btn = e.target.closest('[data-a]');
   if (!btn) return;
@@ -1131,7 +1146,7 @@ async function gameAct(e, id) {
       const s = T.settings;
       const g = await api(`/api/translate/games/${id}?limit=1`);
       if (s.engine === 'claude' && g.total - g.done > 2000) {
-        const cost = g.estimate[s.claude_model];
+        const cost = (g.estimate_left || g.estimate)[s.claude_model];
         if (!confirm(`Game có ${(g.total - g.done).toLocaleString('vi-VN')} câu chưa dịch. Ước tính chi phí với ${engineName(s)}: ${usd(cost)}. Bắt đầu dịch?`)) return;
       }
       await api(`/api/translate/games/${id}/run`, {method: 'POST'});
@@ -1140,14 +1155,14 @@ async function gameAct(e, id) {
     if (a === 'apply') {
       if (!confirm('Tắt game trước khi áp dụng. Áp dụng bản dịch vào game ngay?')) return;
       btn.disabled = true; btn.textContent = 'Đang ghi…';
-      const r = await api(`/api/translate/games/${id}/apply`, {method: 'POST'});
+      const r = await withGrant(id, () => api(`/api/translate/games/${id}/apply`, {method: 'POST'}));
       if (r.errors && r.errors.length) toast(r.errors.slice(0, 2).join(' · '), 'err');
       toast(r.engine === 'renpy' ? `Đã Việt hóa: ${r.say} câu thoại, ${r.ui} chữ giao diện. Mở game để chơi.` : `Đã Việt hóa ${r.texts} câu trong ${r.files} file. Mở game để chơi.`);
       if (r.engine === 'unity' && !r.texts) toast('Không câu nào được thay – dịch xong trước rồi Áp dụng.', 'err');
     }
     if (a === 'restore') {
       if (!confirm('Đưa game về bản tiếng Anh gốc?')) return;
-      await api(`/api/translate/games/${id}/restore`, {method: 'POST'});
+      await withGrant(id, () => api(`/api/translate/games/${id}/restore`, {method: 'POST'}));
       toast('Đã khôi phục bản gốc.');
     }
     if (a === 'del') {
@@ -1366,6 +1381,7 @@ function paintHead(g) {
     <div class="box tr-book" data-gid="${g.id}">
       <div class="tr-book-main">
         <span class="hint">${g.total.toLocaleString('vi-VN')} câu · ${g.chars.toLocaleString('vi-VN')} ký tự. Ước tính nếu dịch bằng Claude: Opus 5.5 ${usd(g.estimate['claude-opus-5-5'])}, Sonnet 5.5 ${usd(g.estimate['claude-sonnet-5-5'])}, Haiku 5.5 ${usd(g.estimate['claude-haiku-5-5'])}. Bộ dịch đang chọn: <b>${esc(engineName(s))}</b>.</span>
+        ${g.spent && g.spent.usd ? `<span class="hint">Đã tốn thực tế cho game này: <b>${usd(g.spent.usd)}</b> (${g.spent.calls} lượt gọi Claude, ${Math.round((g.spent.in || 0) / 1000).toLocaleString('vi-VN')}K token gửi, ${Math.round((g.spent.out || 0) / 1000).toLocaleString('vi-VN')}K token nhận – tính cả bối cảnh, lọc câu, phần Claude suy nghĩ). Số dư chính xác xem ở Claude Console.</span>` : ''}
         ${g.warnings && g.warnings.length ? `<span class="hint">Bỏ qua ${g.warnings.length} file không đọc được: ${esc(g.warnings.slice(0, 2).join('; '))}</span>` : ''}
       </div>
       <div class="btn-row">
@@ -1533,13 +1549,13 @@ function paintFonts() {
     if (replace && !ids.length) return toast('Tích chọn font của game cần đổi.', 'err');
     b.disabled = true; b.textContent = 'Đang đổi font…';
     try {
-      const r = await api(`/api/translate/games/${T.gp}/fonts/apply`, {method: 'POST', body: {cid: FN.pick, ids}});
+      const r = await withGrant(T.gp, () => api(`/api/translate/games/${T.gp}/fonts/apply`, {method: 'POST', body: {cid: FN.pick, ids}}));
       FN.st = r; paintFonts();
       toast(r.msg || `Đã đổi ${r.result.fonts} font.${r.result.errors.length ? ' Lỗi: ' + r.result.errors[0] : ' Mở game để xem chữ tiếng Việt.'}`);
     } catch (err) { toast(err.message, 'err'); b.disabled = false; b.textContent = replace ? 'Đổi font đã chọn' : 'Dùng font này khi áp dụng'; }
   });
   $('#fnRestore')?.addEventListener('click', async () => {
-    try { FN.st = await api(`/api/translate/games/${T.gp}/fonts/restore`, {method: 'POST'}); paintFonts(); toast('Đã trả font gốc của game.'); }
+    try { FN.st = await withGrant(T.gp, () => api(`/api/translate/games/${T.gp}/fonts/restore`, {method: 'POST'})); paintFonts(); toast('Đã trả font gốc của game.'); }
     catch (err) { toast(err.message, 'err'); }
   });
   $('#fnUp')?.addEventListener('change', async e => {

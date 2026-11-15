@@ -2,6 +2,16 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-15-shorts-quyen-ghi-chi-phi",
+      "date": "2026-11-15",
+      "title": "YouTube Shorts, áp dụng game trong Program Files, chi phí Claude thực tế",
+      "items": [
+        "Mạng xã hội → mục Shorts mới: xem Shorts liên tục như app YouTube (theo tài khoản của bạn), khung dọc, cuộn chuột hoặc phím ↑ ↓ để chuyển, hết video tự sang Short sau; có nút Tải video / MP3. Bấm thẻ Shorts hoặc dán link youtube.com/shorts/… vào ô tìm cũng mở được.",
+        "Việt hóa game: game nằm trong Program Files (Steam) báo “Không ghi được” → app hỏi rồi xin quyền Windows (bấm Có trên hộp UAC) cho riêng thư mục game đó, sau đó tự áp dụng lại.",
+        "Chi phí Claude: app ghi số tiền thực tế theo token Claude báo về (kể cả phần Claude suy nghĩ, bối cảnh, lọc câu) – xem ở dự án game và Cài đặt bộ dịch. Ước tính mới sát với hóa đơn hơn. Dịch game và truyện chữ dùng mức suy nghĩ thấp để rẻ hơn."
+      ]
+    },
+    {
       "id": "2026-11-15-tien-trinh-font-noi-dung",
       "date": "2026-11-15",
       "title": "Thanh tiến trình, kiểm tra font tiếng Việt cho game, lọc câu không cần dịch",

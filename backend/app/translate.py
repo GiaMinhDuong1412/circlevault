@@ -11,6 +11,7 @@ Xuất: vẽ bản dịch đè lên ảnh (Pillow) → <ổ truyện>/Truyen dic
 """
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import io
 import json
@@ -85,7 +86,7 @@ class SettingsIn(BaseModel):
 
 @router.get("/settings")
 def get_settings():
-    return _public(settings())
+    return {**_public(settings()), "usage": usage()}
 
 
 @router.put("/settings")
@@ -280,12 +281,70 @@ def _claude(texts: list[str], s: dict, image: bytes | None, kind: str, context: 
              }.get(kind, "chữ trên màn hình game")
     content.append({"type": "text", "text": (f"{context}\n" if context else "") + f"Dịch {where}:\n"
                     + json.dumps(items, ensure_ascii=False)})
-    data = claude_json(s, system, content, SCHEMA, "low" if kind == "game" else "medium")
+    # dịch không cần suy nghĩ sâu: "low" giảm mạnh token suy nghĩ (tính tiền như chữ trả về); truyện tranh kèm ảnh giữ "medium"
+    data = claude_json(s, system, content, SCHEMA, "medium" if kind == "comic" else "low")
     try:
         got = {int(it["id"]): it["vi"] for it in data["items"]}
     except (ValueError, KeyError, TypeError):
         raise TranslateError("Claude trả kết quả không đúng định dạng. Thử dịch lại.")
     return [got.get(i, "") for i in range(len(texts))]
+
+
+# ------------------------------------------------------------------ chi phí thực tế (theo token Claude báo về)
+PRICES = {"claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10), "claude-haiku-5-5": (0.1, 0.5), "claude-opus-5": (5, 25),
+          "claude-opus-4-8": (5, 25), "claude-sonnet-5": (2, 10), "claude-fable-5-2": (8, 40)}   # USD / 1 triệu token (vào, ra)
+USAGE_PATH = config.DATA / "translate" / "usage.json"
+USAGE_TAG: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("cv_usage_tag", default=None)
+_usage_lock = threading.Lock()
+
+
+def _cost(model: str, u) -> float:
+    pin, pout = PRICES.get(model, (4, 20))
+    inp = getattr(u, "input_tokens", 0) or 0
+    cw = getattr(u, "cache_creation_input_tokens", 0) or 0
+    cr = getattr(u, "cache_read_input_tokens", 0) or 0
+    if model == "claude-haiku-5-5" and inp + cw + cr > 100_000:
+        pin, pout = 0.5, 2.5                          # Haiku 5.5: lời nhắn dài hơn 100K token tính giá cao hơn
+    out = getattr(u, "output_tokens", 0) or 0         # gồm cả phần Claude "suy nghĩ"
+    return (inp * pin + cw * pin * 1.25 + cr * pin * 0.1 + out * pout) / 1e6
+
+
+def _record(model: str, u):
+    """Cộng chi phí của một lượt gọi vào DATA/translate/usage.json (tổng, theo ngày, theo dự án đang chạy)."""
+    usd = _cost(model, u)
+    tag = USAGE_TAG.get()
+    day = time.strftime("%Y-%m-%d")
+    with _usage_lock:
+        try:
+            d = config.read_json(USAGE_PATH)
+        except (OSError, ValueError):
+            d = {}
+        d["total"] = round(d.get("total", 0) + usd, 6)
+        days = d.setdefault("days", {})
+        days[day] = round(days.get(day, 0) + usd, 6)
+        for k in sorted(days)[:-60]:
+            days.pop(k, None)
+        if tag:
+            t = d.setdefault("tags", {}).setdefault(tag, {"usd": 0, "in": 0, "out": 0, "calls": 0})
+            t["usd"] = round(t["usd"] + usd, 6)
+            t["in"] += (getattr(u, "input_tokens", 0) or 0) + (getattr(u, "cache_read_input_tokens", 0) or 0) \
+                + (getattr(u, "cache_creation_input_tokens", 0) or 0)
+            t["out"] += getattr(u, "output_tokens", 0) or 0
+            t["calls"] += 1
+            t["model"] = model
+        USAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        config.write_file(USAGE_PATH, json.dumps(d, ensure_ascii=False))
+
+
+def usage(tag: str | None = None) -> dict:
+    try:
+        d = config.read_json(USAGE_PATH)
+    except (OSError, ValueError):
+        d = {}
+    if tag:
+        return (d.get("tags") or {}).get(tag) or {}
+    return {"total": d.get("total", 0), "today": (d.get("days") or {}).get(time.strftime("%Y-%m-%d"), 0),
+            "month": round(sum(v for k, v in (d.get("days") or {}).items() if k.startswith(time.strftime("%Y-%m"))), 6)}
 
 
 def claude_json(s: dict, system: str, content: list[dict], schema: dict, effort: str = "medium",
@@ -320,6 +379,10 @@ def claude_json(s: dict, system: str, content: list[dict], schema: dict, effort:
         raise TranslateError(f"Lỗi máy chủ Claude ({e.status_code}). Thử lại sau.")
     except anthropic.APIConnectionError:
         raise TranslateError("Không kết nối được tới Claude. Kiểm tra mạng.")
+    try:
+        _record(getattr(resp, "model", None) or s["claude_model"], resp.usage)
+    except Exception:       # ghi chi phí lỗi không được làm hỏng bản dịch
+        pass
     if resp.stop_reason == "refusal":
         raise TranslateError("Claude không dịch phần này (nội dung bị chặn). Thử Google Dịch cho phần này.")
     if resp.stop_reason == "max_tokens":
@@ -685,6 +748,7 @@ class Worker:
                 self.current = None
 
     def _book(self, bid: str):
+        USAGE_TAG.set(f"book:{bid}")
         _set_status(bid, "running")
         s = settings()
         n = len(_load(bid)["pages"])

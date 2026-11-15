@@ -130,6 +130,13 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     structured output JSON, gửi kèm ảnh tùy chọn, `fallbacks="default"`). Bảng `translations` nhớ câu đã dịch.
     Truyện: `DATA/translate/books/<id>/{book.json,pages/}`, `Worker` dịch nền từng trang; xuất CBZ (Pillow vẽ chữ) vào
     `<ổ truyện>/Truyen dich/<tên> [VI].cbz`. Sửa tay (`edited`) được giữ khi dịch tiếp.
+  - Chi phí Claude THỰC TẾ: `translate.claude_json` ghi `resp.usage` × `PRICES` (gồm token suy nghĩ, cache, Haiku >100K giá cao) vào
+    `DATA/translate/usage.json` (tổng, theo ngày, theo `USAGE_TAG` = game:/book:/novel:<id> – Worker/lọc câu/bối cảnh đặt tag); Cài đặt bộ dịch
+    hiện hôm nay/tháng này, dự án game hiện "Đã tốn thực tế". Dịch game/truyện chữ effort "low" (truyện tranh kèm ảnh "medium").
+    `gametr.estimate(chars, n, ctx)` tính cả hướng dẫn + bối cảnh mỗi lô 60 câu, token tiếng Việt ×0,6/ký tự, suy nghĩ ×1,5.
+  - Game trong Program Files (Steam): ghi lỗi PermissionError → `perm_error` thử ghi file: không ghi được → HTTP 423, trang (`withGrant`)
+    hỏi rồi `POST /games/<id>/grant` chạy `icacls "<thư mục game>" /grant *<SID>:(OI)(CI)M` bằng PowerShell `Start-Process -Verb RunAs`
+    (UAC, chỉ thư mục game đó), rồi làm lại; ghi được mà vẫn lỗi = game đang mở (400).
   - `gametr.py`: Việt hóa game từ file, router `/api/translate/games/*`, dự án ở `DATA/translate/games/<id>/project.json`
     (câu không trùng, dịch theo lô 60 câu, mã game được thay bằng ⟦n⟧ khi dịch rồi trả lại; mất mã → `bad`, giữ câu gốc).
     Ren'Py: đọc .rpy (khớp renpy/lexer.py: gộp khoảng trắng, `\{`→`{{`, chuỗi 3 nháy tách theo dòng trống), .rpyc và .rpa
@@ -159,6 +166,11 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     `ytvideo._pl` → thẻ `kind: list` (`.yl`, chồng lớp); mở = `/video?v=<đầu>&list=` → `watch_next(v, plist)` trả `queue` (playlistPanelRenderer)
     → khung `#ywQueue`; `/list?l=` lấy video đầu khi thiếu. Tự phát (`cv-yt-auto`): hết video → bài sau trong queue / video Tiếp theo.
     Làm mới (`refresh=1`): `ytinner.home(6, 160)` + `_fresh` (mục chưa hiện trong `_SHOWN` lên trước, mục cũ đảo).
+    **Shorts** (mục "Shorts" ở cột trái, thẻ có `v.short`, dán link /shorts/ vào ô tìm): `ytinner.shorts(seed, token)` – không có mồi thì mở
+    youtube.com/shorts/ lấy video đầu, `sequenceParams` = base64(0a 0b <mã> 2a 02 18 08), gọi InnerTube `reel/reel_watch_sequence`
+    (theo cookie tài khoản), trang sau = `continuationCommand.token`; `GET /api/yt/shorts?seed=|token=`. Giao diện `renderShorts`: khung dọc
+    9:16 dùng chung `setupPlayer` (trả {p, vid}; `/api/yt/play` trả thêm title/channel/views/likes/vertical, video dọc chọn chất lượng theo cạnh
+    ngắn), cuộn chuột / ↑ ↓ / nút ▲ ▼ chuyển, hết video tự sang Short sau, rời tab thì dừng (Shorts không phát nền).
   - `discover.py`: Khám phá nhạc (`/api/music/discover/*`, chỉ máy này, thư viện ytmusicapi): `home` (Gợi ý cho bạn = trộn radio của
     bài trên máy hay nghe/mới tải có [id], Mix, trang chủ YouTube Music khi đã đăng nhập – cookie `YT_COOKIES` → header SAPISIDHASH,
     bảng xếp hạng + ca sĩ theo `config.music_country` (mặc định VN), chip tâm trạng = tìm kiếm), `radio?v=` (bài tương tự; nút ≈ và tự
