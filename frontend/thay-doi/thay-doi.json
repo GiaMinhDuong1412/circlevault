@@ -2,6 +2,15 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-15-sua-loi-luu-du-an",
+      "date": "2026-11-15",
+      "title": "Sửa lỗi \"Dịch bị dừng – Access is denied\"",
+      "items": [
+        "Việt hóa game, truyện tranh, truyện chữ không còn bị dừng với lỗi [WinError 5] Access is denied khi lưu tiến độ (file đang bị Windows/diệt virus giữ trong chốc lát): app tự thử lại rồi lưu tiếp.",
+        "Phần đã dịch trước khi lỗi vẫn còn – bấm Dịch để dịch tiếp."
+      ]
+    },
+    {
       "id": "2026-11-14-fb-cam-ung",
       "date": "2026-11-14",
       "title": "Facebook: video/Reels đúng kiểu điện thoại",

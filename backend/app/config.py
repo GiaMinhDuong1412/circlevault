@@ -5,6 +5,7 @@ import copy
 import json
 import os
 import threading
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent          # thư mục backend/
@@ -24,6 +25,42 @@ KINDS = ("youtube", "film", "comic", "novel", "other")
 QUALITIES = ("best", "2160", "1440", "1080", "720", "480", "audio")
 
 _lock = threading.Lock()
+
+
+def write_file(path: Path, data: str | bytes) -> None:
+    """Ghi file kiểu "ghi tạm rồi thay" an toàn trên Windows.
+
+    Windows không cho thay (os.replace) file đang có người khác mở – luồng khác đang đọc, phần mềm diệt virus,
+    Windows Search… → WinError 5 "Access is denied". Thử lại vài giây; vẫn không được thì ghi thẳng vào file.
+    Mỗi luồng một file tạm riêng để hai luồng ghi cùng lúc không giẫm lên nhau."""
+    path = Path(path)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}-{threading.get_ident()}.tmp")
+    raw = data.encode("utf-8") if isinstance(data, str) else data
+    tmp.write_bytes(raw)
+    try:
+        for i in range(30):                     # ~6 giây
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                time.sleep(min(0.05 * (i + 1), 0.3))
+        path.write_bytes(raw)                   # vẫn bị giữ: ghi đè nội dung (Python mở file cho phép người khác ghi)
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def read_json(path: Path):
+    """Đọc JSON, thử lại khi file đang bị giữ/đang được ghi dở (Windows)."""
+    for i in range(20):
+        try:
+            return json.loads(Path(path).read_text(encoding="utf-8"))
+        except (PermissionError, ValueError):
+            if i == 19:
+                raise
+            time.sleep(0.1)
 
 
 def _default_disks() -> list[dict]:
@@ -153,6 +190,4 @@ def validate(new: dict) -> dict:
 def save(cfg: dict) -> None:
     with _lock:
         DATA.mkdir(parents=True, exist_ok=True)
-        tmp = CONFIG_PATH.with_suffix(".tmp")
-        tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(CONFIG_PATH)
+        write_file(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))

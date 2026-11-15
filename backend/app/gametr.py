@@ -875,15 +875,13 @@ def _proj_dir(pid: str) -> Path:
 
 
 def _load(pid: str) -> dict:
-    return json.loads((_proj_dir(pid) / "project.json").read_text(encoding="utf-8"))
+    return config.read_json(_proj_dir(pid) / "project.json")
 
 
 def _save(p: dict):
     d = GAMES / p["id"]
     d.mkdir(parents=True, exist_ok=True)
-    tmp = d / "project.tmp"
-    tmp.write_text(json.dumps(p, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, d / "project.json")
+    config.write_file(d / "project.json", json.dumps(p, ensure_ascii=False))
 
 
 def _summary(p: dict) -> dict:
@@ -1095,7 +1093,7 @@ def list_projects():
     if GAMES.exists():
         for d in GAMES.iterdir():
             try:
-                out.append(_summary(json.loads((d / "project.json").read_text(encoding="utf-8"))))
+                out.append(_summary(config.read_json(d / "project.json")))
             except (OSError, ValueError, KeyError):
                 continue
     out.sort(key=lambda x: -x["created"])
@@ -1474,7 +1472,7 @@ def xunity_setup(body: XunityIn):
         raise HTTPException(400, "Không thấy thư mục game.")
     lang = body.lang if body.lang in TR_LANG else "en"
     pid = next((d.name for d in GAMES.glob("*") if (d / "project.json").is_file()
-                and (lambda q: q.get("engine") == "xunity" and Path(q["root"]) == root)(json.loads((d / "project.json").read_text(encoding="utf-8")))),
+                and (lambda q: q.get("engine") == "xunity" and Path(q["root"]) == root)(config.read_json(d / "project.json"))),
                None) if GAMES.exists() else None
     if not pid:
         pid = uuid.uuid4().hex[:12]

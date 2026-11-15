@@ -210,15 +210,13 @@ def _dir(nid: str) -> Path:
 
 
 def _load(nid: str) -> dict:
-    return json.loads((_dir(nid) / "novel.json").read_text(encoding="utf-8"))
+    return config.read_json(_dir(nid) / "novel.json")
 
 
 def _save(nv: dict):
     d = NOVELS / nv["id"]
     d.mkdir(parents=True, exist_ok=True)
-    tmp = d / "novel.tmp"
-    tmp.write_text(json.dumps(nv, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, d / "novel.json")
+    config.write_file(d / "novel.json", json.dumps(nv, ensure_ascii=False))
 
 
 def _summary(nv: dict) -> dict:
@@ -239,7 +237,7 @@ def list_novels():
     if NOVELS.exists():
         for d in NOVELS.iterdir():
             try:
-                out.append(_summary(json.loads((d / "novel.json").read_text(encoding="utf-8"))))
+                out.append(_summary(config.read_json(d / "novel.json")))
             except (OSError, ValueError, KeyError):
                 continue
     out.sort(key=lambda x: -x["created"])

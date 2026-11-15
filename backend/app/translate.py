@@ -58,7 +58,7 @@ _lock = threading.Lock()
 # ------------------------------------------------------------------ cài đặt
 def settings() -> dict:
     try:
-        s = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+        s = config.read_json(SETTINGS_PATH) if SETTINGS_PATH.exists() else {}
     except (OSError, ValueError):
         s = {}
     return {**DEFAULTS, **{k: v for k, v in s.items() if k in DEFAULTS}}
@@ -102,9 +102,7 @@ def put_settings(body: SettingsIn):
     s["glossary"] = (s.get("glossary") or "")[:20000]
     s["style"] = (s.get("style") or "")[:2000]
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = SETTINGS_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, SETTINGS_PATH)
+    config.write_file(SETTINGS_PATH, json.dumps(s, ensure_ascii=False, indent=2))
     return _public(s)
 
 
@@ -443,14 +441,12 @@ def _book_dir(bid: str) -> Path:
 
 
 def _load(bid: str) -> dict:
-    return json.loads((_book_dir(bid) / "book.json").read_text(encoding="utf-8"))
+    return config.read_json(_book_dir(bid) / "book.json")
 
 
 def _save(book: dict):
     d = BOOKS / book["id"]
-    tmp = d / "book.tmp"
-    tmp.write_text(json.dumps(book, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, d / "book.json")
+    config.write_file(d / "book.json", json.dumps(book, ensure_ascii=False))
 
 
 def _summary(b: dict) -> dict:
@@ -500,7 +496,7 @@ def list_books():
     if BOOKS.exists():
         for d in BOOKS.iterdir():
             try:
-                out.append(_summary(json.loads((d / "book.json").read_text(encoding="utf-8"))))
+                out.append(_summary(config.read_json(d / "book.json")))
             except (OSError, ValueError):
                 continue
     out.sort(key=lambda b: -b["created"])
