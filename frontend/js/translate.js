@@ -1261,6 +1261,7 @@ async function copyText(text) {
 }
 
 async function renderProject() {
+  FN.st = null; FN.pick = null;
   const el = $('#trSub');
   el.innerHTML = '<div class="loading"><span class="spin"></span>Đang mở…</div>';
   let g;
@@ -1307,13 +1308,15 @@ async function renderProject() {
         <label class="field">Khi có ảnh mặt nhân vật<input type="number" id="vhWF" min="20" max="120" value="${g.opts.width_face || 40}"></label>
         <small class="hint">Chữ tràn khung thoại thì giảm số này rồi Áp dụng lại. Câu dài hơn 4 dòng tự tách sang khung thoại mới.</small></div>` : ''}
     </div>
+    <div class="box pcard vh-font" id="vhFontBox"></div>
+    <div class="box pcard vh-review" id="vhReview"></div>
     <div class="box pcard">
       <div class="vh-tools">
-        <div class="tr-seg" role="group" aria-label="Lọc">${[['all', 'Tất cả'], ['todo', 'Chưa dịch'], ['bad', 'Cần xem lại'], ['edited', 'Đã sửa tay']]
+        <div class="tr-seg" role="group" aria-label="Lọc">${[['all', 'Tất cả'], ['todo', 'Chưa dịch'], ['bad', 'Cần xem lại'], ['edited', 'Đã sửa tay'], ['skip', 'Không dịch']]
           .map(([k, n]) => `<button type="button" class="chip${T.gq.filter === k ? ' on' : ''}" data-f="${k}">${n}</button>`).join('')}</div>
         <input type="search" id="vhQ" placeholder="Tìm câu…" value="${esc(T.gq.q)}" aria-label="Tìm câu">
       </div>
-      <p class="hint">Sửa trực tiếp ở cột Tiếng Việt, rời ô là tự lưu. Giữ nguyên các mã như <code>[name]</code>, <code>{b}</code>, <code>\\C[2]</code>, <code>%1</code>. "Cần xem lại" là câu máy dịch làm mất mã: app tạm giữ câu gốc cho đến khi bạn sửa.</p>
+      <p class="hint">Sửa trực tiếp ở cột Tiếng Việt, rời ô là tự lưu. Giữ nguyên các mã như <code>[name]</code>, <code>{b}</code>, <code>\\C[2]</code>, <code>%1</code>. "Cần xem lại" là câu máy dịch làm mất mã: app tạm giữ câu gốc cho đến khi bạn sửa. Nút <b>⊘</b> = không dịch câu đó (mã, tên file… lẫn vào); câu "Không dịch" giữ nguyên chữ gốc khi áp dụng.</p>
       <div id="vhRows"></div>
       <div class="row-between" id="vhPager"></div>
     </div>`;
@@ -1349,6 +1352,7 @@ async function renderProject() {
   $('#vhQ').addEventListener('input', e => { clearTimeout(qt); qt = setTimeout(() => { T.gq.q = e.target.value; T.gq.offset = 0; loadRows(); }, 300); });
   paintHead(g);
   paintClaude();
+  loadFonts(true);
   await loadRows();
   T.poll = setInterval(() => { if ($('#vhRows') && T.gp) refreshProject(); else clearInterval(T.poll); }, 3000);
 }
@@ -1370,7 +1374,29 @@ function paintHead(g) {
         ${g.applied ? '<button class="btn sm plain" type="button" data-a="restore">Khôi phục bản gốc</button>' : ''}
       </div></div>`;
   $('#vhHead [data-gid]').addEventListener('click', e => gameAct(e, g.id));
+  paintReview(g);
   T.gstate = g;
+}
+
+function paintReview(g) {
+  const el = $('#vhReview');
+  if (!el) return;
+  const rv = g.review || {}, run = rv.state === 'running';
+  const script = ['renpy', 'rpgmv', 'rpgmz'].includes(g.engine);
+  const pct = run && rv.total ? Math.round(rv.done / rv.total * 100) : 0;
+  el.innerHTML = `<div class="row-between"><h3>Nội dung cần dịch</h3>
+      <button class="btn sm yellow" type="button" id="vhReviewBtn" ${run ? 'disabled' : ''}>${run ? 'Đang lọc…' : 'Lọc câu không cần dịch'}</button></div>
+    <p class="hint">Dịch <b>${g.total.toLocaleString('vi-VN')}</b> câu${g.skipped ? ` · bỏ qua <b>${g.skipped.toLocaleString('vi-VN')}</b> câu (mã, tên file, chữ thử… không hiện trong game – xem ở mục <b>Không dịch</b>)` : ''}.
+      ${script ? 'Kịch bản game đã được đọc theo đúng cấu trúc, thường không cần lọc.' : 'File dữ liệu game hay lẫn mã nội bộ: dịch nhầm có thể làm game lỗi. Bấm nút vàng để app tự dò, rồi Claude Haiku xem từng câu (chỉ vài cent, cần API key); câu nào nhầm thì bấm ↺ để dịch lại.'}</p>
+    ${run ? `<div class="vh-prog" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
+      <p class="hint">Claude đang xem ${(rv.done || 0).toLocaleString('vi-VN')}/${(rv.total || 0).toLocaleString('vi-VN')} câu · đã tìm ${rv.found || 0} câu không cần dịch</p>` : ''}
+    ${rv.state === 'done' ? `<p class="hint">Lần lọc gần nhất: app tự dò ${rv.auto || 0} câu${rv.nokey ? ' (chưa có API key nên Claude chưa xem)' : `, Claude tìm thêm ${rv.found || 0} câu`}.</p>` : ''}
+    ${rv.state === 'error' ? `<p class="hint err">Lọc bị dừng: ${esc(rv.error || '')}</p>` : ''}`;
+  $('#vhReviewBtn').addEventListener('click', async e => {
+    e.currentTarget.disabled = true;
+    try { const r = await api(`/api/translate/games/${T.gp}/review`, {method: 'POST'}); paintHead({...T.gstate, ...r, estimate: T.gstate.estimate}); }
+    catch (err) { toast(err.message, 'err'); e.currentTarget.disabled = false; }
+  });
 }
 
 async function refreshProject() {
@@ -1378,7 +1404,8 @@ async function refreshProject() {
   if (document.activeElement && document.activeElement.closest && document.activeElement.closest('#vhRows')) return;   // đang sửa
   try {
     const g = await api(`/api/translate/games/${T.gp}?limit=1`);
-    const changed = !T.gstate || g.done !== T.gstate.done || g.status !== T.gstate.status || g.applied !== T.gstate.applied;
+    const rs = x => (x.review || {}).state + ':' + x.skipped;
+    const changed = !T.gstate || g.done !== T.gstate.done || g.status !== T.gstate.status || g.applied !== T.gstate.applied || rs(g) !== rs(T.gstate);
     paintHead(g);
     if (changed) loadRows();
   } catch (e) { /* bỏ qua */ }
@@ -1393,8 +1420,9 @@ async function loadRows() {
   catch (e) { el.innerHTML = `<div class="notice box err">${esc(e.message)}</div>`; return; }
   el.innerHTML = d.rows.length ? `<div class="vh-table" role="table">
     <div class="vh-tr vh-th" role="row"><span role="columnheader">Gốc</span><span role="columnheader">Tiếng Việt</span></div>
-    ${d.rows.map(r => `<div class="vh-tr${r.bad ? ' bad' : ''}" role="row">
-      <div class="vh-src" role="cell"><span class="vh-meta">${KIND[r.kind] || r.kind}${r.who ? ' · ' + esc(r.who) : ''}${r.ctx ? ' · ' + esc(r.ctx) : ''}</span>${esc(r.t)}</div>
+    ${d.rows.map(r => `<div class="vh-tr${r.bad ? ' bad' : ''}${r.skip ? ' skip' : ''}" role="row">
+      <div class="vh-src" role="cell"><span class="vh-meta">${KIND[r.kind] || r.kind}${r.who ? ' · ' + esc(r.who) : ''}${r.ctx ? ' · ' + esc(r.ctx) : ''}${r.skip ? ' · <b>Không dịch</b>' + (r.why ? ': ' + esc(r.why) : '') : ''}</span>${esc(r.t)}
+        <button class="vh-skip" type="button" data-skip="${r.i}" data-on="${r.skip ? 1 : 0}" title="${r.skip ? 'Đưa lại vào danh sách dịch' : 'Không dịch câu này (mã, tên file… không hiện trong game)'}">${r.skip ? '↺ Dịch' : '⊘'}</button></div>
       <div role="cell"><textarea rows="${Math.min(6, Math.max(2, Math.ceil((r.vi || r.t).length / 60)))}" data-i="${r.i}" aria-label="Bản dịch" placeholder="Chưa dịch">${esc(r.vi || '')}</textarea></div>
     </div>`).join('')}</div>` : '<p class="hint">Không có câu nào.</p>';
   el.querySelectorAll('textarea').forEach(ta => {
@@ -1405,6 +1433,12 @@ async function loadRows() {
       catch (err) { toast(err.message, 'err'); }
     });
   });
+  el.querySelectorAll('[data-skip]').forEach(b => b.addEventListener('click', async () => {
+    try {
+      const g = await api(`/api/translate/games/${T.gp}/skip`, {method: 'PUT', body: [{i: +b.dataset.skip, skip: b.dataset.on !== '1'}]});
+      paintHead({...T.gstate, ...g, estimate: T.gstate.estimate}); loadRows();
+    } catch (err) { toast(err.message, 'err'); }
+  }));
   const pages = Math.ceil(d.matched / 100), cur = Math.floor(offset / 100) + 1;
   $('#vhPager').innerHTML = pages > 1 ? `<span class="hint">${d.matched.toLocaleString('vi-VN')} câu · trang ${cur}/${pages}</span>
     <div class="btn-row"><button class="btn sm plain" type="button" data-p="-1" ${cur === 1 ? 'disabled' : ''}>← Trước</button>
@@ -1412,6 +1446,120 @@ async function loadRows() {
   $('#vhPager').querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => { T.gq.offset = Math.max(0, offset + (+b.dataset.p) * 100); loadRows(); $('#vhRows').scrollIntoView({block: 'start'}); }));
 }
 
+// ---------------------------------------------------------------- font tiếng Việt của game
+const FN = {st: null, cands: null, cat: null, faces: {}, pick: null, timer: 0};
+const FN_SAMPLE = 'Rồng thức giấc giữa đêm trăng máu. Hãy cầm lấy roi và đi đi! Ắ Ặ Ơ Ư Đ ữ ỹ';
+const fnSample = () => { try { return localStorage.getItem('cv-fn-sample') || FN_SAMPLE; } catch (e) { return FN_SAMPLE; } };
+const fnUrl = (q) => `/api/translate/games/fontlib/file?${q}`;
+
+function fnFace(key, url) {
+  if (FN.faces[key]) return FN.faces[key];
+  const fam = 'cvf' + Object.keys(FN.faces).length;
+  FN.faces[key] = fam;
+  try { const f = new FontFace(fam, `url("${url}")`); f.load().then(x => document.fonts.add(x)).catch(() => {}); document.fonts.add(f); } catch (e) { /* bỏ qua */ }
+  return fam;
+}
+
+async function loadFonts(autoscan) {
+  const pid = T.gp;
+  if (!$('#vhFontBox')) return;
+  let st;
+  try { st = await api(`/api/translate/games/${pid}/fonts`); } catch (e) { return; }
+  if (pid !== T.gp) return;
+  if (!st.scan && !st.job && autoscan) {
+    try { st = await api(`/api/translate/games/${pid}/fonts/scan`, {method: 'POST'}); } catch (e) { /* bỏ qua */ }
+  }
+  FN.st = st;
+  clearTimeout(FN.timer);
+  if (st.job && st.job.state === 'running') FN.timer = setTimeout(() => loadFonts(false), 1500);
+  if (st.scan && (!FN.cands || FN.cat !== st.cat)) {
+    FN.cat = st.cat;
+    try { FN.cands = (await api(`/api/translate/games/fontlib/candidates?cat=${st.cat}`)).fonts; } catch (e) { FN.cands = []; }
+  }
+  paintFonts();
+}
+
+function paintFonts() {
+  const el = $('#vhFontBox'), st = FN.st;
+  if (!el || !st) return;
+  const run = st.job && st.job.state === 'running';
+  const fonts = (st.scan && st.scan.fonts) || [];
+  const bad = fonts.filter(f => !f.ok), replace = st.mode === 'replace';
+  const fixed = {}; ((st.fix && st.fix.targets) || []).forEach(t => { fixed[t.id] = t.cid; });
+  const cname = (id) => { const c = (FN.cands || []).find(x => x.id === id); return c ? c.name : id.replace(/^(dl|sys|user):/, '').split(/[\\/]/).pop(); };
+  const sample = fnSample();
+  if (!FN.pick) FN.pick = st.pick || (FN.cands && FN.cands[0] && FN.cands[0].id) || 'dl:bevietnampro';
+  const groups = {};
+  (FN.cands || []).forEach(c => { (groups[c.cat_name] = groups[c.cat_name] || []).push(c); });
+  el.innerHTML = `<div class="row-between"><h3>Font chữ tiếng Việt</h3>
+      <button class="btn sm plain" type="button" id="fnScan" ${run ? 'disabled' : ''}>${run ? 'Đang kiểm tra…' : 'Kiểm tra lại'}</button></div>
+    ${run ? `<p class="hint"><span class="spin"></span> ${esc(st.job.text || 'Đang tìm font…')}</p>` : ''}
+    ${st.job && st.job.state === 'error' ? `<p class="hint err">Không kiểm tra được: ${esc(st.job.text)}</p>` : ''}
+    ${st.scan ? `<p class="hint">${fonts.length ? `Game có <b>${fonts.length}</b> font chữ Latin: ${fonts.length - bad.length} đủ dấu tiếng Việt, <b>${bad.length}</b> thiếu dấu${bad.length ? ' – chữ Việt sẽ hiện ô vuông hoặc mất dấu' : ''}.`
+        : 'Không thấy file font nào trong thư mục game (game dùng font hệ thống hoặc font nằm trong gói app chưa mở được).'}
+        ${st.mode === 'pick' ? (st.engine === 'renpy' ? ' Ren\'Py: font chọn bên dưới thay cho các font của game khi bấm Áp dụng vào game.' : ' RPG Maker: font chọn bên dưới được chép vào game khi bấm Áp dụng vào game.') : ''}</p>` : ''}
+    ${fonts.length ? `<div class="fn-list">${fonts.map(f => {
+      const fam = f.kind === 'tmp' ? '' : fnFace('g:' + f.id, fnUrl(`pid=${T.gp}&fid=${encodeURIComponent(f.id)}`));
+      const can = replace && f.can_replace;
+      return `<label class="fn-row${f.ok ? ' ok' : ''}">
+        ${can ? `<input type="checkbox" data-fn="${esc(f.id)}" ${!f.ok || fixed[f.id] ? 'checked' : ''}>` : '<span class="fn-dot"></span>'}
+        <span class="fn-info"><b>${esc(f.family)}</b> <span class="hint">${esc(f.label)}${f.kind === 'unity' ? ' · Unity' : f.kind === 'unreal' ? ' · Unreal' : f.kind === 'tmp' ? ' · TextMeshPro' : ''}</span>
+          <span class="fn-prev" ${fam ? `style="font-family:'${fam}',monospace"` : ''}>${esc(sample)}</span></span>
+        <span class="badge" style="background:${f.ok ? 'var(--green)' : 'var(--red)'}">${f.ok ? 'Đủ tiếng Việt' : f.missing < 0 ? 'Chưa rõ' : 'Thiếu ' + f.missing + ' chữ'}</span>
+        ${fixed[f.id] ? `<span class="badge" style="background:var(--cyan)">Đã đổi → ${esc(cname(fixed[f.id]))}</span>` : ''}
+        ${f.note ? `<span class="hint fn-note">${esc(f.note)}</span>` : !f.ok && f.missing_sample ? `<span class="hint fn-note">Thiếu: ${esc(f.missing_sample)}…</span>` : ''}
+      </label>`; }).join('')}</div>` : ''}
+    ${(st.scan && st.scan.notes || []).map(n => `<p class="hint">${esc(n)}</p>`).join('')}
+    ${st.scan && (fonts.length || st.mode === 'pick') ? `<div class="fn-pick">
+      <label class="field">Font thay thế có tiếng Việt (gợi ý cùng kiểu “${esc((st.cats || {})[st.cat] || st.cat)}” đứng đầu)
+        <select id="fnPick">${Object.entries(groups).map(([g, list]) => `<optgroup label="${esc(g)}">${list.map(c =>
+          `<option value="${esc(c.id)}" ${c.id === FN.pick ? 'selected' : ''}>${esc(c.name)} — ${esc(c.src)}</option>`).join('')}</optgroup>`).join('')}</select></label>
+      <div class="fn-preview" id="fnPrev" style="font-family:'${fnFace('c:' + FN.pick, fnUrl('cid=' + encodeURIComponent(FN.pick)))}',sans-serif">${esc(sample)}</div>
+      <label class="field">Chữ mẫu<input id="fnSampleIn" value="${esc(sample)}" maxlength="140"></label>
+      <div class="btn-row">
+        <button class="btn sm green" type="button" id="fnApply">${replace ? 'Đổi font đã chọn' : 'Dùng font này khi áp dụng'}</button>
+        <label class="btn sm plain fn-up">＋ Font của bạn (.ttf/.otf)<input type="file" id="fnUp" accept=".ttf,.otf" hidden></label>
+        ${(st.fix && st.fix.targets && st.fix.targets.length) || st.pick ? '<button class="btn sm plain" type="button" id="fnRestore">Trả font gốc</button>' : ''}
+      </div>
+      <p class="hint">${replace ? 'Font mới mang tên của font gốc nên game vẫn nhận; bản gốc sao lưu trong <code>CircleVault-ban-goc</code>. Khung chữ có thể rộng/hẹp hơn một chút – chữ tràn khung thì thử font hẹp hơn (Oswald, Roboto). Font Unity được thay ngay trong file dữ liệu (thử nghiệm); tắt game trước khi đổi.' : 'Font miễn phí được tải từ Google Fonts khi chọn.'}</p>
+    </div>` : ''}`;
+  $('#fnScan').addEventListener('click', async () => {
+    try { FN.st = await api(`/api/translate/games/${T.gp}/fonts/scan`, {method: 'POST'}); paintFonts(); loadFonts(false); } catch (e) { toast(e.message, 'err'); }
+  });
+  $('#fnPick')?.addEventListener('change', e => { FN.pick = e.target.value; paintFonts(); });
+  $('#fnSampleIn')?.addEventListener('change', e => { try { localStorage.setItem('cv-fn-sample', e.target.value.trim() || FN_SAMPLE); } catch (err) { /* bỏ qua */ } paintFonts(); });
+  $('#fnApply')?.addEventListener('click', async e => {
+    const b = e.currentTarget, ids = [...el.querySelectorAll('[data-fn]')].filter(x => x.checked).map(x => x.dataset.fn);
+    if (replace && !ids.length) return toast('Tích chọn font của game cần đổi.', 'err');
+    b.disabled = true; b.textContent = 'Đang đổi font…';
+    try {
+      const r = await api(`/api/translate/games/${T.gp}/fonts/apply`, {method: 'POST', body: {cid: FN.pick, ids}});
+      FN.st = r; paintFonts();
+      toast(r.msg || `Đã đổi ${r.result.fonts} font.${r.result.errors.length ? ' Lỗi: ' + r.result.errors[0] : ' Mở game để xem chữ tiếng Việt.'}`);
+    } catch (err) { toast(err.message, 'err'); b.disabled = false; b.textContent = replace ? 'Đổi font đã chọn' : 'Dùng font này khi áp dụng'; }
+  });
+  $('#fnRestore')?.addEventListener('click', async () => {
+    try { FN.st = await api(`/api/translate/games/${T.gp}/fonts/restore`, {method: 'POST'}); paintFonts(); toast('Đã trả font gốc của game.'); }
+    catch (err) { toast(err.message, 'err'); }
+  });
+  $('#fnUp')?.addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      const r = await fetch(`/api/translate/games/fontlib/upload?name=${encodeURIComponent(f.name)}`, {method: 'POST', body: f});
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || 'Không thêm được font.');
+      FN.pick = d.id; FN.cands = null; FN.cat = null; toast(`Đã thêm font ${d.name}.`); loadFonts(false);
+    } catch (err) { toast(err.message, 'err'); }
+  });
+}
+
 window.CV.views.translate = render;
-window.CV.translate = {render};
+window.CV.translate = {render, open(kind, id) {   // thanh Tiến trình mở thẳng dự án đang chạy
+  T.book = null; T.gp = null; T.novel = null; T.scan = null;
+  if (kind === 'game') { T.sub = 'vh'; T.gp = id; T.gq = {filter: 'all', q: '', offset: 0}; }
+  else if (kind === 'novel') { T.sub = 'novel'; T.novel = id; }
+  else if (kind === 'book') { T.sub = 'comic'; T.book = {id}; }
+  if (location.hash !== '#translate') location.hash = '#translate'; else render();
+}};
 })();

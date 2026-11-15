@@ -41,6 +41,20 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     thì Worker tự đợi rồi dịch tiếp (`p["note"]`).
     Unity MonoBehaviour (I2 Localization, hội thoại…): `langscan.mb_strings` dò chuỗi Unity (int32 độ dài + UTF-8 + đệm 0, vị trí chia
     hết 4) trong dữ liệu thô, `mb_pick` lọc câu đúng ngôn ngữ gốc, `mb_rewrite` ghi lại cả đối tượng (`set_raw_data`) – nguồn kind `mono`.
+  - **Nội dung cần dịch** (gametr): câu có `skip` (`skip_by`: auto = luật `langscan.suspect` – mã/ID, đường dẫn, chữ debug, định dạng
+    ngày giờ; claude = `POST /games/<id>/review` nhờ **Claude Haiku** (`REVIEW_MODEL`, luôn Haiku cho rẻ) xem từng lô ≤400 câu, chạy nền,
+    tiến độ `p["review"]`, `REVIEWING`; claude-ok; user = nút ⊘/↺ `PUT /games/<id>/skip`, không bị lần lọc sau đổi). Câu skip không dịch,
+    không tính vào total/ước tính/xuất cho Claude chat, áp dụng giữ chữ gốc. `langscan.one_language`: file JSON/YAML/XML có khóa ngôn ngữ
+    (`{"en":…,"fr":…}`) chỉ lấy ngôn ngữ gốc; `script_lang` chỉ coi là tiếng Việt khi có chữ riêng (ă đ ơ ư ĩ ũ, U+1EA0–1EF9) – â/ê/ô là tiếng Pháp được.
+  - `fontcheck.py`: **Font tiếng Việt của game** – tìm font (file rời .ttf/.otf/.woff/.woff2, Unity `Font.m_FontData` qua typetree,
+    TextMeshPro chỉ kiểm tra, Unreal .ufont trong pak), fontTools đếm 134 chữ Việt thiếu, phân loại kiểu (sans/serif/mono/pixel/script/
+    gothic/display). Gợi ý: `CATALOG` font OFL trên GitHub google/fonts (đã kiểm đủ tiếng Việt; tải vào `DATA/fonts/tai-ve`, font biến thiên
+    đóng băng bằng `varLib.instancer`), font Windows có đủ tiếng Việt (nhớ ở `DATA/cache/font-windows.json`), font người dùng thêm
+    (`DATA/fonts/cua-toi`). Thay: `build` giữ tên họ font gốc + dạng woff/woff2; file rời ghi đè (gốc ở CircleVault-ban-goc), Unity đọc file
+    HIỆN TẠI rồi chỉ thay m_FontData (thử nghiệm, bundle Addressables thì `zero_crc`), Unreal = mod `~mods/zz_CircleVault_VIFont_P.pak`.
+    Ren'Py/RPG Maker chỉ chọn (`opts.font_pick`): Ren'Py ghi `circlevault_vi_font(_bold).ttf` + font_replacement_map, RPG chép vào `fonts/circlevault-vi.ttf`.
+    API trong gametr: `/{pid}/fonts` (+`/scan` chạy nền `_font_jobs`, `/apply` {cid, ids}, `/restore`), `/fontlib/candidates|file|upload`.
+    `p["fontfix"].targets` mỗi font kèm `cid`; Áp dụng vào game ghi bản dịch TRƯỚC rồi thay font lại; Khôi phục trả cả font.
   - `xunity.py`: Unity "dịch khi chơi" – `POST /games/xunity-setup` tải BepInEx (5 cho Mono, 6 IL2CPP) + XUnity.AutoTranslator từ
     GitHub vào game (nhớ file đã thêm trong `DATA/translate/xunity/` để gỡ), AutoTranslatorConfig.ini: Endpoint=CustomTranslate,
     Url=`/api/translate/games/<id>/xunity` (GET from/to/text → câu đã có hoặc dịch Google, câu mới lưu vào dự án engine `xunity`).
@@ -171,6 +185,10 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     con, nhớ file đã tải (`uploaded`) để không trùng. Nút "☁ Lưu lên Drive" ở Nghe Nhạc. Hướng dẫn tạo client: artifact "Kết nối Google Drive".
   - Video tải về luôn ra .mp4 (`FFmpegVideoRemuxer`, cấu hình `video_format`: mp4 | original).
   - `ytdlp_update.py`: tải wheel yt-dlp (+ yt-dlp-ejs đúng phiên bản) từ PyPI vào `DATA/pylib`; `app/__init__.py` ưu tiên thư mục này.
+- **Thanh Tiến trình** (`backend/app/progress.py` `GET /api/progress`, `frontend/js/progress.js`): gom việc đang chạy (tải về + tải xong/lỗi
+  15 phút, Worker Việt hóa game/truyện tranh/truyện chữ – chỉ đọc dự án đang chạy/đang chờ, lọc câu, kiểm tra font, cắt video). Màn rộng
+  (khoảng trống phải ≥250px, không mở Facebook) = cột cố định bên phải `.cvp.dock`; hẹp/Facebook/bấm "–" (`cv-prog-min`) = nút nổi góc dưới TRÁI
+  `.cvp.pill` (không đè thông báo). Bấm mục → `CV.translate.open(kind,id)` / hash. Hỏi 2 s khi có việc, 6 s khi rảnh, 15 s khi ẩn.
 - `frontend/` – JS thuần, không build. **Kiểu giao diện** (`STYLES` trong app.js: brutal/tron/mem/phang/kinh, chọn trong hộp theme):
   CSS dùng `--rk` (nhân bo góc: mọi `border-radius` viết `calc(Npx*var(--rk,1))`), `--hs` (thay mọi bóng cứng `var(--hs,Npx Npx 0 var(--ink))`),
   `--ink`, `--bw`; khối `:root[data-style=…]` cuối app.css. Đổi kiểu bắt khởi động lại: lưu `cv-style-next`, script đầu index.html chỉ

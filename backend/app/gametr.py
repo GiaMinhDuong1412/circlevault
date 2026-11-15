@@ -28,10 +28,10 @@ import zlib
 from collections import Counter
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from . import config, langscan, translate, unitygame, unreal, xunity
+from . import config, fontcheck, langscan, translate, unitygame, unreal, xunity
 
 router = APIRouter(prefix="/api/translate/games", dependencies=[Depends(translate._local_only)])
 GAMES = config.DATA / "translate" / "games"
@@ -39,6 +39,8 @@ BACKUP_DIR = "CircleVault-ban-goc"
 RENPY_PATCH = "zz_circlevault_vi.rpy"
 RENPY_JSON = "circlevault_vi.json"
 FONT_NAME = "circlevault-vi.ttf"
+RENPY_FONT = "circlevault_vi_font.ttf"           # font người dùng chọn cho Ren'Py (thay DejaVuSans)
+RENPY_FONT_B = "circlevault_vi_font_bold.ttf"
 BATCH = 60
 _lock = threading.Lock()
 
@@ -507,6 +509,13 @@ def apply_renpy(game: Path, items: list[dict], opts: dict) -> dict:
             continue
         (say if it["kind"] in ("say", "menu") else ui)[it["t"]] = vi
     data = {"say": say, "ui": ui, "fonts": opts.get("fonts", []) if opts.get("font", True) else []}
+    if data["fonts"] and opts.get("font_pick"):
+        try:
+            (game / RENPY_FONT).write_bytes(fontcheck.font_source(opts["font_pick"], 400))
+            (game / RENPY_FONT_B).write_bytes(fontcheck.font_source(opts["font_pick"], 700))
+            data["font_file"], data["font_file_bold"] = RENPY_FONT, RENPY_FONT_B
+        except fontcheck.FontError:
+            pass                                   # không lấy được font đã chọn: dùng DejaVuSans như cũ
     (game / RENPY_JSON).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     (game / RENPY_PATCH).write_text(RENPY_SCRIPT, encoding="utf-8")
     old = game / (RENPY_PATCH + "c")
@@ -540,15 +549,17 @@ init 999 python:
 
         config.replace_text = _cv_replace
 
+    _cv_fr = _cv_data.get("font_file") or "DejaVuSans.ttf"
+    _cv_frb = _cv_data.get("font_file_bold") or "DejaVuSans-Bold.ttf"
     for _cv_f in _cv_data.get("fonts", []):
         for _cv_b in (False, True):
             for _cv_i in (False, True):
-                config.font_replacement_map[(_cv_f, _cv_b, _cv_i)] = ("DejaVuSans-Bold.ttf" if _cv_b else "DejaVuSans.ttf", False, _cv_i)
+                config.font_replacement_map[(_cv_f, _cv_b, _cv_i)] = (_cv_frb if _cv_b else _cv_fr, False, _cv_i)
 '''
 
 
 def restore_renpy(game: Path):
-    for n in (RENPY_PATCH, RENPY_PATCH + "c", RENPY_JSON):
+    for n in (RENPY_PATCH, RENPY_PATCH + "c", RENPY_JSON, RENPY_FONT, RENPY_FONT_B):
         p = game / n
         if p.exists():
             p.unlink()
@@ -753,7 +764,7 @@ def apply_rpg(root: Path, items: list[dict], opts: dict) -> dict:
                     terms[k] = [t(x) for x in terms[k]]
             if isinstance(terms.get("messages"), dict):
                 terms["messages"] = {k: t(v) for k, v in terms["messages"].items()}
-            if engine == "rpgmz" and opts.get("font", True) and _win_font():
+            if engine == "rpgmz" and opts.get("font", True) and (_win_font() or opts.get("font_pick")):
                 adv = obj.setdefault("advanced", {})
                 adv["mainFontFilename"] = FONT_NAME
         else:
@@ -769,10 +780,19 @@ def apply_rpg(root: Path, items: list[dict], opts: dict) -> dict:
             changed += 1
     if opts.get("font", True):
         f = _win_font()
-        if f:
+        picked = None
+        if opts.get("font_pick"):
+            try:
+                picked = fontcheck.font_source(opts["font_pick"], 400)
+            except fontcheck.FontError:
+                picked = None
+        if f or picked:
             fonts = web / "fonts"
             fonts.mkdir(exist_ok=True)
-            shutil.copy2(f, fonts / FONT_NAME)
+            if picked:
+                (fonts / FONT_NAME).write_bytes(picked)
+            else:
+                shutil.copy2(f, fonts / FONT_NAME)
             css = fonts / "gamefont.css"
             if engine == "rpgmv" and css.exists():
                 _backup(root, css)
@@ -885,7 +905,8 @@ def _save(p: dict):
 
 
 def _summary(p: dict) -> dict:
-    items = p["items"]
+    allitems = p["items"]
+    items = [it for it in allitems if not it.get("skip")]
     done = sum(1 for it in items if it.get("vi") is not None)
     return {"id": p["id"], "name": p["name"], "path": p["path"], "engine": p["engine"],
             "engine_name": ENGINE_NAMES.get(p["engine"], p["engine"]), "total": len(items), "done": done,
@@ -893,7 +914,8 @@ def _summary(p: dict) -> dict:
             "chars": sum(len(it["t"]) for it in items), "status": p.get("status", "idle"), "error": p.get("error"), "note": p.get("note"),
             "applied": p.get("applied"), "opts": p.get("opts", {}), "created": p["created"],
             "running": WORKER.current == p["id"], "warnings": p.get("warnings", []), "brief": p.get("brief", ""),
-            "glossary": p.get("glossary", ""), "lang": p.get("lang") or "en",
+            "glossary": p.get("glossary", ""), "lang": p.get("lang") or "en", "skipped": len(allitems) - len(items),
+            "review": p.get("review"),
             "sources": [{"label": x.get("label") or x.get("rel"), "count": x.get("count", 0)} for x in p.get("extra") or []],
             "xunity": ({**(p.get("xunity") or {}), "installed": bool((xunity.detect(Path(p["root"])) or {}).get("xunity"))}
                        if p["engine"] == "xunity" else None), "seen_at": p.get("seen_at")}
@@ -1066,7 +1088,11 @@ def create(body: ScanIn):
             if key in seen:
                 continue
             seen.add(key)
-            items.append({"t": t, "kind": it["kind"], "ctx": it.get("ctx", ""), "who": it.get("who", ""), "vi": None})
+            row = {"t": t, "kind": it["kind"], "ctx": it.get("ctx", ""), "who": it.get("who", ""), "vi": None}
+            why = langscan.suspect(t, it.get("ctx", "")) if engine in ("files", "unity", "unreal") or s["kind"] in ("file", "textasset", "mono") else None
+            if why:
+                row.update(skip=True, skip_by="auto", why=why)
+            items.append(row)
     if not items:
         raise HTTPException(400, "Không tìm thấy câu chữ nào để dịch trong các file đã chọn.")
     langs = Counter()
@@ -1106,6 +1132,10 @@ def get_project(pid: str, offset: int = 0, limit: int = 100, q: str = "", filter
     rows = []
     ql = q.lower().strip()
     for i, it in enumerate(p["items"]):
+        if filter == "skip" and not it.get("skip"):
+            continue
+        if filter != "skip" and filter != "all" and it.get("skip"):
+            continue
         if filter == "todo" and it.get("vi") is not None:
             continue
         if filter == "bad" and not it.get("bad"):
@@ -1136,6 +1166,136 @@ def edit_items(pid: str, body: list[EditIn]):
                 it.pop("bad", None)
         _save(p)
     return {"ok": True}
+
+
+class SkipIn(BaseModel):
+    i: int
+    skip: bool
+
+
+@router.put("/{pid}/skip")
+def set_skip(pid: str, body: list[SkipIn]):
+    """Người dùng chọn câu không cần dịch (mã, tên file…) hoặc đưa câu đã bỏ qua trở lại danh sách dịch."""
+    with _lock:
+        p = _load(pid)
+        for e in body:
+            if 0 <= e.i < len(p["items"]):
+                it = p["items"][e.i]
+                if e.skip:
+                    it.update(skip=True, skip_by="user", why="Bạn chọn không dịch")
+                else:
+                    it.pop("skip", None)
+                    it.pop("why", None)
+                    it["skip_by"] = "user"          # nhớ quyết định của người dùng, lần lọc sau không đổi
+        _save(p)
+    return _summary(p)
+
+
+REVIEW_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["skip"],
+                 "properties": {"skip": {"type": "array", "items": {
+                     "type": "object", "additionalProperties": False, "required": ["i", "why"],
+                     "properties": {"i": {"type": "integer"}, "why": {"type": "string"}}}}}}
+REVIEW_SYSTEM = """Bạn kiểm tra danh sách chuỗi mà công cụ Việt hóa lấy ra từ file dữ liệu của một game. Có chuỗi là chữ người chơi
+đọc trên màn hình, có chuỗi là dữ liệu nội bộ lẫn vào. Dịch nhầm dữ liệu nội bộ sẽ làm game lỗi.
+Liệt kê trong "skip" các chuỗi KHÔNG phải chữ hiển thị cho người chơi, ví dụ: mã/ID/khóa nội bộ, tên biến, tên hàm, lệnh/mã nguồn,
+tên file/đường dẫn, tên animation/âm thanh/prefab/scene, tên lớp, chuỗi định dạng ngày giờ/số, chữ debug/test/placeholder
+("TODO", "test", "Lorem ipsum"), ghi chú cho lập trình viên, tên công cụ/thư viện.
+KHÔNG đưa vào "skip": câu thoại, tên nhân vật/vật phẩm/kỹ năng/địa danh, nút và mục menu, mô tả, hướng dẫn, thông báo – kể cả chữ
+rất ngắn như "Start", "HP", "Yes". Phân vân thì KHÔNG đưa vào (giữ lại để dịch).
+Mỗi dòng đầu vào: số thứ tự, [ngữ cảnh = tên trường/khóa/file], chuỗi. "why" ghi lý do ngắn bằng tiếng Việt (vd "mã nội bộ", "tên file")."""
+REVIEW_MODEL = "claude-haiku-5-5"      # việc phân loại dễ: luôn dùng Haiku cho rẻ
+REVIEWING: set[str] = set()             # dự án đang được Claude lọc (thanh Tiến trình đọc)
+
+
+@router.post("/{pid}/review")
+def review(pid: str):
+    """Đánh dấu câu không phải chữ hiển thị: luật của app (ngay) + nhờ Claude Haiku (chạy nền, tiến độ ở p["review"])."""
+    s = translate.settings()
+    has_key = bool(s.get("claude_key") or os.environ.get("ANTHROPIC_API_KEY"))
+    with _lock:
+        p = _load(pid)
+        rv = p.get("review") or {}
+        if rv.get("state") == "running" and time.time() - rv.get("at", 0) < 300:
+            return _summary(p)
+        auto = 0
+        if p["engine"] not in ("renpy", "rpgmv", "rpgmz"):
+            for it in p["items"]:
+                if it.get("skip_by") in ("user", "claude", "claude-ok") or it.get("skip"):
+                    continue
+                why = langscan.suspect(it["t"], it.get("ctx", ""))
+                if why:
+                    it.update(skip=True, skip_by="auto", why=why)
+                    auto += 1
+        todo = [i for i, it in enumerate(p["items"]) if it.get("skip_by") not in ("user", "claude-ok")]
+        p["review"] = ({"state": "running", "done": 0, "total": len(todo), "found": 0, "auto": auto, "at": time.time()} if has_key
+                       else {"state": "done", "found": 0, "auto": auto, "nokey": True, "at": time.time()})
+        _save(p)
+    if has_key:
+        REVIEWING.add(pid)
+        threading.Thread(target=_review_run, args=(pid, todo, s), daemon=True, name="gametr-review").start()
+    return _summary(p)
+
+
+def _review_run(pid: str, todo: list[int], s: dict):
+    s = {**s, "claude_model": REVIEW_MODEL}
+    found = 0
+    try:
+        p = _load(pid)
+        head = f"Game: {p['name']} ({ENGINE_NAMES.get(p['engine'], p['engine'])})."
+        batch: list[int] = []
+        size = 0
+        batches = []
+        for i in todo:
+            n = min(len(p["items"][i]["t"]), 200) + 40
+            if batch and (size + n > 24000 or len(batch) >= 400):
+                batches.append(batch)
+                batch, size = [], 0
+            batch.append(i)
+            size += n
+        if batch:
+            batches.append(batch)
+        done = 0
+        for b in batches:
+            lines = []
+            for i in b:
+                it = p["items"][i]
+                t = it["t"].replace("\n", " ")
+                lines.append(f"{i}\t[{(it.get('ctx') or it['kind'])[:50]}]\t{t[:200]}")
+            data = translate.claude_json(s, REVIEW_SYSTEM, [{"type": "text", "text": head + "\n\n" + "\n".join(lines)}],
+                                         REVIEW_SCHEMA, "low", 8000)
+            bad = {int(x["i"]): str(x.get("why") or "không hiện trong game")[:80] for x in data.get("skip", [])
+                   if isinstance(x, dict) and str(x.get("i", "")).lstrip("-").isdigit()}
+            with _lock:
+                p = _load(pid)
+                for i in b:
+                    it = p["items"][i]
+                    if it.get("skip_by") == "user":
+                        continue
+                    if i in bad:
+                        if not it.get("skip"):
+                            found += 1
+                        it.update(skip=True, skip_by="claude", why="Claude: " + bad[i])
+                    else:
+                        if it.get("skip"):
+                            it.pop("skip", None)
+                            it.pop("why", None)
+                        it["skip_by"] = "claude-ok"
+                done += len(b)
+                p["review"] = {**(p.get("review") or {}), "done": done, "found": found, "at": time.time()}
+                _save(p)
+        state = {"state": "done", "found": found}
+    except translate.TranslateError as e:
+        state = {"state": "error", "error": str(e)}
+    except Exception as e:      # báo lên giao diện, không làm chết luồng
+        state = {"state": "error", "error": f"{type(e).__name__}: {e}"}
+    REVIEWING.discard(pid)
+    with _lock:
+        try:
+            p = _load(pid)
+        except HTTPException:
+            return
+        p["review"] = {**(p.get("review") or {}), **state, "at": time.time()}
+        _save(p)
 
 
 class OptsIn(BaseModel):
@@ -1230,7 +1390,7 @@ EXPORT_HELP = """Hướng dẫn cho Claude: đây là chữ trong game "{name}" 
 def export_for_claude(pid: str, only: str = "todo", limit: int = 400, offset: int = 0):
     """File để nhờ Claude (chat trên claude.ai / app Claude) dịch, không cần API key. Nhập lại bằng /import."""
     p = _load(pid)
-    rows = [(i, it) for i, it in enumerate(p["items"]) if only == "all" or it.get("vi") is None or (only == "bad" and it.get("bad"))]
+    rows = [(i, it) for i, it in enumerate(p["items"]) if not it.get("skip") and (only == "all" or it.get("vi") is None or (only == "bad" and it.get("bad")))]
     rows = rows[offset:offset + max(1, min(limit, 2000))]
     lines = [EXPORT_HELP.format(name=p["name"])]
     if p.get("brief"):
@@ -1361,7 +1521,7 @@ def make_pack(pid: str, body: PackIn):
         p = _load(pid)
         want = {"all": lambda it: True, "bad": lambda it: bool(it.get("bad"))}.get(
             body.only, lambda it: it.get("vi") is None or bool(it.get("bad")))
-        ids = [i for i, it in enumerate(p["items"]) if want(it)]
+        ids = [i for i, it in enumerate(p["items"]) if want(it) and not it.get("skip")]
         if not ids:
             raise HTTPException(400, "Không còn câu nào cần dịch.")
         parts, cur, size = [], [], 0
@@ -1536,7 +1696,7 @@ def _final(p: dict) -> list[dict]:
     kind = kind_of(p)
     out = []
     for it in p["items"]:
-        vi = it.get("vi")
+        vi = None if it.get("skip") else it.get("vi")
         if vi and not it.get("edited"):
             _, codes = protect(it["t"], kind)
             if codes and any(c not in vi for c in codes):
@@ -1574,7 +1734,17 @@ def apply(pid: str):
             res["files"] = res.get("files", 0) + ex["files"]
             if ex["errors"]:
                 res["errors"] = ex["errors"]
-    except (GameError, unitygame.GameError, unreal.UEError, RuntimeError) as e:
+        fix = p.get("fontfix")
+        if fix and fix.get("targets"):              # ghi bản dịch xong mới thay font (file .assets có cả chữ lẫn font)
+            groups: dict[str, list] = {}
+            for t in fix["targets"]:
+                groups.setdefault(t.get("cid") or fix.get("cid") or "", []).append(t)
+            for cid, ts in groups.items():
+                fr = fontcheck.apply(_font_root(p), cid, ts, _aes(p))
+                res["fonts"] = res.get("fonts", 0) + fr["fonts"]
+                if fr["errors"]:
+                    res["errors"] = (res.get("errors") or []) + fr["errors"]
+    except (GameError, unitygame.GameError, unreal.UEError, fontcheck.FontError, RuntimeError) as e:
         raise HTTPException(400, str(e))
     except PermissionError:
         raise HTTPException(400, "Không ghi được vào thư mục game (đang mở game, hoặc game nằm trong Program Files). "
@@ -1594,6 +1764,8 @@ def restore(pid: str):
         n = 0
         if p.get("extra"):
             n += langscan.restore(Path(p.get("groot") or p["path"]), p["extra"])
+        if p.get("fontfix"):
+            n += fontcheck.restore(_font_root(p), p["fontfix"])
         if p["engine"] == "xunity":
             n += xunity.restore(root)
         elif p["engine"] == "unreal":
@@ -1607,6 +1779,167 @@ def restore(pid: str):
         p["applied"] = None
         _save(p)
     return {"ok": True, "files": n}
+
+
+# ================================================================== font tiếng Việt của game
+_font_jobs: dict[str, dict] = {}
+
+
+def _font_root(p: dict) -> Path:
+    return Path(p.get("groot") or p["path"])
+
+
+def _aes(p: dict) -> bytes | None:
+    try:
+        return unreal.parse_key((p.get("unreal") or {}).get("aes"))
+    except Exception:       # khóa sai: đọc pak không mã hóa
+        return None
+
+
+def _font_state(p: dict) -> dict:
+    job = _font_jobs.get(p["id"]) or {}
+    scan = p.get("fontscan") or None
+    main = None
+    if scan:
+        bad = [f for f in scan["fonts"] if not f["ok"]]
+        pool = bad or scan["fonts"]
+        if pool:
+            main = max(set(f["cat"] for f in pool), key=lambda c: sum(1 for f in pool if f["cat"] == c))
+    script = p["engine"] in ("renpy", "rpgmv", "rpgmz")
+    return {"scan": scan, "job": {k: v for k, v in job.items() if not k.startswith("_")} or None, "cat": main or "sans",
+            "pick": p["opts"].get("font_pick"), "fix": p.get("fontfix"), "mode": "pick" if script else "replace",
+            "engine": p["engine"], "cats": fontcheck.CATS}
+
+
+@router.get("/{pid}/fonts")
+def fonts_state(pid: str):
+    return _font_state(_load(pid))
+
+
+@router.post("/{pid}/fonts/scan")
+def fonts_scan(pid: str):
+    p = _load(pid)
+    job = _font_jobs.get(pid)
+    if job and job.get("state") == "running":
+        return _font_state(p)
+    job = {"state": "running", "text": "Đang tìm font trong thư mục game…", "started": time.time()}
+    _font_jobs[pid] = job
+
+    def run():
+        try:
+            res = fontcheck.scan_game(_font_root(p), _aes(p), job)
+            with _lock:
+                q = _load(pid)
+                q["fontscan"] = {**res, "at": time.time()}
+                _save(q)
+            job.update(state="done", text="Xong")
+        except Exception as e:      # báo lên giao diện
+            job.update(state="error", text=str(e) if isinstance(e, (OSError, fontcheck.FontError)) else f"{type(e).__name__}: {e}")
+    threading.Thread(target=run, daemon=True, name="fontscan").start()
+    return _font_state(p)
+
+
+class FontApplyIn(BaseModel):
+    cid: str
+    ids: list[str] = []
+
+
+@router.post("/{pid}/fonts/apply")
+def fonts_apply(pid: str, body: FontApplyIn):
+    p = _load(pid)
+    if p["engine"] in ("renpy", "rpgmv", "rpgmz"):
+        try:
+            fontcheck.font_source(body.cid, 400)          # tải sẵn / kiểm tra font dùng được
+        except fontcheck.FontError as e:
+            raise HTTPException(400, str(e))
+        with _lock:
+            p = _load(pid)
+            p["opts"]["font_pick"] = body.cid
+            p["opts"]["font"] = True
+            _save(p)
+        return {**_font_state(p), "msg": "Đã chọn font. Bấm “Áp dụng vào game” để ghi vào game."}
+    scan = p.get("fontscan") or {}
+    targets = [f for f in scan.get("fonts", []) if f["id"] in set(body.ids) and f.get("can_replace")]
+    if not targets:
+        raise HTTPException(400, "Chọn ít nhất một font của game để đổi.")
+    if WORKER.current == pid:
+        raise HTTPException(409, "Đang dịch, bấm Dừng rồi đổi font (tránh ghi file cùng lúc).")
+    try:
+        old = p.get("fontfix") or {}
+        again = [t for t in old.get("targets") or [] if t["id"] in {x["id"] for x in targets}]
+        if again:
+            fontcheck.restore(_font_root(p), {"targets": again, "files": []})   # font đã đổi trước đó: trả gốc rồi đổi lại
+        res = fontcheck.apply(_font_root(p), body.cid, targets, _aes(p))
+    except fontcheck.FontError as e:
+        raise HTTPException(400, str(e))
+    except PermissionError:
+        raise HTTPException(400, "Không ghi được vào thư mục game (đang mở game?). Tắt game rồi thử lại.")
+    if not res["fonts"]:
+        raise HTTPException(400, "Không đổi được font nào. " + "; ".join(res["errors"][:3]))
+    with _lock:
+        p = _load(pid)
+        old = p.get("fontfix") or {}
+        keep = [t for t in old.get("targets") or [] if t["id"] not in {x["id"] for x in targets}]
+        p["fontfix"] = {"targets": keep + [{**t, "cid": body.cid} for t in targets],
+                        "files": sorted(set(old.get("files") or []) | set(res["files"])), "at": time.time()}
+        _save(p)
+    return {**_font_state(p), "result": res}
+
+
+@router.post("/{pid}/fonts/restore")
+def fonts_restore(pid: str):
+    p = _load(pid)
+    n = 0
+    try:
+        if p.get("fontfix"):
+            n = fontcheck.restore(_font_root(p), p["fontfix"])
+    except PermissionError:
+        raise HTTPException(400, "Không ghi được vào thư mục game (đang mở game?). Tắt game rồi thử lại.")
+    with _lock:
+        p = _load(pid)
+        p["fontfix"] = None
+        p["opts"].pop("font_pick", None)
+        _save(p)
+    return {**_font_state(p), "restored": n}
+
+
+@router.get("/fontlib/candidates")
+def font_candidates(cat: str = "sans"):
+    try:
+        return {"fonts": fontcheck.candidates(cat), "cats": fontcheck.CATS}
+    except fontcheck.FontError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/fontlib/file")
+def font_file(cid: str = "", pid: str = "", fid: str = ""):
+    """Dữ liệu font để trang xem trước chữ mẫu (font gợi ý, hoặc font đang có trong game)."""
+    from fastapi.responses import Response
+    try:
+        if cid:
+            data = fontcheck.font_source(cid, 400)
+        else:
+            p = _load(pid)
+            f = next((x for x in (p.get("fontscan") or {}).get("fonts", []) if x["id"] == fid), None)
+            if not f or f["kind"] == "tmp":
+                raise HTTPException(404, "Không có font này.")
+            data = fontcheck.preview_bytes(_font_root(p), f, _aes(p))
+    except fontcheck.FontError as e:
+        raise HTTPException(400, str(e))
+    except OSError:
+        raise HTTPException(404, "Không đọc được font.")
+    return Response(data, media_type="font/ttf", headers={"Cache-Control": "max-age=600"})
+
+
+@router.post("/fontlib/upload")
+async def font_upload(request: Request, name: str = "font.ttf"):
+    data = await request.body()
+    if len(data) > 30 * 1024 * 1024:
+        raise HTTPException(400, "File font quá lớn (tối đa 30 MB).")
+    try:
+        return fontcheck.add_user_font(name, data)
+    except fontcheck.FontError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.delete("/{pid}")
@@ -1663,7 +1996,7 @@ class Worker:
         if p.get("lang"):
             s = {**s, "source": TR_LANG.get(p["lang"], "auto")}
         kind = kind_of(p)
-        todo = [i for i, it in enumerate(p["items"]) if it.get("vi") is None]
+        todo = [i for i, it in enumerate(p["items"]) if it.get("vi") is None and not it.get("skip")]
         for k in range(0, len(todo), BATCH):
             if pid in self._stop:
                 return

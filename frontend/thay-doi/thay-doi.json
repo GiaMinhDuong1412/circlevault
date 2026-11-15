@@ -2,6 +2,17 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-15-tien-trinh-font-noi-dung",
+      "date": "2026-11-15",
+      "title": "Thanh tiến trình, kiểm tra font tiếng Việt cho game, lọc câu không cần dịch",
+      "items": [
+        "Thanh Tiến trình: tải về, Việt hóa game, dịch truyện, cắt video… hiện phần trăm ở khoảng trống bên phải (màn hình rộng) hoặc nút nổi góc dưới bên trái (màn hẹp / đang mở Facebook / đang xem video). Bấm một mục để mở đúng chỗ; xong thì báo.",
+        "Việt hóa game – Font chữ tiếng Việt: app tìm font của game, báo font nào thiếu dấu (kèm chữ mẫu viết bằng chính font đó) và gợi ý font có tiếng Việt cùng kiểu (có chân, không chân, pixel, gothic…): font miễn phí Google Fonts, font đã cài trong Windows hoặc font của bạn. Bấm “Đổi font đã chọn” để thay (có sao lưu, “Trả font gốc” để hoàn tác).",
+        "Việt hóa game – Nội dung cần dịch: app tự bỏ qua mã, tên file, chữ thử… lẫn trong file dữ liệu; nút “Lọc câu không cần dịch” nhờ Claude Haiku xem từng câu (vài cent). Mỗi câu có nút ⊘ / ↺ để tự chọn; câu bỏ qua giữ nguyên chữ gốc khi áp dụng.",
+        "File chữ nhiều ngôn ngữ (en/fr/de… trong cùng một file) giờ chỉ lấy ngôn ngữ gốc; chữ tiếng Pháp có â ê ô không còn bị nhầm là tiếng Việt."
+      ]
+    },
+    {
       "id": "2026-11-15-sua-loi-luu-du-an",
       "date": "2026-11-15",
       "title": "Sửa lỗi \"Dịch bị dừng – Access is denied\"",

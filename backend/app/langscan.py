@@ -87,7 +87,8 @@ def script_lang(s: str) -> str | None:
         return "ko"
     if re.search(r"[㐀-鿿]", s):
         return "zh"
-    if re.search(r"[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệịỉĩọỏốồổỗộớờởỡợụủũứừửữựỳỵỷỹ]", s, re.I):
+    # chỉ chữ riêng của tiếng Việt (â ê ô à é… cũng có trong tiếng Pháp/Bồ Đào Nha)
+    if re.search(r"[ăđơưĩũĂĐƠƯĨŨ\u1ea0-\u1ef9]", s):
         return "vi"
     if re.search(r"[Ѐ-ӿ]", s):
         return "ru"
@@ -186,9 +187,58 @@ def encode(text: str, enc: str) -> bytes:
     return text.encode("utf-8-sig")        # Shift-JIS/GBK… không chứa được tiếng Việt: ghi UTF-8 có BOM
 
 
+LANG_KEY = re.compile(r"(?i)^(" + "|".join(sorted((re.escape(k) for k in _TOKEN_LANG), key=len, reverse=True))
+                      + r"|en-?us|text_?en|text_?fr|text_?de|text_?es|text_?ja|text_?zh|text_?ko|text_?ru|text_?pt|text_?it)$")
+
+
+def _key_lang(key: str) -> str | None:
+    k = str(key).strip().rsplit("/", 1)[-1]
+    if not LANG_KEY.match(k):
+        return None
+    k = re.sub(r"(?i)^text_?", "", k).lower()
+    return _TOKEN_LANG.get(k) or _TOKEN_LANG.get(k.replace("-", "_")) or ("en" if k.startswith("en") else None)
+
+
+def one_language(ents: list, prefer: str = "en") -> list:
+    """File chứa nhiều ngôn ngữ theo khóa ({"en": "...", "fr": "...", "de": "..."}): chỉ giữ chữ của ngôn ngữ gốc."""
+    langs = Counter(_key_lang(e[3]) for e in ents)
+    langs.pop(None, None)
+    if len(langs) < 2:
+        return ents
+    want = prefer if prefer in langs else ("en" if "en" in langs else langs.most_common(1)[0][0])
+    return [e for e in ents if _key_lang(e[3]) in (None, want)]
+
+
+_DEBUG = re.compile(r"(?i)^\W*(todo|fixme|debug|test(ing)?|placeholder|lorem ipsum|missing|tbd|wip|xxx+|dummy|sample text|"
+                    r"not translated|untranslated|no text|text here|insert text)\b")
+_CODEY = re.compile(r"(==|!=|&&|\|\||=>|::|\)\s*;\s*$|^\s*(if|for|while|return|var|let|const|function|def|class|import|select|"
+                    r"insert|update|delete)\b[^.!?]*[(={;]|\w+\s*\([^()]*\)\s*;)", re.I)
+_DATEFMT = re.compile(r"[yMdHhmsftzK:/\-.,\s]+")
+
+
+def suspect(t: str, ctx: str = "") -> str | None:
+    """Lý do chuỗi có vẻ KHÔNG phải chữ hiển thị (mã, đường dẫn, chữ thử…) – app tự bỏ qua, người dùng bật lại được."""
+    s = t.strip()
+    if _DEBUG.match(s):
+        return "chữ thử/ghi chú (debug, TODO…)"
+    if _CODEY.search(s):
+        return "giống mã lệnh"
+    if re.search(r"[\w\-]+[/\\][\w\-.]+[/\\]", s) or re.search(r"(?i)\.(png|jpe?g|ogg|wav|mp3|prefab|asset|json|csv|ttf|otf|"
+                                                                   r"unity|mat|anim|bundle|dll)\b", s):
+        return "đường dẫn / tên file"
+    if _DATEFMT.fullmatch(s) and re.search(r"yy|MM|dd|HH|hh|mm|ss", s):
+        return "định dạng ngày giờ"
+    if " " not in s and re.fullmatch(r"[\w.:\-]+", s, re.A):
+        if re.fullmatch(r"(?i)[a-z]{1,6}\d*(?:[._:\-][a-z0-9]+)+", s) or (re.search(r"\d", s) and re.search(r"[A-Za-z]", s) and len(s) > 3):
+            return "mã nội bộ"
+        if re.search(r"[a-z][A-Z]", s):
+            return "tên nội bộ"
+    return None
+
+
 def _json_entries(text: str, loose: bool):
     tok = re.compile(r'"(?:[^"\\\n]|\\.)*"')
-    last_key = ""
+    last_key = parent = ""
     for m in tok.finditer(text):
         j = m.end()
         while j < len(text) and text[j] in " \t\r\n":
@@ -198,12 +248,15 @@ def _json_entries(text: str, loose: bool):
         except ValueError:
             continue
         if j < len(text) and text[j] == ":":
+            if not _key_lang(val):
+                parent = val
             last_key = val
             continue
         if last_key and SKIP_KEYS.match(str(last_key)) and " " not in val:
             continue
         if textlike(val, loose):
-            yield m.start(), m.end(), val, str(last_key)[:60], lambda v: json.dumps(v, ensure_ascii=False)
+            ctx = f"{parent}/{last_key}" if parent and parent != last_key and _key_lang(last_key) else str(last_key)
+            yield m.start(), m.end(), val, ctx[:60], lambda v: json.dumps(v, ensure_ascii=False)
 
 
 def _xml_entries(text: str, loose: bool):
@@ -467,7 +520,7 @@ def entries(text: str, fmt: str, loose: bool, prefer: str = "en", col: int | Non
         if e[0] >= last:               # không chồng lấn
             out.append(e)
             last = e[1]
-    return out
+    return one_language(out, prefer) if fmt in (".json", ".yaml", ".yml", ".xml", ".resx") else out
 
 
 def replace(text: str, ents, tr: dict[str, str], fmt: str) -> tuple[str, int]:
