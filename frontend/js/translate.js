@@ -1401,6 +1401,8 @@ async function renderProject() {
   paintClaude();
   loadFonts(true);
   paintFind();
+  if (!g.uiscan) uiScan(g.id, false);
+  else api(`/api/translate/games/${g.id}/uiscan`).then(j => { if (j.state === 'running') uiScan(g.id, false, j); }).catch(() => {});
   api(`/api/translate/games/${g.id}/apply`).then(r => { if (r.job && r.job.state === 'running' && !(T.applying && T.applying[g.id])) watchApply(g.id); }).catch(() => {});
   await loadRows();
   T.poll = setInterval(() => { if ($('#vhRows') && T.gp) refreshProject(); else clearInterval(T.poll); }, 3000);
@@ -1509,7 +1511,14 @@ async function paintFind(job) {
   if (pid !== T.gp || !$('#vhFind')) return;
   const run = job.state === 'running';
   const pct = job.total ? Math.round(job.done / job.total * 100) : 0;
-  el.innerHTML = `<div class="row-between"><h3>Tìm chữ chưa dịch</h3></div>
+  const us = T.uiscan && T.uiscan.pid === pid ? T.uiscan : null, ur = us && us.state === 'running';
+  const ug = (T.gstate && T.gstate.id === pid && T.gstate.uiscan) || null;
+  const uiBox = ur ? `<div class="vf-ui"><b>Đang tự tìm chữ nút / menu / cài đặt…</b>
+      <div class="vh-prog"><i style="width:${Math.max(4, us.total ? Math.round(us.done / us.total * 100) : 0)}%"></i></div>
+      <p class="hint">${esc(us.text || '')} · ${us.done}/${us.total} file</p></div>`
+    : ug && ug.unity === false ? '' : `<div class="vf-ui"><span class="hint">${ug ? `Chữ nút / menu / cài đặt (Settings, Back, New Game…): app đã tự tìm${ug.added ? `, thêm <b>${ug.added}</b> chữ` : ' – không thiếu chữ nào'}.` : 'App tự tìm chữ nút / menu / cài đặt của game khi mở dự án.'}</span>
+      <button class="btn sm plain" type="button" id="vfUi">Tìm lại chữ nút / menu</button></div>`;
+  el.innerHTML = `<div class="row-between"><h3>Tìm chữ chưa dịch</h3></div>${uiBox}
     <p class="hint">Trong game còn chữ tiếng Anh (vd “New Game”, “Start”)? Gõ đúng chữ đó – app tìm trong dự án và trong mọi file dữ liệu của game, rồi thêm cả nhóm chữ chứa nó vào để dịch.</p>
     <form class="vh-find-f" id="vfForm"><input type="search" id="vfQ" placeholder="Ví dụ: New Game" value="${esc(job.q || '')}" aria-label="Chữ cần tìm">
       <button class="btn sm yellow" type="submit" ${run ? 'disabled' : ''}>${run ? 'Đang tìm…' : 'Tìm trong game'}</button></form>
@@ -1526,6 +1535,7 @@ async function paintFind(job) {
           : `<button class="btn sm green" type="button" data-vfadd="${i}">＋ Thêm vào dịch</button>`}</div>`).join('')}</div>`
       : `<p class="hint">Không thấy “${esc(job.q)}” trong file dữ liệu game. Chữ đó có thể là hình ảnh, hoặc nằm trong file app chưa đọc được – dùng <b>Dịch màn hình game</b> cho phần này.</p>`) : ''}`;
   if (run && !T.fpoll) { T.fpoll = true; pollFind(pid).finally(() => { T.fpoll = false; }); }
+  $('#vfUi')?.addEventListener('click', () => uiScan(pid, true));
   $('#vfForm').addEventListener('submit', async e => {
     e.preventDefault();
     const q = $('#vfQ').value.trim(); if (q.length < 2) return;
@@ -1544,6 +1554,29 @@ async function paintFind(job) {
       paintFind(job); refreshProject(); loadRows();
     } catch (err) { toast(err.message, 'err'); b.disabled = false; b.textContent = '＋ Thêm vào dịch'; }
   }));
+}
+/* tự tìm chữ nút / menu / cài đặt (Settings, Back, New Game…) – mỗi dự án chạy một lần khi mở, bấm để tìm lại */
+async function uiScan(pid, force, j) {
+  T.uiscanning = T.uiscanning || {};
+  if (T.uiscanning[pid]) return;
+  T.uiscanning[pid] = true;
+  try {
+    if (!j) j = await api(`/api/translate/games/${pid}/uiscan${force ? '?force=true' : ''}`, {method: 'POST'});
+    if (j.skip) return;
+    T.uiscan = {...j, pid};
+    if (T.gp === pid) paintFind();
+    while (j.state === 'running') {
+      await new Promise(r => setTimeout(r, 1000));
+      try { j = await api(`/api/translate/games/${pid}/uiscan`); } catch (e) { continue; }
+      T.uiscan = {...j, pid};
+      if (T.gp === pid) paintFind();
+    }
+    if (j.state === 'error') toast('Không tìm được chữ nút / menu: ' + (j.text || ''), 'err');
+    else if (j.added) toast(`Đã tự tìm thêm ${j.added} chữ nút / menu / cài đặt. Bấm Dịch (chỉ dịch phần mới) rồi Áp dụng vào game.`);
+    else if (force) toast('Không thấy thêm chữ nút / menu nào chưa có trong dự án.');
+    if (T.gp === pid) { refreshProject(); loadRows(); }
+  } catch (err) { if (force) toast(err.message, 'err'); }
+  finally { delete T.uiscanning[pid]; if (T.gp === pid) paintFind(); }
 }
 async function pollFind(pid) {
   for (;;) {

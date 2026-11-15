@@ -915,7 +915,7 @@ def _summary(p: dict) -> dict:
             "applied": p.get("applied"), "opts": p.get("opts", {}), "created": p["created"],
             "running": WORKER.current == p["id"], "warnings": p.get("warnings", []), "brief": p.get("brief", ""),
             "glossary": p.get("glossary", ""), "lang": p.get("lang") or "en", "skipped": len(allitems) - len(items),
-            "review": p.get("review"),
+            "review": p.get("review"), "uiscan": p.get("uiscan"),
             "sources": [{"label": x.get("label") or x.get("rel"), "count": x.get("count", 0)} for x in p.get("extra") or []],
             "xunity": ({**(p.get("xunity") or {}), "installed": bool((xunity.detect(Path(p["root"])) or {}).get("xunity"))}
                        if p["engine"] == "xunity" else None), "seen_at": p.get("seen_at")}
@@ -2092,6 +2092,97 @@ def find_add(pid: str, body: FindAddIn):
             added += 1
         _save(p)
     return {**_summary(p), "added": added, "found": len(new)}
+
+
+# ================================================================== tự tìm chữ nút / menu / cài đặt (game Unity)
+_ui_jobs: dict[str, dict] = {}
+
+
+@router.post("/{pid}/uiscan")
+def ui_scan(pid: str, force: bool = False):
+    """Lục mọi file Unity của game tìm chữ giao diện cơ bản (Settings, Back, New Game…) còn thiếu trong dự án: ô chữ
+    TextMeshPro / UI.Text đặt sẵn trong màn chơi + chữ một từ của bảng chữ đã có. Chạy nền; mỗi dự án tự chạy một lần."""
+    p = _load(pid)
+    job = _ui_jobs.get(pid)
+    if job and job.get("state") == "running":
+        return job
+    if p.get("uiscan") and not force:
+        return {"state": "done", "skip": True, **p["uiscan"]}
+    root = Path(p.get("groot") or p["path"])
+    if not root.is_dir() or not any(x.is_dir() and x.name.endswith("_Data") for x in root.iterdir()):
+        with _lock:
+            q = _load(pid)
+            q["uiscan"] = {"at": time.time(), "added": 0, "unity": False}
+            _save(q)
+        return {"state": "done", "skip": True, "added": 0}
+    job = {"state": "running", "text": "Đang tìm chữ nút / menu…", "done": 0, "total": 0, "added": 0, "started": time.time(), "name": p["name"]}
+    _ui_jobs[pid] = job
+    threading.Thread(target=_ui_run, args=(pid, job), daemon=True, name="gametr-uiscan").start()
+    return job
+
+
+@router.get("/{pid}/uiscan")
+def ui_scan_state(pid: str):
+    job = _ui_jobs.get(pid)
+    return {k: v for k, v in job.items() if not k.startswith("_")} if job else {}
+
+
+def _ui_run(pid: str, job: dict):
+    try:
+        p = _load(pid)
+        root = Path(p.get("groot") or p["path"])
+        lang = p.get("lang") or "en"
+        have = {(x.get("rel"), x.get("path_id")) for x in p.get("extra") or []}
+        files = [f for f in _unity_files(root) if not unitygame.STRING_TABLE.search(f.name)]
+        job["total"] = len(files)
+        found: list[tuple[dict | None, list[dict]]] = []
+        for f in files:
+            if job.get("cancel"):
+                break
+            rel = str(f.relative_to(root)).replace("\\", "/")
+            job["text"], job["done"] = f"Đang tìm trong {rel}", job["done"] + 1
+            try:
+                with unityload.open_env(langscan._src(root, f)) as env:
+                    srcs = langscan._scan_unity_env(env, rel, lang, job, root)
+            except Exception:       # file không đọc được: bỏ qua
+                continue
+            for s in srcs:
+                items = s.pop("_items", [])
+                if (rel, s.get("path_id")) in have:
+                    found.append((None, items))             # nhóm đã có: chỉ thêm chữ còn thiếu (vd chữ một từ)
+                elif s.get("ui") or sum(1 for it in items if langscan.ui_word(it["t"])) >= 2:
+                    s.pop("sample", None)
+                    s.update(on=True, id=f"ui{len(found)}")
+                    found.append((s, items))
+        with _lock:
+            q = _load(pid)
+            q.setdefault("extra", [])
+            keys = {(x.get("rel"), x.get("path_id")) for x in q["extra"]}
+            seen = {it["t"] for it in q["items"]}
+            added = groups = 0
+            for src, items in found:
+                new = [it for it in items if it["t"].strip() and it["t"] not in seen]
+                if src is not None:
+                    if (src["rel"], src["path_id"]) in keys or not new:
+                        continue
+                    q["extra"].append(src)
+                    keys.add((src["rel"], src["path_id"]))
+                    groups += 1
+                for it in new:
+                    seen.add(it["t"])
+                    row = {"t": it["t"], "kind": it.get("kind") or "ui", "ctx": it.get("ctx") or "", "who": "", "vi": None}
+                    why = langscan.suspect(it["t"], row["ctx"])
+                    if why:
+                        row.update(skip=True, skip_by="auto", why=why)
+                    q["items"].append(row)
+                    added += 1
+            q["uiscan"] = {"at": time.time(), "added": added, "groups": groups, "unity": True}
+            _save(q)
+        job.update(state="done", text="Xong", added=added, groups=groups, finished=time.time())
+    except Exception as e:      # báo lên trang
+        job.update(state="error", text=f"{type(e).__name__}: {e}", finished=time.time())
+    finally:
+        job.pop("_scripts", None)
 
 
 # ================================================================== font tiếng Việt của game

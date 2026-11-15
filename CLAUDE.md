@@ -61,6 +61,12 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     full | safe (`fontcheck.fit_text`: chữ font không có → chữ gần nhất font CÓ, giữ dáng â/ê/ô trước dấu thanh; bộ chữ = `_font_have` giao
     các font thiếu dấu, không rõ thì Latin-1) | nodau | en (= `_restore_do`, gỡ bản dịch, giữ dự án). Font TextMeshPro: `tmp_chars_raw` đọc
     m_CharacterTable từ dữ liệu thô (bản ghi 16 byte type=1,unicode,glyph,1.0f hoặc 12 byte bản cũ) – nhận font TMP theo bảng chữ, không theo tên.
+  - **Chữ nút / menu / cài đặt** (Unity): `langscan.UI_WORDS` (Settings, Back, Options… – không có tên hành động điều khiển Jump/Move) được nhận
+    dù là một từ, nhưng CHỈ trong MonoBehaviour đã có ≥3 câu thật (`mb_pick`), không nhận ở file cấu hình; `script_class` đọc m_Script →
+    MonoScript (cùng file / globalgamemanagers.assets / bundle *monoscripts*) – lớp `UI_TEXT_CLASSES` (TextMeshProUGUI, UI.Text) gom thành một
+    nguồn mono `path_ids` "chữ trên nút / menu" (bỏ chữ giữ chỗ `UI_PLACEHOLDER`), `NOT_TEXT_CLASS` (InputSystem, Rewired…) bỏ qua; quét cả
+    `levelN`. Dự án cũ: `POST /games/<id>/uiscan` (chạy nền `_ui_jobs`, trang tự gọi một lần khi mở dự án – `p["uiscan"]`, `?force=true` tìm lại;
+    thanh Tiến trình "Tìm chữ nút / menu") thêm câu mới + nguồn mới (nhóm ô chữ, hoặc bảng có ≥2 chữ giao diện).
   - **Tìm chữ chưa dịch** (`POST /games/<id>/find {q}` chạy nền `_find_jobs`, `GET …/find`): câu đã có trong dự án (kể cả đang skip → nút ↺)
     + file chữ / đối tượng Unity (MonoBehaviour, TextAsset trong .assets/.bundle/levelN) chứa chữ đó; `POST …/find/add {rel, path_id, kind}`
     thêm nguồn `extra` (mono = mọi chuỗi `mb_strings` textlike + không `suspect`) + câu mới.

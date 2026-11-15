@@ -80,6 +80,11 @@ def _games() -> list[dict]:
         if job.get("state") == "running" and time.time() - job.get("started", 0) < 1800:
             out.append({"key": f"font:{pid}", "kind": "font", "label": "Kiểm tra font", "title": job.get("text") or "", "pct": None,
                         "status": "running", "sub": "", "open": {"tr": "game", "id": pid}})
+    for pid, job in list(gametr._ui_jobs.items()):
+        if job.get("state") == "running":
+            out.append({"key": f"uiscan:{pid}", "kind": "review", "label": "Tìm chữ nút / menu", "title": job.get("name") or "",
+                        "pct": _pct(job.get("done", 0), job.get("total", 0)), "status": "running",
+                        "sub": job.get("text") or "", "open": {"tr": "game", "id": pid}})
     for pid in list(gametr.REVIEWING):
         try:
             p = gametr._load(pid)

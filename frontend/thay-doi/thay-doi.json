@@ -2,10 +2,11 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
-      "id": "2026-11-16-che-do-dau-tu-chon",
+      "id": "2026-11-16-chu-menu-che-do-dau",
       "date": "2026-11-16",
-      "title": "Việt hóa game: tự chọn cách hiện dấu khi font thiếu dấu",
+      "title": "Việt hóa game: tự tìm chữ nút / menu / cài đặt, tự chọn cách hiện dấu",
       "items": [
+        "Game Unity: app tự tìm chữ nút, menu, cài đặt cơ bản (Settings, Back, Options, New Game, Master Volume…) – cả chữ trên nút đặt sẵn trong màn chơi. Dự án cũ: mở dự án là app tự tìm, rồi bấm Dịch (chỉ dịch phần mới) và Áp dụng vào game.",
         "Game dùng font vẽ sẵn thiếu dấu (chữ hiện “Qufc vffng”, “cfa mf”) thì app tự chọn “Giữ dấu font có” – không cần dịch lại, chỉ cần bấm Áp dụng vào game.",
         "Mục “Khi font của game thiếu dấu” báo chế độ nào đang nằm trong game; đổi chế độ mà chưa áp dụng thì hiện nút “Áp dụng vào game ngay”.",
         "Bấm Áp dụng khi đang để “Đầy đủ dấu” mà font thiếu dấu: app hỏi đổi sang “Giữ dấu font có” trước khi ghi."

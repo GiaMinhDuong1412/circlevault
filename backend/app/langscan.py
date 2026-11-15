@@ -99,6 +99,32 @@ def script_lang(s: str) -> str | None:
     return None
 
 
+# Chữ giao diện cơ bản của game (menu, cài đặt, nút): chữ một từ thường bị coi là tên/mã nên bỏ qua – các chữ này luôn nhận.
+UI_WORDS = {w.lower() for w in """
+New Game|Start|Start Game|Continue|Load|Load Game|Save|Save Game|Options|Settings|Setting|Quit|Exit|Quit Game|Quit to Desktop|Quit to Menu|
+Quit to Title|Main Menu|Title Screen|Resume|Pause|Paused|Back|Return|Cancel|Confirm|Accept|Apply|OK|Yes|No|Close|Done|Next|Previous|Prev|
+Skip|Retry|Restart|Reset|Default|Defaults|Reset to Default|Reset to Defaults|Restore Defaults|Credits|Extras|Gallery|Bestiary|Achievements|
+Statistics|Stats|Language|Languages|Audio|Sound|Sounds|Music|Volume|Master|Master Volume|Music Volume|SFX|SFX Volume|Sound Effects|Voice|
+Voices|Voice Volume|Ambience|Mute|Video|Display|Graphics|Resolution|Fullscreen|Full Screen|Windowed|Borderless|Window Mode|Screen Mode|
+VSync|Vertical Sync|Quality|Low|Medium|High|Ultra|Very High|Very Low|Custom|Brightness|Contrast|Gamma|Frame Rate|Framerate|FPS Limit|
+Anti-Aliasing|Antialiasing|Shadows|Textures|Effects|Post Processing|Bloom|Motion Blur|Screen Shake|Camera Shake|Vibration|Rumble|
+Controls|Control|Controller|Gamepad|Keyboard|Mouse|Keyboard & Mouse|Key Bindings|Keybindings|Bindings|Remap|Rebind|Invert|Invert Y|
+Sensitivity|Accessibility|Subtitles|Subtitle|Captions|Text Size|Text Speed|Font Size|Colorblind|Colorblind Mode|Gameplay|General|
+Interface|HUD|Difficulty|Easy|Normal|Hard|Very Hard|Nightmare|Casual|Story|Story Mode|On|Off|Enabled|Disabled|Enable|Disable|
+Inventory|Journal|Equipment|Equip|Unequip|Items|Item|Skills|
+Abilities|Upgrades|Shop|Buy|Sell|Price|Gold|Level|Health|Mana|Hearts|Lives|Score|Time|Loading|Loading...|Saving|Saving...|Saved|
+Game Over|Victory|Defeat|You Died|Press Any Key|Press any button|Selected|Equipped|Locked|Unlocked|New|Empty|Slot|
+Save Slot|Delete|Overwrite|Are you sure?|Profile|Account|Help|Tutorial|Tips|Hint|Info|Information|Version|Feedback|Exit Game
+""".replace("\n", "").split("|") if w.strip()}
+UI_PLACEHOLDER = re.compile(r"(?i)^(new text|text|text \(tmp\)|sample text|button|label|placeholder|enter text\.*|lorem ipsum.*|"
+                            r"title|header|description|name|value|x|-)$")
+
+
+def ui_word(s: str) -> bool:
+    t = re.sub(r"<[^<>]{1,40}>", "", s).strip().rstrip(":.!").strip()
+    return 0 < len(t) <= 40 and t.lower() in UI_WORDS
+
+
 _MEDIA = re.compile(r"(?i)\.(png|jpe?g|webp|gif|bmp|tga|psd|ogg|wav|mp3|m4a|flac|opus|mp4|webm|avi|prefab|asset|unity|mat|"
                     r"anim|controller|json|txt|csv|xml|dll|exe|bundle|ttf|otf|fnt|shader|lua|js|rpy|ks|tjs)$")
 
@@ -645,7 +671,8 @@ def scan_folder(path: Path, job: dict, prefer: str = "en", specials=None) -> dic
             except OSError:
                 continue
             if (ext in TEXT_EXT and size <= MAX_TEXT) or (ext in (".assets", ".bundle") and size <= MAX_ASSET) \
-                    or (f.lower() in ("resources.assets", "globalgamemanagers", "level0") and size <= MAX_ASSET):
+                    or ((f.lower() in ("resources.assets", "globalgamemanagers") or re.fullmatch(r"level\d+", f.lower()))
+                        and size <= MAX_ASSET):
                 files.append((p, size))
         job["current"] = str(Path(dp).relative_to(root)) if Path(dp) != root else ""
         job["total"] = len(files)
@@ -781,18 +808,19 @@ def _scan_unity_asset(root: Path, p: Path, rel: str, prefer: str, job: dict) -> 
         return []
     try:
         with unityload.open_env(_src(root, p)) as env:      # tự đóng file: không giữ file game mở (Windows sẽ không cho ghi đè)
-            return _scan_unity_env(env, rel, prefer, job)
+            return _scan_unity_env(env, rel, prefer, job, root)
     except Exception:       # file hỏng / mã hóa / không phải file Unity
         return []
 
 
-def _scan_unity_env(env, rel: str, prefer: str, job: dict) -> list[dict]:
+def _scan_unity_env(env, rel: str, prefer: str, job: dict, root: Path | None = None) -> list[dict]:
     out = []
     try:
         objs = [o for o in env.objects if o.type.name == "TextAsset"]
         monos = [o for o in env.objects if o.type.name == "MonoBehaviour" and 40 < o.byte_size < MB_MAX]
     except Exception:
         return []
+    ui_ids, ui_texts = [], []
     for o in monos:
         if job.get("cancel"):
             break
@@ -801,10 +829,19 @@ def _scan_unity_env(env, rel: str, prefer: str, job: dict) -> list[dict]:
             strs = mb_strings(raw)
         except Exception:
             continue
+        if not strs:
+            continue
+        cls = script_class(o, raw, root, job) if root is not None else ""
+        if cls in UI_TEXT_CLASSES:              # ô chữ trên nút / menu (TextMeshPro, UI.Text) đặt sẵn trong màn chơi
+            got = [x for _, _, x in strs if ui_text_ok(x, prefer)]
+            if got:
+                ui_ids.append(int(o.path_id))
+                ui_texts += got
+            continue
         if len(strs) < 4:
             continue
         sentences = mb_pick(strs, prefer, False)
-        if len(sentences) < 3:
+        if sum(1 for x in sentences if not ui_word(x)) < 3 or NOT_TEXT_CLASS.search(cls):   # cần ≥3 câu thật, không phải bảng phím
             continue
         af = getattr(o, "assets_file", None)
         label = _mb_label(af, o, raw)
@@ -815,6 +852,12 @@ def _scan_unity_env(env, rel: str, prefer: str, job: dict) -> list[dict]:
                     "lang": prefer if lang == "latin" else lang, "loc": rich, "loose": rich, "label": f"{rel} → {label}",
                     "sample": [t[:120] for t in texts[:3]], "size": len(raw),
                     "_items": [{"t": t, "kind": "ui" if len(t) < 30 and " " not in t.strip() else "say", "ctx": label[:80]} for t in texts]})
+    if ui_ids:
+        texts = list(dict.fromkeys(ui_texts))
+        out.append({"kind": "mono", "rel": rel, "path_id": ui_ids[0], "path_ids": ui_ids, "asset": "Chữ trên nút / menu", "fmt": "mono",
+                    "count": len(texts), "lang": prefer, "loc": True, "loose": True, "ui": True,
+                    "label": f"{rel} → chữ trên nút / menu ({len(ui_ids)} ô chữ)", "sample": [t[:120] for t in texts[:3]], "size": 0,
+                    "_items": [{"t": t, "kind": "ui", "ctx": "nút / menu giao diện"} for t in texts]})
     for o in objs:
         if job.get("cancel"):
             break
@@ -883,7 +926,7 @@ def mb_pick(strs: list[tuple[int, int, str]], prefer: str, loose: bool) -> list[
     """Chuỗi là câu chữ hiển thị, đúng ngôn ngữ gốc (bỏ tên trường, khóa, đường dẫn, ngôn ngữ khác)."""
     keep = []
     for _, _, s in strs:
-        if not textlike(s, loose):
+        if not textlike(s, loose) and not (ui_word(s) and textlike(s, True)):     # chữ một từ cơ bản: Settings, Back…
             continue
         sl = script_lang(s)
         if prefer in ("ja", "zh", "ko"):
@@ -944,6 +987,93 @@ def _mb_label(env_file, o, raw: bytes) -> str:
     except Exception:
         cls = ""
     return " · ".join(x for x in (name, cls) if x) or f"MonoBehaviour #{o.path_id}"
+
+
+NOT_TEXT_CLASS = re.compile(r"(?i)InputSystem|InputAction|Rewired|PlayerInput|Animator|Timeline|Shader|Material|AudioMixer")
+UI_TEXT_CLASSES = {"TMPro.TextMeshProUGUI", "TMPro.TextMeshPro", "UnityEngine.UI.Text", "TMPro.TMP_Text", "UnityEngine.UI.Legacy.Text"}
+
+
+def _script_names(env) -> dict[int, str]:
+    return {pid: c for (_f, pid), c in _script_names_by_file(env).items()}
+
+
+def _script_names_by_file(env) -> dict[tuple[str, int], str]:
+    out = {}
+    objs = env.objects
+    for o in (objs.values() if isinstance(objs, dict) else objs):    # Environment: list, SerializedFile: dict
+        if o.type.name != "MonoScript":
+            continue
+        try:
+            d = o.read()
+            af = getattr(o, "assets_file", None)
+            out[(str(getattr(af, "name", "") or "").lower(), int(o.path_id))] = \
+                ".".join(x for x in (getattr(d, "m_Namespace", ""), getattr(d, "m_ClassName", "")) if x)
+        except Exception:       # đối tượng hỏng
+            continue
+    return out
+
+
+def _load_scripts(root: Path, name: str, cache: dict):
+    """MonoScript của file ngoài: globalgamemanagers(.assets) trong <Game>_Data, hoặc bundle Addressables (CAB-…) –
+    Addressables để MonoScript trong bundle riêng *monoscripts*.bundle."""
+    cache[name] = {}
+    datas = [x for x in root.iterdir() if x.is_dir() and x.name.endswith("_Data")]
+    for d in datas:
+        f = d / name
+        if f.is_file():
+            try:
+                with unityload.open_env(_src(root, f)) as env:
+                    cache[name] = _script_names(env)
+            except Exception:       # không đọc được
+                pass
+            return
+    if name.startswith("cab-") and not cache.get("_cab_done"):
+        cache["_cab_done"] = True
+        for d in datas:
+            for f in sorted((d / "StreamingAssets").rglob("*.bundle")) if (d / "StreamingAssets").is_dir() else []:
+                if "monoscript" not in f.name.lower():
+                    continue
+                try:
+                    with unityload.open_env(_src(root, f)) as env:
+                        for (fname, pid), c in _script_names_by_file(env).items():
+                            cache.setdefault(fname, {})[pid] = c
+                except Exception:       # không đọc được
+                    continue
+
+
+def script_class(o, raw: bytes, root: Path | None, job: dict) -> str:
+    """Tên lớp C# của MonoBehaviour (vd TMPro.TextMeshProUGUI) theo m_Script – MonoScript nằm cùng file, trong
+    globalgamemanagers.assets (game đã build, kể cả IL2CPP) hoặc bundle monoscripts (Addressables). Nhớ trong job["_scripts"]."""
+    if len(raw) < 28:
+        return ""
+    fid = int.from_bytes(raw[16:20], "little")
+    pid = int.from_bytes(raw[20:28], "little", signed=True)
+    af = getattr(o, "assets_file", None)
+    cache = job.setdefault("_scripts", {})
+    try:
+        if fid == 0:
+            key = f"self:{getattr(af, 'name', '')}:{id(af)}"
+            if key not in cache:
+                cache[key] = _script_names(af) if af is not None else {}
+            return cache[key].get(pid, "")
+        ext = af.externals[fid - 1]
+        name = re.split(r"[\\/:]", getattr(ext, "path", "") or "")[-1].lower()
+    except Exception:       # không có thông tin file ngoài
+        return ""
+    if name and name not in cache and root is not None:
+        _load_scripts(root, name, cache)
+    return (cache.get(name) or {}).get(pid, "")
+
+
+def ui_text_ok(s: str, prefer: str) -> bool:
+    """Chữ trong ô chữ giao diện: bỏ chữ giữ chỗ (New Text…), số, mã; đúng ngôn ngữ gốc."""
+    t = s.strip()
+    if not t or UI_PLACEHOLDER.match(t) or not textlike(t, True) or suspect(t):
+        return False
+    sl = script_lang(t)
+    if prefer in ("ja", "zh", "ko"):
+        return sl == prefer
+    return sl == "latin" and (prefer != "en" or _maybe_en(t) or ui_word(t))
 
 
 def _ue_root(root: Path) -> Path | None:
@@ -1028,7 +1158,10 @@ def apply(root: Path, items: list[dict], sources: list[dict], prefer: str = "en"
 
 
 def _apply_env(env, lst: list[dict], tr: dict, prefer: str, p: Path) -> tuple[bytes, int]:
-    want = {s["path_id"]: s for s in lst}
+    want = {}
+    for s in lst:
+        for pid in s.get("path_ids") or [s["path_id"]]:
+            want[pid] = s
     hit = 0
     for o in env.objects:
         if o.path_id not in want:
