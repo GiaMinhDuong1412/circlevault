@@ -20,7 +20,7 @@ import threading
 import urllib.request
 from pathlib import Path
 
-from . import config
+from . import config, unityload
 
 BACKUP_DIR = "CircleVault-ban-goc"
 PATCH_BACKUP = "CircleVault-truoc-VH"
@@ -248,37 +248,42 @@ def _scan_unity(root: Path, notes: list[str]) -> list[dict]:
     tmp_n = 0
     for p in files:
         rel = str(p.relative_to(root)).replace("\\", "/")
+        cnt = [0]
         try:
-            env = UnityPy.load(str(_orig(root, rel)))
-            objs = list(env.objects)
+            with unityload.open_env(_orig(root, rel)) as env:     # tự đóng file: không giữ file game mở
+                _scan_objs(list(env.objects), rel, out, cnt)
         except Exception:       # file không phải của Unity / mã hóa
             continue
-        for o in objs:
-            try:
-                tname = o.type.name
-                if tname == "Font":
-                    tree = o.read_typetree()
-                    data = _font_bytes(tree)
-                    name = tree.get("m_Name") or "Font"
-                    if len(data) < 100:
-                        continue                  # font bitmap / font hệ thống không kèm dữ liệu
-                    e = _entry(f"u:{rel}:{o.path_id}", "unity", f"{name} ({rel})", info(data), rel=rel, path_id=int(o.path_id))
-                    if e:
-                        out.append(e)
-                elif tname == "MonoBehaviour" and 200 < o.byte_size < 64 * 1024 * 1024:
-                    name = o.peek_name() or ""
-                    if not re.search(r"(?i)\bSDF\b|TMP|TextMesh", name):
-                        continue
-                    tmp_n += 1
-                    e = _tmp_entry(o, name, rel)
-                    if e:
-                        out.append(e)
-            except Exception:       # đối tượng không đọc được: bỏ qua
-                continue
+        tmp_n += cnt[0]
     if tmp_n:
         notes.append(f"Game dùng {tmp_n} font TextMeshPro (chữ vẽ sẵn thành ảnh): app chỉ kiểm tra, chưa thêm dấu được. "
                      "Nếu chữ Việt hiện ô vuông ở những chỗ đó, dùng 'Unity · dịch khi chơi' hoặc gói Việt hóa có sẵn.")
     return out
+
+
+def _scan_objs(objs, rel: str, out: list, tmp_count: list):
+    for o in objs:
+        try:
+            tname = o.type.name
+            if tname == "Font":
+                tree = o.read_typetree()
+                data = _font_bytes(tree)
+                name = tree.get("m_Name") or "Font"
+                if len(data) < 100:
+                    continue                  # font bitmap / font hệ thống không kèm dữ liệu
+                e = _entry(f"u:{rel}:{o.path_id}", "unity", f"{name} ({rel})", info(data), rel=rel, path_id=int(o.path_id))
+                if e:
+                    out.append(e)
+            elif tname == "MonoBehaviour" and 200 < o.byte_size < 64 * 1024 * 1024:
+                name = o.peek_name() or ""
+                if not re.search(r"(?i)\bSDF\b|TMP|TextMesh", name):
+                    continue
+                tmp_count[0] += 1
+                e = _tmp_entry(o, name, rel)
+                if e:
+                    out.append(e)
+        except Exception:       # đối tượng không đọc được: bỏ qua
+            continue
 
 
 def _tmp_entry(o, name: str, rel: str) -> dict | None:
@@ -613,36 +618,40 @@ def _apply_unity(root: Path, rel: str, ts: list[dict], src) -> int:
         raise FontError("Thiếu thư viện UnityPy.")
     p = root / rel
     _backup(root, rel)
-    orig_env = UnityPy.load(str(_orig(root, rel)))
     origs = {}
     want = {t["path_id"]: t for t in ts}
-    for o in orig_env.objects:
-        if o.path_id in want and o.type.name == "Font":
-            origs[o.path_id] = _font_bytes(o.read_typetree())
-    env = UnityPy.load(str(p))            # đọc file hiện tại (có thể đã ghi bản dịch) rồi chỉ thay font
+    with unityload.open_env(_orig(root, rel)) as orig_env:
+        for o in orig_env.objects:
+            if o.path_id in want and o.type.name == "Font":
+                origs[o.path_id] = _font_bytes(o.read_typetree())
     n = 0
-    for o in env.objects:
-        t = want.get(o.path_id)
-        if not t or o.type.name != "Font":
-            continue
-        tree = o.read_typetree()
-        old = origs.get(o.path_id) or _font_bytes(tree)
-        data = build(src(t.get("weight") or 400), old, None)
-        tree["m_FontData"] = list(data) if isinstance(tree.get("m_FontData"), list) else data
-        o.save_typetree(tree)
-        n += 1
+    # đọc BẢN CHÉP TẠM của file hiện tại (có thể đã ghi bản dịch) – không giữ chính file game mở, rồi mới ghi đè
+    with unityload.open_env(p, detach=True) as env:
+        for o in env.objects:
+            t = want.get(o.path_id)
+            if not t or o.type.name != "Font":
+                continue
+            tree = o.read_typetree()
+            old = origs.get(o.path_id) or _font_bytes(tree)
+            data = build(src(t.get("weight") or 400), old, None)
+            tree["m_FontData"] = list(data) if isinstance(tree.get("m_FontData"), list) else data
+            o.save_typetree(tree)
+            n += 1
+        out, bundle = _env_bytes(env) if n else (b"", False)
     if n:
-        _save_env(root, p, env)
+        _write_unity(root, p, out, bundle)
     return n
 
 
-def _save_env(root: Path, p: Path, env):
+def _env_bytes(env) -> tuple[bytes, bool]:
     f = next(iter(env.files.values()))
-    data = f.save(packer="lz4") if type(f).__name__ == "BundleFile" else f.save()
-    tmp = p.with_name(p.name + ".cvtmp")
-    tmp.write_bytes(data)
-    os.replace(tmp, p)
-    if type(f).__name__ == "BundleFile":          # bundle của Addressables: tắt kiểm tra CRC trong catalog
+    bundle = type(f).__name__ == "BundleFile"
+    return (f.save(packer="lz4") if bundle else f.save()), bundle
+
+
+def _write_unity(root: Path, p: Path, data: bytes, bundle: bool):
+    config.write_file(p, data)
+    if bundle:                                    # bundle của Addressables: tắt kiểm tra CRC trong catalog
         from . import unitygame
         cat = unitygame.catalog_of(root)
         if cat and cat.suffix == ".json" and cat.exists():
@@ -699,17 +708,19 @@ def restore(root: Path, fix: dict) -> int:
             continue
         try:
             want = {t["path_id"] for t in ts}
-            origs = {o.path_id: o.read_typetree() for o in UnityPy.load(str(b)).objects if o.path_id in want and o.type.name == "Font"}
-            env = UnityPy.load(str(root / rel))
+            with unityload.open_env(b) as benv:
+                origs = {o.path_id: o.read_typetree() for o in benv.objects if o.path_id in want and o.type.name == "Font"}
             hit = 0
-            for o in env.objects:
-                if o.path_id in origs and o.type.name == "Font":
-                    tree = o.read_typetree()
-                    tree["m_FontData"] = origs[o.path_id].get("m_FontData")
-                    o.save_typetree(tree)
-                    hit += 1
+            with unityload.open_env(root / rel, detach=True) as env:
+                for o in env.objects:
+                    if o.path_id in origs and o.type.name == "Font":
+                        tree = o.read_typetree()
+                        tree["m_FontData"] = origs[o.path_id].get("m_FontData")
+                        o.save_typetree(tree)
+                        hit += 1
+                out, bundle = _env_bytes(env) if hit else (b"", False)
             if hit:
-                _save_env(root, root / rel, env)
+                _write_unity(root, root / rel, out, bundle)
                 n += hit
         except Exception:       # không đọc được: để nguyên
             continue
@@ -726,10 +737,10 @@ def preview_bytes(root: Path, f: dict, aes: bytes | None = None) -> bytes:
     if f["kind"] == "file":
         return _orig(root, f["label"]).read_bytes()
     if f["kind"] == "unity":
-        UnityPy = _unitypy()
-        for o in UnityPy.load(str(_orig(root, f["rel"]))).objects:
-            if o.path_id == f["path_id"]:
-                return _font_bytes(o.read_typetree())
+        with unityload.open_env(_orig(root, f["rel"])) as env:
+            for o in env.objects:
+                if o.path_id == f["path_id"]:
+                    return _font_bytes(o.read_typetree())
     if f["kind"] == "unreal":
         from . import unreal
         return unreal.Pak(root / f["pak"], aes).read(f["name"])

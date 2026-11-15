@@ -2,6 +2,15 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-15-sua-ap-dung-unity",
+      "date": "2026-11-15",
+      "title": "Sửa lỗi “Không ghi vào được thư mục game” với game Unity",
+      "items": [
+        "Áp dụng bản dịch vào game Unity (như Castlevania Belmont's Curse) không còn báo “Không ghi vào được thư mục game” khi game đang tắt: lỗi do chính app còn giữ file dữ liệu game mở sau khi đọc. Giờ app đọc xong là đóng file ngay, rồi mới ghi.",
+        "File game có thuộc tính “chỉ đọc” (bản cài sẵn hay đặt) cũng ghi được. Nếu Windows vẫn chặn, thông báo nói rõ file nào bị giữ."
+      ]
+    },
+    {
       "id": "2026-11-15-shorts-quyen-ghi-chi-phi",
       "date": "2026-11-15",
       "title": "YouTube Shorts, áp dụng game trong Program Files, chi phí Claude thực tế",

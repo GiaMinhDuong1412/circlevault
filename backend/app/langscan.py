@@ -27,6 +27,8 @@ import uuid
 from collections import Counter
 from pathlib import Path
 
+from . import config, unityload
+
 BACKUP_DIR = "CircleVault-ban-goc"
 PATCH_BACKUP = "CircleVault-truoc-VH"
 TEXT_EXT = {".json", ".csv", ".tsv", ".xml", ".po", ".ini", ".cfg", ".properties", ".lang", ".strings", ".yaml", ".yml",
@@ -778,9 +780,13 @@ def _scan_unity_asset(root: Path, p: Path, rel: str, prefer: str, job: dict) -> 
     if not UnityPy or re.search(r"(?i)string[-_ ]?tables?", p.name):
         return []
     try:
-        env = UnityPy.load(str(_src(root, p)))
+        with unityload.open_env(_src(root, p)) as env:      # tự đóng file: không giữ file game mở (Windows sẽ không cho ghi đè)
+            return _scan_unity_env(env, rel, prefer, job)
     except Exception:       # file hỏng / mã hóa / không phải file Unity
         return []
+
+
+def _scan_unity_env(env, rel: str, prefer: str, job: dict) -> list[dict]:
     out = []
     try:
         objs = [o for o in env.objects if o.type.name == "TextAsset"]
@@ -970,9 +976,7 @@ def _backup(root: Path, p: Path):
 
 
 def _write(p: Path, data: bytes):
-    tmp = p.with_name(p.name + ".cvtmp")
-    tmp.write_bytes(data)
-    os.replace(tmp, p)
+    config.write_file(p, data)            # thử lại / bỏ thuộc tính chỉ đọc / ghi thẳng khi Windows không cho thay file
 
 
 def apply(root: Path, items: list[dict], sources: list[dict], prefer: str = "en") -> dict:
@@ -1008,37 +1012,43 @@ def apply(root: Path, items: list[dict], sources: list[dict], prefer: str = "en"
             if not p.exists():
                 errors.append(f"Không thấy {rel}")
                 continue
-            env = UnityPy.load(str(_src(root, p)))
-            want = {s["path_id"]: s for s in lst}
-            hit = 0
-            for o in env.objects:
-                if o.path_id not in want:
-                    continue
-                s = want[o.path_id]
-                if s["kind"] == "mono" and o.type.name == "MonoBehaviour":
-                    raw, n = mb_rewrite(o.get_raw_data(), tr)
-                    if n:
-                        o.set_raw_data(raw)
-                        hit += n
-                    continue
-                if o.type.name != "TextAsset":
-                    continue
-                d = o.read()
-                ents = entries(d.m_Script, s["fmt"], bool(s.get("loose")), prefer, s.get("col"))
-                new, n = replace(d.m_Script, ents, tr, s["fmt"])
-                if n:
-                    d.m_Script = new
-                    d.save()
-                    hit += n
+            _backup(root, p)                  # đọc từ bản sao lưu, không đọc chính file sắp ghi đè
+            with unityload.open_env(_src(root, p)) as env:
+                data, hit = _apply_env(env, lst, tr, prefer, p)
             if not hit:
                 continue
-            f = next(iter(env.files.values()))
-            data = f.save(packer="lz4") if p.suffix.lower() == ".bundle" else f.save()
-            _backup(root, p)
             _write(p, data)
             texts += hit
             files += 1
     return {"texts": texts, "files": files, "errors": errors}
+
+
+def _apply_env(env, lst: list[dict], tr: dict, prefer: str, p: Path) -> tuple[bytes, int]:
+    want = {s["path_id"]: s for s in lst}
+    hit = 0
+    for o in env.objects:
+        if o.path_id not in want:
+            continue
+        s = want[o.path_id]
+        if s["kind"] == "mono" and o.type.name == "MonoBehaviour":
+            raw, n = mb_rewrite(o.get_raw_data(), tr)
+            if n:
+                o.set_raw_data(raw)
+                hit += n
+            continue
+        if o.type.name != "TextAsset":
+            continue
+        d = o.read()
+        ents = entries(d.m_Script, s["fmt"], bool(s.get("loose")), prefer, s.get("col"))
+        new, n = replace(d.m_Script, ents, tr, s["fmt"])
+        if n:
+            d.m_Script = new
+            d.save()
+            hit += n
+    if not hit:
+        return b"", 0
+    f = next(iter(env.files.values()))
+    return (f.save(packer="lz4") if p.suffix.lower() == ".bundle" else f.save()), hit
 
 
 def restore(root: Path, sources: list[dict]) -> int:

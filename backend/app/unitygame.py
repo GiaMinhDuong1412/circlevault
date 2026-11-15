@@ -29,7 +29,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from . import config, translate
+from . import config, translate, unityload
 
 BACKUP_DIR = "CircleVault-ban-goc"
 PATCH_BACKUP = "CircleVault-truoc-VH"
@@ -124,12 +124,11 @@ def pick_bundles(root: Path) -> tuple[str, list[Path]]:
         if code in by:
             return code, by[code]
     if "?" in by:                               # tên bundle không có mã ngôn ngữ: đọc thử
-        UnityPy = _unitypy()
         found: dict[str, list[Path]] = {}
         for b in by["?"]:
-            env = UnityPy.load(str(_src(root, b)))
-            for _o, t in _locale_tables(env):
-                found.setdefault(str(t["m_LocaleId"].get("m_Code", "")).lower(), []).append(b)
+            with unityload.open_env(_src(root, b)) as env:
+                for _o, t in _locale_tables(env):
+                    found.setdefault(str(t["m_LocaleId"].get("m_Code", "")).lower(), []).append(b)
         for code in ("en", "en-us", "en-gb"):
             if code in found:
                 return code, sorted(set(found[code]))
@@ -156,7 +155,7 @@ def is_localization_game(path: Path) -> Path | None:
 
 # ================================================================== đọc chữ
 def scan(root: Path) -> tuple[list[dict], dict]:
-    UnityPy = _unitypy()
+    _unitypy()
     code, bundles = pick_bundles(root)
     if not bundles:
         raise GameError("Game Unity này không dùng Unity Localization (không có bundle bảng chữ trong StreamingAssets/aa). "
@@ -164,15 +163,15 @@ def scan(root: Path) -> tuple[list[dict], dict]:
     items, errors = [], []
     for b in bundles:
         try:
-            env = UnityPy.load(str(_src(root, b)))
-            for _obj, t in _locale_tables(env):
-                if str(t["m_LocaleId"].get("m_Code", "")).lower() != code:
-                    continue
-                name = re.sub(r"_[A-Za-z-]+$", "", str(t.get("m_Name") or ""))
-                for e in t["m_TableData"]:
-                    s = e.get("m_Localized")
-                    if isinstance(s, str) and s.strip():
-                        items.append({"t": s, "kind": "ui", "ctx": name})
+            with unityload.open_env(_src(root, b)) as env:
+                for _obj, t in _locale_tables(env):
+                    if str(t["m_LocaleId"].get("m_Code", "")).lower() != code:
+                        continue
+                    name = re.sub(r"_[A-Za-z-]+$", "", str(t.get("m_Name") or ""))
+                    for e in t["m_TableData"]:
+                        s = e.get("m_Localized")
+                        if isinstance(s, str) and s.strip():
+                            items.append({"t": s, "kind": "ui", "ctx": name})
         except Exception as e:      # bundle hỏng / mã hóa
             errors.append(f"{b.name}: {e}")
     cat = catalog_of(root)
@@ -185,7 +184,7 @@ def scan(root: Path) -> tuple[list[dict], dict]:
 
 # ================================================================== ghi chữ + tắt CRC
 def apply(root: Path, items: list[dict], unity: dict) -> dict:
-    UnityPy = _unitypy()
+    _unitypy()
     tr = {it["t"]: it["final"] for it in items if it.get("final") and it["final"] != it["t"]}
     code = unity.get("locale") or "en"
     changed, files, names = 0, 0, []
@@ -194,26 +193,24 @@ def apply(root: Path, items: list[dict], unity: dict) -> dict:
         if not p.exists():
             continue
         _backup(root, p)
-        env = UnityPy.load(str(_src(root, p)))
         n = 0
-        for obj, t in _locale_tables(env):
-            if str(t["m_LocaleId"].get("m_Code", "")).lower() != code:
-                continue
-            hit = 0
-            for e in t["m_TableData"]:
-                v = tr.get(e.get("m_Localized"))
-                if v:
-                    e["m_Localized"] = v
-                    hit += 1
-            if hit:
-                obj.save_typetree(t)
-                n += hit
+        with unityload.open_env(_src(root, p)) as env:     # đọc bản sao lưu, đóng file xong mới ghi đè file game
+            for obj, t in _locale_tables(env):
+                if str(t["m_LocaleId"].get("m_Code", "")).lower() != code:
+                    continue
+                hit = 0
+                for e in t["m_TableData"]:
+                    v = tr.get(e.get("m_Localized"))
+                    if v:
+                        e["m_Localized"] = v
+                        hit += 1
+                if hit:
+                    obj.save_typetree(t)
+                    n += hit
+            data = next(iter(env.files.values())).save(packer="lz4") if n else b""
         if not n:
             continue
-        data = next(iter(env.files.values())).save(packer="lz4")
-        tmp = p.with_name(p.name + ".cvtmp")
-        tmp.write_bytes(data)
-        os.replace(tmp, p)
+        config.write_file(p, data)
         changed += n
         files += 1
         names.append(p.name)

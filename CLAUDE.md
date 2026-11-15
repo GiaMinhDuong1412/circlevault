@@ -269,6 +269,10 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   (`addons/index.js` bỏ qua `*-preload.js`). Thư mục tiện ích trong DATA được chép bản mới khi app chạy (`_refresh_extension`). Cách gỡ: `frontend/addons/facebook/GO-BO.txt`.
 - Ghi file dữ liệu hay đổi (project/book/novel.json, cài đặt): dùng `config.write_file` (file tạm riêng từng luồng + `os.replace`, thử lại khi Windows báo
   WinError 5 vì file đang bị mở, cuối cùng ghi thẳng) và `config.read_json` (thử lại khi đang bị giữ/ghi dở) – không tự viết `tmp` + `os.replace`.
+- **Mở file Unity**: LUÔN dùng `unityload.open_env(path, detach=False)` (app tự `open()` file rồi đóng khi xong; `UnityPy.load(str)` tự mở
+  file và GIỮ tới khi gc chạy → Windows báo WinError 5 khi thay chính file đó lúc áp dụng). Sửa file: đọc từ bản sao lưu (`_backup` trước)
+  hoặc `detach=True` (bản chép tạm `DATA/cache/unity-tam`), lấy bytes trong `with`, ra ngoài mới `config.write_file`. `config.write_file`
+  gặp PermissionError: bỏ thuộc tính chỉ đọc + `gc.collect()` rồi thử lại.
 - `tools/dong_goi_app.py` chuẩn bị `desktop/res/`; `tools/kiem_tra.py` kiểm tra cú pháp + liên kết file + đường dẫn `/api/…` bị đổi thành địa chỉ ngoài (`kiem_url_la`).
 
 ## Quy trình

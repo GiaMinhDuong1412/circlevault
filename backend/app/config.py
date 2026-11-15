@@ -43,6 +43,15 @@ def write_file(path: Path, data: str | bytes) -> None:
                 os.replace(tmp, path)
                 return
             except PermissionError:
+                if i == 0:
+                    try:                        # file game có thuộc tính "chỉ đọc" (bộ cài/ bản repack hay đặt) – bỏ đi
+                        if path.exists() and not os.access(path, os.W_OK):
+                            os.chmod(path, 0o666)
+                            continue
+                    except OSError:
+                        pass
+                    import gc
+                    gc.collect()                # đóng file mà chính app còn giữ (đối tượng chờ dọn)
                 time.sleep(min(0.05 * (i + 1), 0.3))
         path.write_bytes(raw)                   # vẫn bị giữ: ghi đè nội dung (Python mở file cho phép người khác ghi)
     finally:

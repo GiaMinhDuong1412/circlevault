@@ -1655,8 +1655,8 @@ def xunity_setup(body: XunityIn):
         _save(p)
     try:
         st = xunity.install(root, pid, lang)
-    except PermissionError:
-        raise perm_error(root)
+    except PermissionError as e:
+        raise perm_error(root, err=e)
     with _lock:
         p = _load(pid)
         p["xunity"] = {k: st[k] for k in ("il2cpp", "arch", "at")}
@@ -1760,8 +1760,8 @@ def apply(pid: str):
                     res["errors"] = (res.get("errors") or []) + fr["errors"]
     except (GameError, unitygame.GameError, unreal.UEError, fontcheck.FontError, RuntimeError) as e:
         raise HTTPException(400, str(e))
-    except PermissionError:
-        raise perm_error(Path(p.get("groot") or root))
+    except PermissionError as e:
+        raise perm_error(Path(p.get("groot") or root), err=e)
     with _lock:
         p = _load(pid)
         p["applied"] = time.time()
@@ -1785,8 +1785,8 @@ def restore(pid: str):
             n += unreal.restore(root, (p.get("unreal") or {}).get("sources") or [])
         elif p["engine"] not in ("files", "unreal"):
             n += restore_renpy(root) if p["engine"] == "renpy" else unitygame.restore(root) if p["engine"] == "unity" else restore_rpg(root)
-    except PermissionError:
-        raise perm_error(Path(p.get("groot") or root))
+    except PermissionError as e:
+        raise perm_error(Path(p.get("groot") or root), err=e)
     with _lock:
         p = _load(pid)
         p["applied"] = None
@@ -1806,13 +1806,15 @@ def can_write(d: Path) -> bool:
         return False
 
 
-def perm_error(root: Path, what: str = "ghi vào") -> HTTPException:
-    """PermissionError khi ghi vào game: thư mục cần quyền quản trị (423, trang hỏi cấp quyền) hay file đang bị game giữ (400)."""
+def perm_error(root: Path, what: str = "ghi vào", err: Exception | None = None) -> HTTPException:
+    """PermissionError khi ghi vào game: thư mục cần quyền quản trị (423, trang hỏi cấp quyền) hay file đang bị giữ (400)."""
     root = Path(root)
     if root.is_dir() and not can_write(root):
         return HTTPException(423, f"Thư mục game cần quyền quản trị mới {what} được ({root}). "
                                   "Bấm Cho phép để Windows hỏi quyền một lần cho thư mục game này.")
-    return HTTPException(400, f"Không {what} được thư mục game: game đang mở hoặc file đang bị chương trình khác giữ. Tắt game rồi thử lại.")
+    name = Path(getattr(err, "filename", "") or "").name
+    return HTTPException(400, f"Windows không cho thay file{(' ' + name) if name else ''} trong thư mục game: file đang được chương trình "
+                              "khác mở (game, trình chỉnh sửa, phần mềm diệt virus đang quét…). Đóng chương trình đó rồi thử lại.")
 
 
 def grant_write(root: Path) -> None:
@@ -1940,8 +1942,8 @@ def fonts_apply(pid: str, body: FontApplyIn):
         res = fontcheck.apply(_font_root(p), body.cid, targets, _aes(p))
     except fontcheck.FontError as e:
         raise HTTPException(400, str(e))
-    except PermissionError:
-        raise perm_error(_font_root(p))
+    except PermissionError as e:
+        raise perm_error(_font_root(p), err=e)
     if not res["fonts"]:
         raise HTTPException(400, "Không đổi được font nào. " + "; ".join(res["errors"][:3]))
     with _lock:
@@ -1961,8 +1963,8 @@ def fonts_restore(pid: str):
     try:
         if p.get("fontfix"):
             n = fontcheck.restore(_font_root(p), p["fontfix"])
-    except PermissionError:
-        raise perm_error(_font_root(p))
+    except PermissionError as e:
+        raise perm_error(_font_root(p), err=e)
     with _lock:
         p = _load(pid)
         p["fontfix"] = None
