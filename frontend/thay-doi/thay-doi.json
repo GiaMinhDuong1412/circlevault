@@ -2,6 +2,16 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-16-ghep-dau-tmp",
+      "date": "2026-11-16",
+      "title": "Việt hóa game: ghép dấu tiếng Việt vào font chữ vẽ sẵn (TextMeshPro) – thử nghiệm",
+      "items": [
+        "Font chữ vẽ sẵn của game Unity (TextMeshPro) thiếu ơ ư đ ă, dấu hỏi, dấu nặng…: app nay tự GHÉP DẤU vào chính chữ của game – giữ nguyên kiểu chữ gốc, chỉ lấy dấu từ một font có đủ tiếng Việt.",
+        "Cách dùng: mở dự án → mục Font chữ tiếng Việt (app tự kiểm tra lại) → tích font TextMeshPro đang thiếu dấu → chọn font lấy dấu (gợi ý cùng kiểu có chân / không chân) → Đổi font đã chọn (1–3 phút) → Áp dụng vào game. Không cần dịch lại.",
+        "Ghép xong app tự chuyển về “Đầy đủ dấu”. Không ưng thì bấm Trả font gốc."
+      ]
+    },
+    {
       "id": "2026-11-16-bang-phim",
       "date": "2026-11-16",
       "title": "Việt hóa game: không dịch bảng phím điều khiển nữa (sửa game đứng lúc tải)",

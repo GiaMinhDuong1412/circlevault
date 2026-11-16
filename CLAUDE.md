@@ -68,6 +68,15 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     full | safe (`fontcheck.fit_text`: chữ font không có → chữ gần nhất font CÓ, giữ dáng â/ê/ô trước dấu thanh; bộ chữ = `_font_have` giao
     các font thiếu dấu, không rõ thì Latin-1) | nodau | en (= `_restore_do`, gỡ bản dịch, giữ dự án). Font TextMeshPro: `tmp_chars_raw` đọc
     m_CharacterTable từ dữ liệu thô (bản ghi 16 byte type=1,unicode,glyph,1.0f hoặc 12 byte bản cũ) – nhận font TMP theo bảng chữ, không theo tên.
+    **Ghép dấu vào font TMP** (`tmpfont.py`, thử nghiệm): `parse` tìm bảng glyph (48/52 byte, ngay trước bảng chữ) + bảng chữ + PPtr atlas +
+    `find_wh` (m_AtlasWidth/Height/Padding/RenderMode); `Composer` dựng chữ gốc của game từ SDF (phóng ×4, ngưỡng 0.5), lấy DẤU = chữ đủ
+    − chữ gốc của font chọn (cỡ khớp chiều cao chữ gốc), đặt dấu theo khung chữ game (trên: giữ khe hở với đỉnh, dưới: theo chân, dính: tỉ lệ),
+    ĩ/ỉ bỏ chấm i; SDF tính lại cùng độ dốc atlas gốc (`_slope`); `Packer` xếp vào chỗ trống, hết chỗ thì nhân đôi chiều cao (chữ cũ giữ y,
+    sửa kích thước trong font + `_TextureWidth/_TextureHeight` của material dùng atlas). Mã glyph mới = max+1 (<65536 để `tmp_chars_raw` vẫn
+    đọc được). fontcheck: mục `kind: tmp` có `can_replace` khi đọc được bố cục + atlas cùng file (`_tmp_atlas`), `cat` = `guess_cat` (chân chữ I/l);
+    `_apply_unity` dựng từ BẢN GỐC (`_tmp_build`) rồi ghi vào file hiện tại: raw font, ảnh atlas KHÔNG NÉN (Alpha8/RGBA32 giữ, còn lại Alpha8),
+    material; `restore` chép lại raw gốc của font + atlas + material. gametr `_font_stuck` = font thiếu dấu chưa sửa (TMP chưa ghép) → `_vi_mode`
+    safe; ghép xong thì bỏ `opts.vi_mode` (về Đầy đủ dấu). `fontscan.v` = 2 (bản cũ thì trang tự quét lại).
   - **Chữ nút / menu / cài đặt** (Unity): `langscan.UI_WORDS` (Settings, Back, Options… – không có tên hành động điều khiển Jump/Move) chỉ dùng cho
     `ui_word`/tìm nguồn mới (một từ trong MonoBehaviour thường chỉ nhận ở bảng chữ lớn – `loose`), không nhận ở file cấu hình; `script_class` đọc m_Script →
     MonoScript (cùng file / globalgamemanagers.assets / bundle *monoscripts*) – lớp `UI_TEXT_CLASSES` (TextMeshProUGUI, UI.Text) gom thành một

@@ -1732,13 +1732,20 @@ def _vi_mode(p: dict) -> str:
     m = p["opts"].get("vi_mode")
     if m:
         return m
-    fonts = (p.get("fontscan") or {}).get("fonts", [])
-    return "safe" if any(not f.get("ok") and not f.get("can_replace") for f in fonts) else "full"
+    return "safe" if _font_stuck(p) else "full"
+
+
+def _font_stuck(p: dict) -> list[dict]:
+    """Font thiếu dấu mà CHƯA được sửa: font vẽ sẵn (TextMeshPro) chưa ghép dấu, hoặc font không đổi được."""
+    fixed = {t["id"] for t in (p.get("fontfix") or {}).get("targets") or []}
+    return [f for f in (p.get("fontscan") or {}).get("fonts", [])
+            if not f.get("ok") and f["id"] not in fixed and (not f.get("can_replace") or f.get("kind") == "tmp")]
 
 
 def _font_have(p: dict) -> set[str] | None:
-    """Chữ Việt mà MỌI font thiếu dấu của game đều có (để chế độ "Giữ dấu font có" chỉ dùng chữ hiển thị được)."""
-    fonts = [f for f in (p.get("fontscan") or {}).get("fonts", []) if not f.get("ok")]
+    """Chữ Việt mà MỌI font thiếu dấu (chưa sửa) của game đều có (để chế độ "Giữ dấu font có" chỉ dùng chữ hiển thị được)."""
+    fixed = {t["id"] for t in (p.get("fontfix") or {}).get("targets") or []}
+    fonts = [f for f in (p.get("fontscan") or {}).get("fonts", []) if not f.get("ok") and f["id"] not in fixed]
     if not fonts:
         return None
     have = None
@@ -2216,7 +2223,7 @@ def _font_state(p: dict) -> dict:
             "pick": p["opts"].get("font_pick"), "fix": p.get("fontfix"), "mode": "pick" if script else "replace",
             "vi_mode": _vi_mode(p), "vi_modes": fontcheck.VI_MODES, "vi_auto": not p["opts"].get("vi_mode"),
             "applied_mode": p.get("applied_mode") or ("full" if p.get("applied") else None),
-            "have": "".join(sorted(_font_have(p) or [])) or None,
+            "have": "".join(sorted(_font_have(p) or [])) or None, "stuck": [f["id"] for f in _font_stuck(p)],
             "engine": p["engine"], "cats": fontcheck.CATS}
 
 
@@ -2239,7 +2246,7 @@ def fonts_scan(pid: str):
             res = fontcheck.scan_game(_font_root(p), _aes(p), job)
             with _lock:
                 q = _load(pid)
-                q["fontscan"] = {**res, "at": time.time()}
+                q["fontscan"] = {**res, "at": time.time(), "v": 2}     # v2: font TMP ghép dấu được
                 _save(q)
             job.update(state="done", text="Xong")
         except Exception as e:      # báo lên giao diện
@@ -2291,8 +2298,13 @@ def fonts_apply(pid: str, body: FontApplyIn):
         keep = [t for t in old.get("targets") or [] if t["id"] not in {x["id"] for x in targets}]
         p["fontfix"] = {"targets": keep + [{**t, "cid": body.cid} for t in targets],
                         "files": sorted(set(old.get("files") or []) | set(res["files"])), "at": time.time()}
+        msg = None
+        if any(t["kind"] == "tmp" for t in targets) and not _font_stuck(p):
+            p["opts"].pop("vi_mode", None)          # font đã có dấu: về "Đầy đủ dấu" (app tự chọn)
+            msg = ("Đã ghép dấu tiếng Việt vào font của game. Bấm “Áp dụng vào game” để ghi lại bản dịch ĐẦY ĐỦ DẤU "
+                   "(không cần dịch lại).")
         _save(p)
-    return {**_font_state(p), "result": res}
+    return {**_font_state(p), "result": res, **({"msg": msg} if msg else {})}
 
 
 @router.post("/{pid}/fonts/restore")

@@ -1156,7 +1156,7 @@ async function gameAct(e, id) {
       if (T.applying && T.applying[id]) return;              // đang ghi: không chạy lần nữa
       if (!confirm('Tắt game trước khi áp dụng. Áp dụng bản dịch vào game ngay?')) return;
       const fs = FN.st && FN.pid === id ? FN.st : null;
-      const stuck = fs && fs.scan && (fs.scan.fonts || []).some(f => !f.ok && !f.can_replace);
+      const stuck = fs && fs.scan && (fs.stuck ? fs.stuck.length > 0 : (fs.scan.fonts || []).some(f => !f.ok && !f.can_replace));
       if (stuck && fs.vi_mode === 'full' && confirm('Font của game không có đủ chữ Việt có dấu – để “Đầy đủ dấu” thì game sẽ hiện chữ lỗi kiểu “Qufc vffng”.\n\n'
           + 'OK = đổi sang “Giữ dấu font có” (khuyên dùng) rồi áp dụng.\nHủy = vẫn áp dụng “Đầy đủ dấu”.')) {
         try { await api(`/api/translate/games/${id}`, {method: 'PATCH', body: {vi_mode: 'safe'}}); fs.vi_mode = 'safe'; fs.vi_auto = false; } catch (err) { /* vẫn áp dụng */ }
@@ -1628,7 +1628,8 @@ function fnNow(st, cur) {
     <button class="btn sm green" type="button" data-fn-go>Áp dụng vào game ngay</button></p>`;
 }
 function fnModes(st, fonts, sample) {
-  const bad = fonts.filter(f => !f.ok), stuck = bad.filter(f => !f.can_replace);
+  const bad = fonts.filter(f => !f.ok), stuck = st.stuck ? bad.filter(f => st.stuck.includes(f.id)) : bad.filter(f => !f.can_replace);
+  const canTmp = stuck.some(f => f.kind === 'tmp' && f.can_replace);
   const cur = st.vi_mode || 'full';
   const desc = {
     full: 'Đúng tiếng Việt. Cần font của game có dấu (hoặc đã đổi font ở trên) – không thì chữ thiếu dấu hiện sai/ô vuông.',
@@ -1637,7 +1638,9 @@ function fnModes(st, fonts, sample) {
     en: 'Không ghi bản dịch: game trở về tiếng Anh. Bản dịch vẫn giữ trong app để dùng lại.',
   };
   return `<div class="fn-modes"><h4>Khi font của game thiếu dấu</h4>
-    ${stuck.length ? `<p class="hint"><b>Gợi ý:</b> game dùng font chữ vẽ sẵn (TextMeshPro) thiếu ${esc(stuck[0].missing_sample || '')}… – app chưa thêm dấu được vào loại font này. Chọn <b>Giữ dấu font có</b> hoặc <b>Không dấu</b> để không bị lỗi chữ như “Qufc vffng”, hoặc <b>Giữ tiếng Anh</b>.</p>` : ''}
+    ${stuck.length ? (canTmp
+      ? `<p class="hint"><b>Gợi ý:</b> font chữ vẽ sẵn (TextMeshPro) của game thiếu ${esc(stuck[0].missing_sample || '')}… – tích font đó ở trên, chọn font lấy dấu bên dưới rồi bấm <b>Đổi font đã chọn</b>: app ghép dấu tiếng Việt vào chữ của game, sau đó dùng được <b>Đầy đủ dấu</b>. Trong lúc chưa ghép, dùng <b>Giữ dấu font có</b> để không bị lỗi chữ.</p>`
+      : `<p class="hint"><b>Gợi ý:</b> game dùng font chữ vẽ sẵn (TextMeshPro) thiếu ${esc(stuck[0].missing_sample || '')}… – app chưa thêm dấu được vào font này. Chọn <b>Giữ dấu font có</b> hoặc <b>Không dấu</b> để không bị lỗi chữ như “Qufc vffng”, hoặc <b>Giữ tiếng Anh</b>.</p>`) : ''}
     <div class="fn-mode-list">${Object.entries(st.vi_modes || {}).map(([k, n]) => `<label class="fn-mode${k === cur ? ' on' : ''}">
       <input type="radio" name="fnMode" value="${k}" ${k === cur ? 'checked' : ''}><b>${esc(n)}${k === 'safe' && stuck.length ? ' (gợi ý)' : ''}${k === cur && st.vi_auto ? ' · app tự chọn' : ''}</b>
       <span class="hint">${esc(desc[k])}</span>
@@ -1652,7 +1655,7 @@ async function loadFonts(autoscan) {
   let st;
   try { st = await api(`/api/translate/games/${pid}/fonts`); } catch (e) { return; }
   if (pid !== T.gp) return;
-  if (!st.scan && !st.job && autoscan) {
+  if ((!st.scan || (st.scan.v || 0) < 2) && !(st.job && st.job.state === 'running') && autoscan) {   // bản quét cũ: quét lại (font TMP ghép dấu được)
     try { st = await api(`/api/translate/games/${pid}/fonts/scan`, {method: 'POST'}); } catch (e) { /* bỏ qua */ }
   }
   FN.st = st; FN.pid = pid;
@@ -1708,6 +1711,7 @@ function paintFonts() {
         <label class="btn sm plain fn-up">＋ Font của bạn (.ttf/.otf)<input type="file" id="fnUp" accept=".ttf,.otf" hidden></label>
         ${(st.fix && st.fix.targets && st.fix.targets.length) || st.pick ? '<button class="btn sm plain" type="button" id="fnRestore">Trả font gốc</button>' : ''}
       </div>
+      ${fonts.some(f => f.kind === 'tmp' && f.can_replace && !f.ok) ? '<p class="hint"><b>Font TextMeshPro:</b> app giữ nguyên chữ của game, chỉ lấy DẤU (sắc, huyền, hỏi, ngã, nặng, mũ, móc ơ ư, gạch đ) từ font chọn ở đây – chọn font cùng kiểu (có chân / không chân) để dấu hợp với chữ.</p>' : ''}
       <p class="hint">${replace ? 'Font mới mang tên của font gốc nên game vẫn nhận; bản gốc sao lưu trong <code>CircleVault-ban-goc</code>. Khung chữ có thể rộng/hẹp hơn một chút – chữ tràn khung thì thử font hẹp hơn (Oswald, Roboto). Font Unity được thay ngay trong file dữ liệu (thử nghiệm); tắt game trước khi đổi.' : 'Font miễn phí được tải từ Google Fonts khi chọn.'}</p>
     </div>` : ''}`;
   $('#fnScan').addEventListener('click', async () => {
@@ -1727,7 +1731,8 @@ function paintFonts() {
   $('#fnApply')?.addEventListener('click', async e => {
     const b = e.currentTarget, ids = [...el.querySelectorAll('[data-fn]')].filter(x => x.checked).map(x => x.dataset.fn);
     if (replace && !ids.length) return toast('Tích chọn font của game cần đổi.', 'err');
-    b.disabled = true; b.textContent = 'Đang đổi font…';
+    const tmpSel = (FN.st.scan.fonts || []).some(f => f.kind === 'tmp' && ids.includes(f.id));
+    b.disabled = true; b.textContent = tmpSel ? 'Đang ghép dấu vào font… (1–3 phút)' : 'Đang đổi font…';
     try {
       const r = await withGrant(T.gp, () => api(`/api/translate/games/${T.gp}/fonts/apply`, {method: 'POST', body: {cid: FN.pick, ids}}));
       FN.st = r; paintFonts();

@@ -257,8 +257,8 @@ def _scan_unity(root: Path, notes: list[str]) -> list[dict]:
             continue
         tmp_n += cnt[0]
     if tmp_n:
-        notes.append(f"Game dùng {tmp_n} font TextMeshPro (chữ vẽ sẵn thành ảnh): app chỉ kiểm tra, chưa thêm dấu được. "
-                     "Nếu chữ Việt hiện ô vuông ở những chỗ đó, dùng 'Unity · dịch khi chơi' hoặc gói Việt hóa có sẵn.")
+        notes.append(f"Game dùng {tmp_n} font TextMeshPro (chữ vẽ sẵn thành ảnh). Font nào thiếu dấu: chọn font đó + một font lấy dấu "
+                     "rồi bấm đổi font – app GHÉP DẤU tiếng Việt vào chữ của chính game (thử nghiệm).")
     return out
 
 
@@ -279,7 +279,7 @@ def _scan_objs(objs, rel: str, out: list, tmp_count: list):
                 name = o.peek_name() or ""
                 if re.search(r"(?i)settings", name):
                     continue
-                e = _tmp_entry(o, name, rel)              # font TMP nhận bằng bảng chữ thô, không dựa vào tên
+                e = _tmp_entry(o, name, rel, objs)        # font TMP nhận bằng bảng chữ thô, không dựa vào tên
                 if e:
                     tmp_count[0] += 1
                     out.append(e)
@@ -307,7 +307,20 @@ def tmp_chars_raw(raw: bytes) -> set[int]:
     return best
 
 
-def _tmp_entry(o, name: str, rel: str) -> dict | None:
+def _tmp_atlas(objs, raw: bytes):
+    """(bố cục bảng TMP, ảnh atlas, đối tượng Texture2D) – atlas phải nằm cùng file."""
+    from . import tmpfont
+    lay = tmpfont.parse(raw)
+    fid, pid = lay["atlas_ptr"]
+    if fid != 0:
+        raise tmpfont.TmpError("ảnh atlas nằm ở file khác – app chưa hỗ trợ")
+    tex = next((x for x in objs if x.path_id == pid), None)
+    if tex is None or tex.type.name != "Texture2D":
+        raise tmpfont.TmpError("không thấy ảnh atlas của font")
+    return lay, tex.read().image, tex
+
+
+def _tmp_entry(o, name: str, rel: str, objs=None) -> dict | None:
     chars: set[int] = set()
     try:
         tree = o.read_typetree()
@@ -325,12 +338,25 @@ def _tmp_entry(o, name: str, rel: str) -> dict | None:
     if not chars or not all(ord(c) in chars for c in "aeo"):
         return None                               # không phải font (TMP Settings, bảng màu…)
     miss = [c for c in VI if ord(c) not in chars]
+    cat, can = "sans", False
+    if miss and objs is not None:
+        try:                                    # đọc được bảng glyph + atlas thì thêm dấu được
+            from . import tmpfont
+            import numpy as np
+            lay, img, _t = _tmp_atlas(objs, o.get_raw_data())
+            a = img.getchannel("A") if "A" in img.getbands() else img.convert("L")
+            cat = tmpfont.guess_cat(lay, np.asarray(a, dtype="float32") / 255.0)
+            can = True
+        except Exception:       # bố cục lạ / atlas ở file khác: chỉ kiểm tra
+            can = False
     return {"id": f"t:{rel}:{o.path_id}", "kind": "tmp", "label": f"{name or 'Font TextMeshPro'} ({rel})", "family": name or "TextMeshPro",
-            "style": "TextMeshPro", "cat": "sans", "weight": 400, "italic": False, "latin": True, "total": len(VI), "variable": False,
-            "flavor": None, "can_replace": False, "rel": rel, "path_id": int(o.path_id),
+            "style": "TextMeshPro", "cat": cat, "weight": 400, "italic": False, "latin": True, "total": len(VI), "variable": False,
+            "flavor": None, "can_replace": can, "rel": rel, "path_id": int(o.path_id),
             "missing": len(miss), "missing_sample": "".join(miss[:14]), "ok": not miss, "have": "".join(c for c in VI if ord(c) in chars),
-            "note": "" if not miss else "Font TextMeshPro: chữ đã vẽ sẵn thành ảnh nên app chưa thêm dấu được – chọn cách hiển thị ở mục "
-                                        "“Khi font thiếu dấu” bên dưới."}
+            "note": "" if not miss else ("Font TextMeshPro (chữ vẽ sẵn thành ảnh): app sẽ GHÉP DẤU tiếng Việt vào chữ của game, dấu lấy từ "
+                                         "font bạn chọn bên dưới (thử nghiệm)." if can else
+                                         "Font TextMeshPro: app chưa đọc được bảng chữ của font này để thêm dấu – chọn cách hiển thị ở mục "
+                                         "“Khi font thiếu dấu” bên dưới.")}
 
 
 def _scan_unreal(root: Path, aes: bytes | None, notes: list[str]) -> list[dict]:
@@ -615,7 +641,7 @@ def apply(root: Path, cid: str, targets: list[dict], aes: bytes | None = None, p
                 config.write_file(root / rel, data)
                 files.add(rel)
                 done += 1
-            elif t["kind"] == "unity":
+            elif t["kind"] in ("unity", "tmp"):
                 unity.setdefault(t["rel"], []).append(t)
             elif t["kind"] == "unreal":
                 ue.setdefault(t["pak"], {"version": t["version"], "items": []})["items"].append(t)
@@ -638,6 +664,61 @@ def apply(root: Path, cid: str, targets: list[dict], aes: bytes | None = None, p
     return {"fonts": done, "files": sorted(files), "errors": errors[:10]}
 
 
+def _tmp_build(objs, t: dict, mark: bytes) -> dict:
+    """Font TMP gốc (từ bản sao lưu) → {path_id: dữ liệu mới}: raw font, ảnh atlas, material đổi kích thước."""
+    from . import tmpfont
+    fo = next((x for x in objs if x.path_id == t["path_id"]), None)
+    if fo is None:
+        raise FontError("không thấy font TextMeshPro trong file")
+    raw = fo.get_raw_data()
+    lay, img, tex = _tmp_atlas(objs, raw)
+    new_raw, new_img, added, fail = tmpfont.add_vietnamese(raw, img, mark)
+    if not added:
+        raise FontError("không dựng được chữ nào" + (f" (lỗi {''.join(fail[:8])})" if fail else ""))
+    out = {"font": (fo.path_id, new_raw), "tex": (tex.path_id, new_img), "mats": {}, "added": added, "fail": fail}
+    if new_img.size != img.size:                 # atlas cao gấp đôi: sửa kích thước trong material dùng atlas này
+        for m in objs:
+            if m.type.name != "Material":
+                continue
+            try:
+                tree = m.read_typetree()
+            except Exception:       # material lạ
+                continue
+            props = tree.get("m_SavedProperties") or {}
+            uses = False
+            for kv in props.get("m_TexEnvs") or []:
+                v = kv[1] if isinstance(kv, (list, tuple)) else kv.get("second", {})
+                if (v.get("m_Texture") or {}).get("m_PathID") == tex.path_id and not (v.get("m_Texture") or {}).get("m_FileID"):
+                    uses = True
+            if not uses:
+                continue
+            fl = props.get("m_Floats") or []
+            for i, kv in enumerate(fl):
+                k = kv[0] if isinstance(kv, (list, tuple)) else kv.get("first")
+                val = {"_TextureWidth": float(new_img.size[0]), "_TextureHeight": float(new_img.size[1])}.get(k)
+                if val is not None:
+                    if isinstance(kv, list):
+                        kv[1] = val
+                    elif isinstance(kv, tuple):
+                        fl[i] = (k, val)
+                    else:
+                        kv["second"] = val
+            out["mats"][m.path_id] = tree
+    return out
+
+
+def _mat_uses(m, tex_pid: int) -> bool:
+    try:
+        props = m.read_typetree().get("m_SavedProperties") or {}
+    except Exception:       # material lạ
+        return False
+    for kv in props.get("m_TexEnvs") or []:
+        v = kv[1] if isinstance(kv, (list, tuple)) else kv.get("second", {})
+        if (v.get("m_Texture") or {}).get("m_PathID") == tex_pid:
+            return True
+    return False
+
+
 def _apply_unity(root: Path, rel: str, ts: list[dict], src) -> int:
     UnityPy = _unitypy()
     if not UnityPy:
@@ -646,13 +727,35 @@ def _apply_unity(root: Path, rel: str, ts: list[dict], src) -> int:
     _backup(root, rel)
     origs = {}
     want = {t["path_id"]: t for t in ts}
+    tmp = {}
     with unityload.open_env(_orig(root, rel)) as orig_env:
-        for o in orig_env.objects:
+        objs = list(orig_env.objects)
+        for o in objs:
             if o.path_id in want and o.type.name == "Font":
                 origs[o.path_id] = _font_bytes(o.read_typetree())
+        for t in ts:
+            if t["kind"] == "tmp":            # font TMP: dựng lại từ BẢN GỐC (áp dụng lại không ghép dấu chồng)
+                tmp[t["path_id"]] = _tmp_build(objs, t, src(t.get("weight") or 400))
     n = 0
     # đọc BẢN CHÉP TẠM của file hiện tại (có thể đã ghi bản dịch) – không giữ chính file game mở, rồi mới ghi đè
     with unityload.open_env(p, detach=True) as env:
+        objs = {o.path_id: o for o in env.objects}
+        for b in tmp.values():
+            fo = objs.get(b["font"][0])
+            to = objs.get(b["tex"][0])
+            if fo is None or to is None:
+                continue
+            fo.set_raw_data(b["font"][1])
+            tex = to.read()
+            img = b["tex"][1]
+            fmt = int(getattr(tex, "m_TextureFormat", 1) or 1)
+            # atlas SDF phải KHÔNG NÉN (nén mất chi tiết làm chữ nhòe): giữ Alpha8/RGBA32/ARGB32/BGRA32, còn lại ghi Alpha8
+            tex.set_image(img, target_format=fmt if fmt in (1, 4, 5, 14) else 1)
+            tex.save()
+            for mid, tree in b["mats"].items():
+                if mid in objs:
+                    objs[mid].save_typetree(tree)
+            n += 1
         for o in env.objects:
             t = want.get(o.path_id)
             if not t or o.type.name != "Font":
@@ -720,10 +823,46 @@ def restore(root: Path, fix: dict) -> int:
         except OSError:
             continue
     unity: dict[str, list[dict]] = {}
+    tmp: dict[str, list[dict]] = {}
     for t in fix.get("targets") or []:
         if t["kind"] == "unity":
             unity.setdefault(t["rel"], []).append(t)
+        elif t["kind"] == "tmp":
+            tmp.setdefault(t["rel"], []).append(t)
     UnityPy = _unitypy()
+    for rel, ts in tmp.items():                  # font TMP: chép lại dữ liệu thô gốc của font + atlas + material
+        b = root / BACKUP_DIR / rel
+        if not (b.is_file() and UnityPy):
+            continue
+        try:
+            raws = {}
+            with unityload.open_env(b) as benv:
+                bobjs = list(benv.objects)
+                for t in ts:
+                    fo = next((x for x in bobjs if x.path_id == t["path_id"]), None)
+                    if fo is None:
+                        continue
+                    raws[fo.path_id] = fo.get_raw_data()
+                    try:
+                        _lay, _img, tex = _tmp_atlas(bobjs, raws[fo.path_id])
+                        raws[tex.path_id] = tex.get_raw_data()
+                        for m in bobjs:
+                            if m.type.name == "Material" and _mat_uses(m, tex.path_id):
+                                raws[m.path_id] = m.get_raw_data()
+                    except Exception:       # chỉ trả được raw font
+                        pass
+            hit = 0
+            with unityload.open_env(root / rel, detach=True) as env:
+                for o in env.objects:
+                    if o.path_id in raws and o.get_raw_data() != raws[o.path_id]:
+                        o.set_raw_data(raws[o.path_id])
+                        hit += 1
+                out, bundle = _env_bytes(env) if hit else (b"", False)
+            if hit:
+                _write_unity(root, root / rel, out, bundle)
+                n += len(ts)
+        except Exception:       # không đọc được: để nguyên
+            continue
     for rel, ts in unity.items():
         b = root / BACKUP_DIR / rel
         if not (b.is_file() and UnityPy):

@@ -12,3 +12,4 @@ Pillow>=10
 UnityPy>=1.20   # đọc/ghi bảng chữ game Unity (Việt hóa game)
 cryptography>=42   # giải mã file .pak Unreal mã hóa AES (khi người dùng nhập khóa)
 fonttools>=4.50   # kiểm tra font của game có dấu tiếng Việt, đổi font (Việt hóa game)
+numpy>=1.26      # ghép dấu tiếng Việt vào font TextMeshPro (tmpfont.py)
