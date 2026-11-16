@@ -82,7 +82,10 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     MonoScript (cùng file / globalgamemanagers.assets / bundle *monoscripts*) – lớp `UI_TEXT_CLASSES` (TextMeshProUGUI, UI.Text) gom thành một
     nguồn mono `path_ids` "chữ trên nút / menu" (bỏ chữ giữ chỗ `UI_PLACEHOLDER`), `NOT_TEXT_CLASS` (InputSystem, Rewired…) bỏ qua; quét cả
     `levelN`. Dự án cũ: `POST /games/<id>/uiscan` (chạy nền `_ui_jobs`, trang tự gọi một lần khi mở dự án – `p["uiscan"]`, `?force=true` tìm lại;
-    thanh Tiến trình "Tìm chữ nút / menu") thêm câu mới + nguồn mới (nhóm ô chữ, hoặc bảng có ≥2 chữ giao diện).
+    thanh Tiến trình "Tìm chữ nút / menu") thêm câu mới + nguồn mới (nhóm ô chữ, nhóm dữ liệu nhỏ, hoặc bảng có ≥2 chữ giao diện).
+    `UISCAN_V` (=2) tăng khi cách tìm đổi → dự án cũ tự tìm lại một lần. **Dữ liệu nhỏ** (nhiệm vụ, vật phẩm, lá bài…: MonoBehaviour 1–2 câu):
+    gom theo lớp script thành nguồn `group` có `only` (chỉ thay đúng các câu ≥2 từ đã nhận), cần ≥3 đối tượng cùng lớp hoặc tên lớp khớp
+    `DATA_HINT` (Objective, Quest, Item, Card…); lớp lạ chỉ nhận câu ≥4 từ (tên ngắn kiểu "Castle Gate" có thể là khóa).
   - **Tìm chữ chưa dịch** (`POST /games/<id>/find {q}` chạy nền `_find_jobs`, `GET …/find`): câu đã có trong dự án (kể cả đang skip → nút ↺)
     + file chữ / đối tượng Unity (MonoBehaviour, TextAsset trong .assets/.bundle/levelN) chứa chữ đó; `POST …/find/add {rel, path_id, kind}`
     thêm nguồn `extra` (mono = mọi chuỗi `mb_strings` textlike + không `suspect`) + câu mới.

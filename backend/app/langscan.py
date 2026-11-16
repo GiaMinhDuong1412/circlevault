@@ -821,6 +821,7 @@ def _scan_unity_env(env, rel: str, prefer: str, job: dict, root: Path | None = N
     except Exception:
         return []
     ui_ids, ui_texts = [], []
+    small: dict[str, list] = {}
     for o in monos:
         if job.get("cancel"):
             break
@@ -838,10 +839,14 @@ def _scan_unity_env(env, rel: str, prefer: str, job: dict, root: Path | None = N
                 ui_ids.append(int(o.path_id))
                 ui_texts += got
             continue
-        if len(strs) < 4:
+        if NOT_TEXT_CLASS.search(cls):
             continue
-        sentences = mb_pick(strs, prefer, False)
-        if sum(1 for x in sentences if not ui_word(x)) < 3 or NOT_TEXT_CLASS.search(cls):   # cần ≥3 câu thật, không phải bảng phím
+        sentences = mb_pick(strs, prefer, False) if len(strs) >= 2 else []
+        if len(strs) < 4 or sum(1 for x in sentences if not ui_word(x)) < 3:
+            # dữ liệu nhỏ (nhiệm vụ, vật phẩm, hướng dẫn…: mỗi đối tượng 1–2 câu) – gom theo lớp script bên dưới
+            few = [x for x in mb_pick(strs, prefer, False) if re.search(r"\s", x.strip()) and not suspect(x)]
+            if few and cls:
+                small.setdefault(cls, []).append((int(o.path_id), few))
             continue
         af = getattr(o, "assets_file", None)
         label = _mb_label(af, o, raw)
@@ -852,6 +857,21 @@ def _scan_unity_env(env, rel: str, prefer: str, job: dict, root: Path | None = N
                     "lang": prefer if lang == "latin" else lang, "loc": rich, "loose": rich, "label": f"{rel} → {label}",
                     "sample": [t[:120] for t in texts[:3]], "size": len(raw),
                     "_items": [{"t": t, "kind": "ui" if len(t) < 30 and " " not in t.strip() else "say", "ctx": label[:80]} for t in texts]})
+    for cls, lst in small.items():                # nhiều đối tượng cùng lớp có câu chữ ngắn → một nguồn (chỉ thay câu ≥2 từ)
+        hint = bool(DATA_HINT.search(cls))
+        if len(lst) < 3 and not hint:
+            continue
+        texts = list(dict.fromkeys(t for _, few in lst for t in few))
+        if not hint:                                  # lớp lạ: chỉ nhận câu thật (≥4 từ) – tên ngắn kiểu "Castle Gate" có thể là khóa
+            texts = [t for t in texts if len(t.split()) >= 4]
+            lst = [(pid, few) for pid, few in lst if any(t in texts for t in few)]
+            if len(lst) < 3:
+                continue
+        short = cls.rsplit(".", 1)[-1]
+        out.append({"kind": "mono", "rel": rel, "path_id": lst[0][0], "path_ids": [pid for pid, _ in lst], "asset": short, "fmt": "mono",
+                    "count": len(texts), "lang": prefer, "loc": False, "loose": False, "group": True, "only": texts[:2000],
+                    "label": f"{rel} → {short} ({len(lst)} mục)", "sample": [t[:120] for t in texts[:3]], "size": 0,
+                    "_items": [{"t": t, "kind": "say", "ctx": short[:80]} for t in texts]})
     if ui_ids:
         texts = list(dict.fromkeys(ui_texts))
         out.append({"kind": "mono", "rel": rel, "path_id": ui_ids[0], "path_ids": ui_ids, "asset": "Chữ trên nút / menu", "fmt": "mono",
@@ -957,8 +977,11 @@ def _mb_ok(src: dict):
     chữ một từ chỉ thay trong ô chữ giao diện (TextMeshPro / UI.Text), bảng chữ lớn (loose) hoặc nguồn người dùng tự thêm."""
     loose = bool(src.get("loose"))
     words = bool(src.get("ui") or src.get("user") or loose)
+    only = set(src.get("only") or [])             # nguồn gom dữ liệu nhỏ: chỉ thay đúng các câu đã nhận lúc quét
 
     def ok(s: str) -> bool:
+        if only and s not in only:
+            return False
         if not s.strip() or suspect(s):
             return False
         if not re.search(r"\s", s.strip()):
@@ -1017,6 +1040,9 @@ def is_input_asset(raw: bytes) -> bool:
     return len(INPUT_RAW.findall(raw[:2_000_000])) >= 2
 
 
+# lớp dữ liệu thường chứa chữ hiển thị (nhận cả khi chỉ có 1–2 đối tượng)
+DATA_HINT = re.compile(r"(?i)objective|quest|mission|task|goal|tutorial|tooltip|hint|lore|journal|codex|bestiary|achievement|"
+                       r"description|item|ability|relic|card|tarot|dialog|subtitle|notification|popup|message")
 NOT_TEXT_CLASS = re.compile(r"(?i)InputSystem|InputAction|Rewired|PlayerInput|Animator|Timeline|Shader|Material|AudioMixer")
 UI_TEXT_CLASSES = {"TMPro.TextMeshProUGUI", "TMPro.TextMeshPro", "UnityEngine.UI.Text", "TMPro.TMP_Text", "UnityEngine.UI.Legacy.Text"}
 

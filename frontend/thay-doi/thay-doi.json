@@ -2,6 +2,16 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-16-chu-nhiem-vu",
+      "date": "2026-11-16",
+      "title": "Việt hóa game: tìm thêm chữ nhiệm vụ, vật phẩm, lá bài…",
+      "items": [
+        "Chữ nằm rải rác trong dữ liệu nhỏ của game (mỗi nhiệm vụ / vật phẩm / lá bài chỉ 1–2 câu, ví dụ “Unlock the gate to the Catacombs”) trước đây bị bỏ sót – nay app gom theo loại dữ liệu và thêm vào dự án.",
+        "Dự án cũ: mở dự án là app tự tìm lại một lần (thanh Tiến trình “Tìm chữ nút / menu”), xong bấm Dịch (chỉ câu mới) rồi Áp dụng vào game.",
+        "An toàn: chỉ thay đúng những câu đã nhận, không đụng tên ngắn có thể là mã game dùng."
+      ]
+    },
+    {
       "id": "2026-11-16-ghep-dau-tmp",
       "date": "2026-11-16",
       "title": "Việt hóa game: ghép dấu tiếng Việt vào font chữ vẽ sẵn (TextMeshPro) – thử nghiệm",

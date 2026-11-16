@@ -2107,6 +2107,9 @@ def find_add(pid: str, body: FindAddIn):
 _ui_jobs: dict[str, dict] = {}
 
 
+UISCAN_V = 2          # tăng khi cách tìm đổi → dự án cũ tự tìm lại một lần (v2: dữ liệu nhỏ như nhiệm vụ, vật phẩm)
+
+
 @router.post("/{pid}/uiscan")
 def ui_scan(pid: str, force: bool = False):
     """Lục mọi file Unity của game tìm chữ giao diện cơ bản (Settings, Back, New Game…) còn thiếu trong dự án: ô chữ
@@ -2115,13 +2118,13 @@ def ui_scan(pid: str, force: bool = False):
     job = _ui_jobs.get(pid)
     if job and job.get("state") == "running":
         return job
-    if p.get("uiscan") and not force:
+    if p.get("uiscan") and (p["uiscan"].get("v") or 0) >= UISCAN_V and not force:
         return {"state": "done", "skip": True, **p["uiscan"]}
     root = Path(p.get("groot") or p["path"])
     if not root.is_dir() or not any(x.is_dir() and x.name.endswith("_Data") for x in root.iterdir()):
         with _lock:
             q = _load(pid)
-            q["uiscan"] = {"at": time.time(), "added": 0, "unity": False}
+            q["uiscan"] = {"at": time.time(), "added": 0, "unity": False, "v": UISCAN_V}
             _save(q)
         return {"state": "done", "skip": True, "added": 0}
     job = {"state": "running", "text": "Đang tìm chữ nút / menu…", "done": 0, "total": 0, "added": 0, "started": time.time(), "name": p["name"]}
@@ -2159,7 +2162,7 @@ def _ui_run(pid: str, job: dict):
                 items = s.pop("_items", [])
                 if (rel, s.get("path_id")) in have:
                     found.append((None, items))             # nhóm đã có: chỉ thêm chữ còn thiếu (vd chữ một từ)
-                elif s.get("ui") or sum(1 for it in items if langscan.ui_word(it["t"])) >= 2:
+                elif s.get("ui") or s.get("group") or sum(1 for it in items if langscan.ui_word(it["t"])) >= 2:
                     s.pop("sample", None)
                     s.update(on=True, id=f"ui{len(found)}")
                     found.append((s, items))
@@ -2185,7 +2188,7 @@ def _ui_run(pid: str, job: dict):
                         row.update(skip=True, skip_by="auto", why=why)
                     q["items"].append(row)
                     added += 1
-            q["uiscan"] = {"at": time.time(), "added": added, "groups": groups, "unity": True}
+            q["uiscan"] = {"at": time.time(), "added": added, "groups": groups, "unity": True, "v": UISCAN_V}
             _save(q)
         job.update(state="done", text="Xong", added=added, groups=groups, finished=time.time())
     except Exception as e:      # báo lên trang

@@ -1401,7 +1401,7 @@ async function renderProject() {
   paintClaude();
   loadFonts(true);
   paintFind();
-  if (!g.uiscan) uiScan(g.id, false);
+  if (!g.uiscan || (g.uiscan.v || 0) < 2) uiScan(g.id, false);    // v2: tìm thêm chữ nhiệm vụ / vật phẩm…
   else api(`/api/translate/games/${g.id}/uiscan`).then(j => { if (j.state === 'running') uiScan(g.id, false, j); }).catch(() => {});
   api(`/api/translate/games/${g.id}/apply`).then(r => { if (r.job && r.job.state === 'running' && !(T.applying && T.applying[g.id])) watchApply(g.id); }).catch(() => {});
   await loadRows();
