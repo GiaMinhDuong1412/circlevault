@@ -2012,7 +2012,7 @@ def _find_run(p: dict, job: dict):
                         if o.type.name not in FIND_TYPES or o.byte_size > 64 * 1024 * 1024:
                             continue
                         raw = o.get_raw_data()
-                        if needle not in raw.lower():
+                        if needle not in raw.lower() or (o.type.name == "MonoBehaviour" and langscan.is_input_asset(raw)):
                             continue
                         strs = [x[2] for x in langscan.mb_strings(raw)]
                         texts_ok = [x for x in strs if langscan.textlike(x, True) and not langscan.suspect(x)]
@@ -2062,6 +2062,8 @@ def find_add(pid: str, body: FindAddIn):
             if o is None:
                 raise HTTPException(404, "Không thấy đối tượng này trong file.")
             raw = o.get_raw_data()
+            if o.type.name == "MonoBehaviour" and langscan.is_input_asset(raw):
+                raise HTTPException(400, "Đây là bảng phím điều khiển của game (tên hành động là mã game dùng) – dịch vào game sẽ lỗi, app không thêm.")
             label = langscan._mb_label(getattr(o, "assets_file", None), o, raw) if o.type.name == "MonoBehaviour" else (o.peek_name() or "TextAsset")
             if o.type.name == "TextAsset":
                 d = o.read()

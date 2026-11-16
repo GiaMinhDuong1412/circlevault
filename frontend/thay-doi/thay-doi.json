@@ -2,6 +2,16 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-16-bang-phim",
+      "date": "2026-11-16",
+      "title": "Việt hóa game: không dịch bảng phím điều khiển nữa (sửa game đứng lúc tải)",
+      "items": [
+        "Game Unity bị đứng ở màn hình tải vì app đã dịch cả tên hành động trong bảng phím điều khiển (\"Move\", \"Player\", \"D-pad\"…) – đó là mã game dùng để tra cứu. App nay tự nhận ra bảng phím và luôn giữ nguyên bản gốc, kể cả với dự án cũ.",
+        "Tìm chữ chưa dịch không còn thêm bảng phím vào dự án.",
+        "Cách sửa: cập nhật app → mở dự án game → bấm Áp dụng vào game lại (không cần dịch lại)."
+      ]
+    },
+    {
       "id": "2026-11-16-sua-game-dung",
       "date": "2026-11-16",
       "title": "Việt hóa game: sửa lỗi game đứng sau khi áp dụng bản dịch",

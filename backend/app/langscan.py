@@ -829,7 +829,7 @@ def _scan_unity_env(env, rel: str, prefer: str, job: dict, root: Path | None = N
             strs = mb_strings(raw)
         except Exception:
             continue
-        if not strs:
+        if not strs or is_input_asset(raw):     # bảng phím điều khiển: không bao giờ dịch
             continue
         cls = script_class(o, raw, root, job) if root is not None else ""
         if cls in UI_TEXT_CLASSES:              # ô chữ trên nút / menu (TextMeshPro, UI.Text) đặt sẵn trong màn chơi
@@ -1005,6 +1005,16 @@ def _mb_label(env_file, o, raw: bytes) -> str:
     except Exception:
         cls = ""
     return " · ".join(x for x in (name, cls) if x) or f"MonoBehaviour #{o.path_id}"
+
+
+# Bảng phím điều khiển (Unity Input System InputActionAsset, Rewired…): tên hành động "Move", nhóm "Player", kiểu nút "Dpad"
+# là KHÓA mà mã game tra cứu – dịch vào là game lỗi ngay lúc tải (InvalidOperationException "No binding composite…").
+INPUT_RAW = re.compile(rb"<(?:Keyboard|Gamepad|Mouse|Pointer|Joystick|Touchscreen|XInputController|DualShockGamepad|SwitchProControllerHID)>/"
+                       rb"|Keyboard&Mouse|2DVector|ButtonWithOneModifier|OneModifier|Rewired", re.I)
+
+
+def is_input_asset(raw: bytes) -> bool:
+    return len(INPUT_RAW.findall(raw[:2_000_000])) >= 2
 
 
 NOT_TEXT_CLASS = re.compile(r"(?i)InputSystem|InputAction|Rewired|PlayerInput|Animator|Timeline|Shader|Material|AudioMixer")
@@ -1191,7 +1201,10 @@ def _apply_env(env, lst: list[dict], tr: dict, prefer: str, p: Path) -> tuple[by
             continue
         s = want[o.path_id]
         if s["kind"] == "mono" and o.type.name == "MonoBehaviour":
-            raw, n = mb_rewrite(o.get_raw_data(), tr, ok=_mb_ok(s))
+            raw0 = o.get_raw_data()
+            if is_input_asset(raw0):            # dự án cũ có thể đã thêm bảng phím: giữ nguyên bản gốc
+                continue
+            raw, n = mb_rewrite(raw0, tr, ok=_mb_ok(s))
             if n:
                 o.set_raw_data(raw)
                 hit += n

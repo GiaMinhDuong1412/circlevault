@@ -46,6 +46,8 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     hết 4) trong dữ liệu thô, `mb_pick` lọc câu đúng ngôn ngữ gốc, `mb_rewrite` ghi lại cả đối tượng (`set_raw_data`) – nguồn kind `mono`
     `mb_rewrite(..., ok=_mb_ok(nguồn))`: bản dịch là của cả dự án nên chỉ thay chuỗi trông như chữ hiển thị, không thay m_Name (byte 28),
     chữ một từ chỉ thay ở nguồn `ui` / `loose` / `user` (thay nhầm khóa như "Options" làm game đứng).
+    **Bảng phím điều khiển** (`langscan.is_input_asset`: dữ liệu thô có ≥2 dấu hiệu `INPUT_RAW` – `<Keyboard>/`, `Keyboard&Mouse`, `2DVector`, Rewired…)
+    KHÔNG BAO GIỜ dịch: quét bỏ qua, áp dụng bỏ qua (kể cả nguồn cũ), find/add trả 400 – dịch "Move"/"Player"/"Dpad" làm game lỗi InputSystem, đứng lúc tải.
   - **Nội dung cần dịch** (gametr): câu có `skip` (`skip_by`: auto = luật `langscan.suspect` – mã/ID, đường dẫn, chữ debug, định dạng
     ngày giờ; claude = `POST /games/<id>/review` nhờ **Claude Haiku** (`REVIEW_MODEL`, luôn Haiku cho rẻ) xem từng lô ≤400 câu, chạy nền,
     tiến độ `p["review"]`, `REVIEWING`; claude-ok; user = nút ⊘/↺ `PUT /games/<id>/skip`, không bị lần lọc sau đổi). Câu skip không dịch,
