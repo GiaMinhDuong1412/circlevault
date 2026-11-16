@@ -43,7 +43,7 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     `…/claude/import-folder` đọc thư mục `tra-loi/`. Google: `translate._google` gộp nhiều câu một dòng vào một lượt gọi; bị chặn tạm
     thì Worker tự đợi rồi dịch tiếp (`p["note"]`).
     Unity MonoBehaviour (I2 Localization, hội thoại…): `langscan.mb_strings` dò chuỗi Unity (int32 độ dài + UTF-8 + đệm 0, vị trí chia
-    hết 4) trong dữ liệu thô, `mb_pick` lọc câu đúng ngôn ngữ gốc, `mb_rewrite` ghi lại cả đối tượng (`set_raw_data`) – nguồn kind `mono`
+    hết 4) trong dữ liệu thô, `mb_pick` lọc câu đúng ngôn ngữ gốc, `mb_rewrite` ghi lại cả đối tượng (`set_raw_data`) – nguồn kind `mono`.
     `mb_rewrite(..., ok=_mb_ok(nguồn))`: bản dịch là của cả dự án nên chỉ thay chuỗi trông như chữ hiển thị, không thay m_Name (byte 28),
     chữ một từ chỉ thay ở nguồn `ui` / `loose` / `user` (thay nhầm khóa như "Options" làm game đứng).
     **Bảng phím điều khiển** (`langscan.is_input_asset`: dữ liệu thô có ≥2 dấu hiệu `INPUT_RAW` – `<Keyboard>/`, `Keyboard&Mouse`, `2DVector`, Rewired…)
