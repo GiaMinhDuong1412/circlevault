@@ -18,7 +18,10 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
   - `unitygame.py`: game Unity. (1) Việt hóa từ file cho game dùng Unity Localization: UnityPy đọc bảng chữ (MonoBehaviour có
     `m_TableData` + `m_LocaleId`) trong `<Game>_Data/StreamingAssets/aa/**/*string-tables*.bundle` của ngôn ngữ gốc (ưu tiên en),
     ghi tiếng Việt thay chỗ đó (lz4), rồi `zero_crc` đặt `m_Crc` = 0 trong `catalog.json` (JSON UTF-16 trong m_ExtraDataString,
-    bù dấu cách để giữ nguyên độ dài/vị trí). Sao lưu `CircleVault-ban-goc/`, áp dụng lại đọc từ bản sao lưu. catalog.bin chưa sửa được.
+    bù dấu cách để giữ nguyên độ dài/vị trí). Sao lưu `CircleVault-ban-goc/`, áp dụng lại đọc từ bản sao lưu.
+    **Mọi** chỗ ghi đè `.bundle` trong thư mục `aa` (unitygame, langscan, fontcheck) phải gọi `unitygame.crc_off(root, bundle)` TRƯỚC khi ghi;
+    trả False thì KHÔNG ghi bundle đó (Addressables từ chối bundle sai CRC → game đứng ở màn hình tải). catalog.bin: `bundle_crc` = CRC32
+    phần dữ liệu đã giải nén (tự đọc khung UnityFS), tìm 4 byte đó trong catalog.bin rồi đặt 0; không thấy → không ghi.
     gametr.py gọi qua engine `unity` (mã giữ nguyên: `{…}`, `<…>`, `%s`). (2) Cài gói Việt hóa có sẵn (`/api/translate/vh/*`):
     .zip hoặc thư mục, tự dò số cấp thư mục cần bỏ cho khớp game, file ngoài thư mục game (công cụ của nhóm dịch) mặc định bỏ chọn,
     sao lưu `CircleVault-truoc-VH/<mã>/`, nhớ kích thước + mtime để báo "Steam đã ghi đè" → Cài lại; Gỡ trả file gốc.
@@ -40,7 +43,9 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     `…/claude/import-folder` đọc thư mục `tra-loi/`. Google: `translate._google` gộp nhiều câu một dòng vào một lượt gọi; bị chặn tạm
     thì Worker tự đợi rồi dịch tiếp (`p["note"]`).
     Unity MonoBehaviour (I2 Localization, hội thoại…): `langscan.mb_strings` dò chuỗi Unity (int32 độ dài + UTF-8 + đệm 0, vị trí chia
-    hết 4) trong dữ liệu thô, `mb_pick` lọc câu đúng ngôn ngữ gốc, `mb_rewrite` ghi lại cả đối tượng (`set_raw_data`) – nguồn kind `mono`.
+    hết 4) trong dữ liệu thô, `mb_pick` lọc câu đúng ngôn ngữ gốc, `mb_rewrite` ghi lại cả đối tượng (`set_raw_data`) – nguồn kind `mono`
+    `mb_rewrite(..., ok=_mb_ok(nguồn))`: bản dịch là của cả dự án nên chỉ thay chuỗi trông như chữ hiển thị, không thay m_Name (byte 28),
+    chữ một từ chỉ thay ở nguồn `ui` / `loose` / `user` (thay nhầm khóa như "Options" làm game đứng).
   - **Nội dung cần dịch** (gametr): câu có `skip` (`skip_by`: auto = luật `langscan.suspect` – mã/ID, đường dẫn, chữ debug, định dạng
     ngày giờ; claude = `POST /games/<id>/review` nhờ **Claude Haiku** (`REVIEW_MODEL`, luôn Haiku cho rẻ) xem từng lô ≤400 câu, chạy nền,
     tiến độ `p["review"]`, `REVIEWING`; claude-ok; user = nút ⊘/↺ `PUT /games/<id>/skip`, không bị lần lọc sau đổi). Câu skip không dịch,
@@ -61,8 +66,8 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     full | safe (`fontcheck.fit_text`: chữ font không có → chữ gần nhất font CÓ, giữ dáng â/ê/ô trước dấu thanh; bộ chữ = `_font_have` giao
     các font thiếu dấu, không rõ thì Latin-1) | nodau | en (= `_restore_do`, gỡ bản dịch, giữ dự án). Font TextMeshPro: `tmp_chars_raw` đọc
     m_CharacterTable từ dữ liệu thô (bản ghi 16 byte type=1,unicode,glyph,1.0f hoặc 12 byte bản cũ) – nhận font TMP theo bảng chữ, không theo tên.
-  - **Chữ nút / menu / cài đặt** (Unity): `langscan.UI_WORDS` (Settings, Back, Options… – không có tên hành động điều khiển Jump/Move) được nhận
-    dù là một từ, nhưng CHỈ trong MonoBehaviour đã có ≥3 câu thật (`mb_pick`), không nhận ở file cấu hình; `script_class` đọc m_Script →
+  - **Chữ nút / menu / cài đặt** (Unity): `langscan.UI_WORDS` (Settings, Back, Options… – không có tên hành động điều khiển Jump/Move) chỉ dùng cho
+    `ui_word`/tìm nguồn mới (một từ trong MonoBehaviour thường chỉ nhận ở bảng chữ lớn – `loose`), không nhận ở file cấu hình; `script_class` đọc m_Script →
     MonoScript (cùng file / globalgamemanagers.assets / bundle *monoscripts*) – lớp `UI_TEXT_CLASSES` (TextMeshProUGUI, UI.Text) gom thành một
     nguồn mono `path_ids` "chữ trên nút / menu" (bỏ chữ giữ chỗ `UI_PLACEHOLDER`), `NOT_TEXT_CLASS` (InputSystem, Rewired…) bỏ qua; quét cả
     `levelN`. Dự án cũ: `POST /games/<id>/uiscan` (chạy nền `_ui_jobs`, trang tự gọi một lần khi mở dự án – `p["uiscan"]`, `?force=true` tìm lại;

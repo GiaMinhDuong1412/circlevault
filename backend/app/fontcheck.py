@@ -676,15 +676,11 @@ def _env_bytes(env) -> tuple[bytes, bool]:
 
 
 def _write_unity(root: Path, p: Path, data: bytes, bundle: bool):
-    config.write_file(p, data)
-    if bundle:                                    # bundle của Addressables: tắt kiểm tra CRC trong catalog
+    if bundle:                                    # bundle của Addressables: tắt kiểm tra CRC trong catalog TRƯỚC khi ghi
         from . import unitygame
-        cat = unitygame.catalog_of(root)
-        if cat and cat.suffix == ".json" and cat.exists():
-            rel = str(cat.relative_to(root)).replace("\\", "/")
-            _backup(root, rel)
-            text, _n = unitygame.zero_crc(cat.read_text(encoding="utf-8"), [p.name])
-            config.write_file(cat, text)
+        if not unitygame.crc_off(root, p):
+            raise FontError(f"{p.name}: không tắt được kiểm tra CRC của game nên giữ font gốc (để game không bị đứng).")
+    config.write_file(p, data)
 
 
 def _apply_unreal(root: Path, ue: dict, src, aes: bytes | None) -> tuple[int, list[str]]:

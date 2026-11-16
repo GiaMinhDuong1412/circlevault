@@ -1829,7 +1829,7 @@ def _apply_do(pid: str, prog) -> dict:
             res["texts"] = res.get("texts", 0) + ex["texts"]
             res["files"] = res.get("files", 0) + ex["files"]
             if ex["errors"]:
-                res["errors"] = ex["errors"]
+                res["errors"] = (res.get("errors") or []) + ex["errors"]
         fix = p.get("fontfix")
         if fix and fix.get("targets"):              # ghi bản dịch xong mới thay font (file .assets có cả chữ lẫn font)
             groups: dict[str, list] = {}
@@ -2073,7 +2073,7 @@ def find_add(pid: str, body: FindAddIn):
             else:
                 strs = [x[2] for x in langscan.mb_strings(raw)]
                 new = [(t, label[:80]) for t in dict.fromkeys(x for x in strs if langscan.textlike(x, True) and not langscan.suspect(x))]
-                source = {"kind": "mono", "rel": body.rel, "path_id": body.path_id, "asset": label, "fmt": "mono", "loose": True,
+                source = {"kind": "mono", "rel": body.rel, "path_id": body.path_id, "asset": label, "fmt": "mono", "loose": True, "user": True,
                           "count": len(new), "lang": lang, "label": f"{body.rel} → {label}"}
     if not new:
         raise HTTPException(400, "Đối tượng này không có câu chữ nào dịch được.")

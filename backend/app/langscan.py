@@ -926,7 +926,7 @@ def mb_pick(strs: list[tuple[int, int, str]], prefer: str, loose: bool) -> list[
     """Chuỗi là câu chữ hiển thị, đúng ngôn ngữ gốc (bỏ tên trường, khóa, đường dẫn, ngôn ngữ khác)."""
     keep = []
     for _, _, s in strs:
-        if not textlike(s, loose) and not (ui_word(s) and textlike(s, True)):     # chữ một từ cơ bản: Settings, Back…
+        if not textlike(s, loose):       # chữ một từ (Settings, Back…) chỉ nhận ở bảng chữ lớn; nút/menu lấy từ ô chữ TextMeshPro
             continue
         sl = script_lang(s)
         if prefer in ("ja", "zh", "ko"):
@@ -951,11 +951,29 @@ def _maybe_en(s: str) -> bool:
     return en >= other or other < 1
 
 
-def mb_rewrite(raw: bytes, tr: dict[str, str], base: int = 0) -> tuple[bytes, int]:
+def _mb_ok(src: dict):
+    """Chuỗi nào trong MonoBehaviour được thay. Bản dịch là của cả dự án, nên một từ như "Options", "Back" có thể trùng
+    tên khóa / tên cảnh / tên đối tượng mà mã game tra cứu – thay vào là game đứng. Chỉ thay chuỗi trông như chữ hiển thị;
+    chữ một từ chỉ thay trong ô chữ giao diện (TextMeshPro / UI.Text), bảng chữ lớn (loose) hoặc nguồn người dùng tự thêm."""
+    loose = bool(src.get("loose"))
+    words = bool(src.get("ui") or src.get("user") or loose)
+
+    def ok(s: str) -> bool:
+        if not s.strip() or suspect(s):
+            return False
+        if not re.search(r"\s", s.strip()):
+            return words and (ui_word(s) or textlike(s, True))
+        return textlike(s, loose) or textlike(s, True) and words
+    return ok
+
+
+def mb_rewrite(raw: bytes, tr: dict[str, str], base: int = 0, ok=None) -> tuple[bytes, int]:
     out, pos, n = bytearray(), 0, 0
     for i, ln, s in mb_strings(raw, base):
         v = tr.get(s)
         if not v:
+            continue
+        if ok is not None and (i - base == 28 or not ok(s)):     # 28 = m_Name của MonoBehaviour: tên đối tượng, không phải chữ
             continue
         b = v.encode("utf-8")
         out += raw[pos:i] + len(b).to_bytes(4, "little") + b + b"\x00" * ((-(4 + len(b))) % 4)
@@ -1151,6 +1169,11 @@ def apply(root: Path, items: list[dict], sources: list[dict], prefer: str = "en"
                 data, hit = _apply_env(env, lst, tr, prefer, p)
             if not hit:
                 continue
+            if p.suffix.lower() == ".bundle":
+                from . import unitygame
+                if not unitygame.crc_off(root, p):      # Addressables từ chối bundle sai CRC → game đứng lúc tải
+                    errors.append(f"{rel}: không tắt được kiểm tra CRC của game nên giữ bản gốc (để game không bị đứng).")
+                    continue
             _write(p, data)
             texts += hit
             files += 1
@@ -1168,7 +1191,7 @@ def _apply_env(env, lst: list[dict], tr: dict, prefer: str, p: Path) -> tuple[by
             continue
         s = want[o.path_id]
         if s["kind"] == "mono" and o.type.name == "MonoBehaviour":
-            raw, n = mb_rewrite(o.get_raw_data(), tr)
+            raw, n = mb_rewrite(o.get_raw_data(), tr, ok=_mb_ok(s))
             if n:
                 o.set_raw_data(raw)
                 hit += n
@@ -1190,7 +1213,11 @@ def _apply_env(env, lst: list[dict], tr: dict, prefer: str, p: Path) -> tuple[by
 
 def restore(root: Path, sources: list[dict]) -> int:
     n = 0
-    for rel in {s["rel"] for s in sources if s.get("rel")}:
+    rels = {s["rel"] for s in sources if s.get("rel")}
+    if any(r.lower().endswith(".bundle") for r in rels) and (root / BACKUP_DIR).is_dir():   # catalog đã tắt CRC cho bundle
+        rels |= {str(b.relative_to(root / BACKUP_DIR)) for b in (root / BACKUP_DIR).rglob("catalog.*")
+                 if b.parent.name == "aa" and b.suffix in (".json", ".bin")}
+    for rel in rels:
         b = root / BACKUP_DIR / rel
         if b.is_file():
             shutil.copy2(b, root / rel)

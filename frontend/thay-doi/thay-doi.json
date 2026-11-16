@@ -2,6 +2,17 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-16-sua-game-dung",
+      "date": "2026-11-16",
+      "title": "Việt hóa game: sửa lỗi game đứng sau khi áp dụng bản dịch",
+      "items": [
+        "Game Unity dùng Addressables bị đứng ở màn hình tải sau khi áp dụng: app nay tắt bước kiểm tra CRC trước khi sửa mỗi file .bundle (cả catalog.json lẫn catalog.bin). File nào không tắt được thì giữ bản gốc để game vẫn chạy.",
+        "Không còn đổi nhầm tên khóa bên trong game (ví dụ \"Options\", \"Back\" mà game dùng để tra cứu): chữ một từ chỉ được thay ở ô chữ trên nút / menu và bảng chữ của game.",
+        "Khôi phục bản gốc trả lại cả file catalog.",
+        "Cách sửa: cập nhật app → mở dự án game → bấm Áp dụng vào game lại."
+      ]
+    },
+    {
       "id": "2026-11-16-chu-menu-che-do-dau",
       "date": "2026-11-16",
       "title": "Việt hóa game: tự tìm chữ nút / menu / cài đặt, tự chọn cách hiện dấu",

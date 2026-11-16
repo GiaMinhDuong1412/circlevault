@@ -178,7 +178,7 @@ def scan(root: Path) -> tuple[list[dict], dict]:
     info = {"errors": errors, "unity": {"locale": code, "bundles": [str(b.relative_to(root)) for b in bundles],
                                         "catalog": str(cat.relative_to(root)) if cat else None}}
     if cat and cat.suffix == ".bin":
-        info["errors"].append("Game dùng catalog.bin: app chưa tắt được kiểm tra CRC; nếu game báo lỗi tải chữ thì bấm Khôi phục bản gốc.")
+        info["errors"].append("Game dùng catalog.bin: app tìm mã CRC của từng bundle trong đó để tắt; bundle nào không tìm được thì giữ bản gốc.")
     return items, info
 
 
@@ -188,7 +188,7 @@ def apply(root: Path, items: list[dict], unity: dict, prog=None) -> dict:
     _unitypy()
     tr = {it["t"]: it["final"] for it in items if it.get("final") and it["final"] != it["t"]}
     code = unity.get("locale") or "en"
-    changed, files, names = 0, 0, []
+    changed, files, names, errors = 0, 0, [], []
     for k, rel in enumerate(unity.get("bundles") or []):
         prog(f"Đang ghi bảng chữ {Path(rel).name}", k, len(unity.get("bundles") or []))
         p = root / rel
@@ -212,20 +212,14 @@ def apply(root: Path, items: list[dict], unity: dict, prog=None) -> dict:
             data = next(iter(env.files.values())).save(packer="lz4") if n else b""
         if not n:
             continue
+        if not crc_off(root, p):                # không tắt được kiểm tra CRC: ghi vào là game đứng lúc tải → bỏ qua
+            errors.append(f"{p.name}: không tắt được kiểm tra CRC của game nên giữ bản gốc (để game không bị đứng).")
+            continue
         config.write_file(p, data)
         changed += n
         files += 1
         names.append(p.name)
-    crc = 0
-    if names and unity.get("catalog"):
-        cat = root / unity["catalog"]
-        if cat.suffix == ".json" and cat.exists():
-            _backup(root, cat)
-            text, crc = zero_crc(_src(root, cat).read_text(encoding="utf-8"), names)
-            tmp = cat.with_name(cat.name + ".cvtmp")
-            tmp.write_text(text, encoding="utf-8")
-            os.replace(tmp, cat)
-    return {"texts": changed, "files": files, "crc_off": crc}
+    return {"texts": changed, "files": files, "crc_off": len(names), "errors": errors}
 
 
 def zero_crc(catalog_text: str, bundle_names: list[str]) -> tuple[str, int]:
@@ -262,6 +256,115 @@ def zero_crc(catalog_text: str, bundle_names: list[str]) -> tuple[str, int]:
             done += 1
     j["m_ExtraDataString"] = base64.b64encode(bytes(extra)).decode("ascii")
     return json.dumps(j, ensure_ascii=False, separators=(",", ":")), done
+
+
+def catalog_crcs(catalog_text: str) -> dict[str, int]:
+    """Tên bundle (chữ thường) → m_Crc đang ghi trong catalog.json (đọc như zero_crc)."""
+    j = json.loads(catalog_text)
+    ids = j.get("m_InternalIds") or []
+    entry = base64.b64decode(j["m_EntryDataString"])
+    extra = base64.b64decode(j["m_ExtraDataString"])
+    out: dict[str, int] = {}
+    for e in range(struct.unpack_from("<i", entry, 0)[0]):
+        iid, _prov, _dep, _dh, data_index, _pk, _rt = struct.unpack_from("<7i", entry, 4 + e * 28)
+        if data_index < 0 or not (0 <= iid < len(ids)) or extra[data_index] != 7:
+            continue
+        q = data_index + 1
+        q += 1 + extra[q]
+        q += 1 + extra[q]
+        ln = struct.unpack_from("<i", extra, q)[0]
+        m = re.search(r'"m_Crc"\s*:\s*(\d+)', extra[q + 4:q + 4 + ln].decode("utf-16-le", "replace"))
+        if m:
+            out[re.split(r"[\\/]", ids[iid])[-1].lower()] = int(m.group(1))
+    return out
+
+
+def bundle_crc(path: Path) -> int | None:
+    """CRC của bundle như Unity tính (CRC32 của phần dữ liệu đã giải nén) – dùng để tìm đúng chỗ trong catalog.bin.
+    Tự đọc khung UnityFS (UnityPy không giữ dữ liệu đã giải nén); bundle mã hóa / lạ → None."""
+    import zlib
+    from UnityPy.helpers.CompressionHelper import DECOMPRESSION_MAP
+    d = Path(path).read_bytes()
+    try:
+        if not d.startswith(b"UnityFS\0"):
+            return None
+        q = 8
+        ver = struct.unpack_from(">I", d, q)[0]
+        q += 4
+        for _ in range(2):                                # phiên bản player, engine
+            q = d.index(b"\0", q) + 1
+        _size, csz, usz, flags = struct.unpack_from(">qIII", d, q)
+        q += 20
+        if ver >= 7:
+            q = (q + 15) & ~15
+        cmp = flags & 0x3F
+
+        def dec(b: bytes, n: int, c: int) -> bytes:
+            return b if c == 0 else bytes(DECOMPRESSION_MAP[c](b, n))
+        if flags & 0x80:                                  # blocksInfo ở cuối file
+            info = dec(d[len(d) - csz:], usz, cmp)
+            start = q
+        else:
+            info = dec(d[q:q + csz], usz, cmp)
+            start = q + csz
+        n = struct.unpack_from(">i", info, 16)[0]
+        blocks = [struct.unpack_from(">IIH", info, 20 + k * 10) for k in range(n)]
+        if any(b[2] & 0x100 for b in blocks):            # khối mã hóa
+            return None
+        for st in dict.fromkeys((start, (start + 15) & ~15)):   # có bản Unity đệm 16 byte trước dữ liệu
+            try:
+                crc, pos = 0, st
+                for u, c, f in blocks:
+                    chunk = dec(d[pos:pos + c], u, f & 0x3F)
+                    if len(chunk) != u:
+                        raise ValueError("sai kích thước")
+                    crc = zlib.crc32(chunk, crc)
+                    pos += c
+                return crc & 0xFFFFFFFF
+            except Exception:
+                continue
+    except Exception:
+        return None
+    return None
+
+
+def crc_off(root: Path, bundle: Path) -> bool:
+    """Tắt kiểm tra CRC của Addressables cho một bundle sắp bị sửa. False = không tắt được → KHÔNG được ghi bundle đó
+    (Addressables từ chối bundle sai CRC, game đứng ở màn hình tải)."""
+    root, bundle = Path(root), Path(bundle)
+    cat = catalog_of(root)
+    if not cat or not cat.exists():
+        return True                                   # không có catalog Addressables: game tự nạp bundle, không kiểm CRC
+    if cat.parent not in bundle.parents:
+        return True                                   # bundle không thuộc thư mục aa
+    _backup(root, cat)
+    name = bundle.name.lower()
+    if cat.suffix == ".json":
+        text = cat.read_text(encoding="utf-8")
+        crcs = catalog_crcs(text)
+        if crcs.get(name, 0) == 0:
+            return True                               # đã là 0 hoặc catalog không nhắc tới bundle này
+        text, done = zero_crc(text, [bundle.name])
+        if not done:
+            return False
+        config.write_file(cat, text)
+        return True
+    crc = bundle_crc(_src(root, bundle))              # catalog.bin: tìm 4 byte CRC gốc của bundle rồi đặt 0
+    if not crc:
+        return False
+    key = struct.pack("<I", crc)
+    cur = bytearray(cat.read_bytes())
+    hits = [m.start() for m in re.finditer(re.escape(key), bytes(cur))]
+    if not hits:                                      # lần áp dụng trước đã đặt 0?
+        orig = _src(root, cat).read_bytes()
+        at = [m.start() for m in re.finditer(re.escape(key), orig)]
+        return bool(at) and len(orig) == len(cur) and all(cur[i:i + 4] == b"\0\0\0\0" for i in at)
+    if len(hits) > 2:
+        return False
+    for i in hits:
+        cur[i:i + 4] = b"\0\0\0\0"
+    config.write_file(cat, bytes(cur))
+    return True
 
 
 def restore(root: Path) -> int:
