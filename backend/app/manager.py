@@ -66,6 +66,9 @@ class Manager:
             self.running.pop(tid, None)
             self.stop.pop(tid, None)
             self.live.pop(tid, None)
+        if result.get("status") == "error":
+            from . import applog
+            applog.error("Tải về", result.get("error") or "lỗi không rõ", kind="job", task=tid, url=(task.get("url") or "")[:200])
         keep = {k: v for k, v in result.items() if k not in ("speed", "eta")}
         if result.get("status") == "paused":
             keep["progress"] = live.get("progress", 0)

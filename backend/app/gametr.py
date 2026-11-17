@@ -22,6 +22,7 @@ import pickle
 import re
 import shutil
 import threading
+import traceback
 import time
 import uuid
 import zlib
@@ -31,7 +32,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from . import config, fontcheck, langscan, translate, unitygame, unityload, unreal, xunity
+from . import applog, config, fontcheck, langscan, translate, unitygame, unityload, unreal, xunity
 
 router = APIRouter(prefix="/api/translate/games", dependencies=[Depends(translate._local_only)])
 GAMES = config.DATA / "translate" / "games"
@@ -1242,7 +1243,8 @@ def review(pid: str):
         _save(p)
     if has_key:
         REVIEWING.add(pid)
-        threading.Thread(target=_review_run, args=(pid, todo, s), daemon=True, name="gametr-review").start()
+        threading.Thread(target=applog.wrap("Việt hóa game: lọc câu (Claude Haiku)", _review_run, pid, todo, s, game=p.get("name")),
+                         daemon=True, name="gametr-review").start()
     return _summary(p)
 
 
@@ -1297,8 +1299,10 @@ def _review_run(pid: str, todo: list[int], s: dict):
         state = {"state": "done", "found": found}
     except translate.TranslateError as e:
         state = {"state": "error", "error": str(e)}
+        applog.error("Việt hóa game: lọc câu (Claude Haiku)", str(e), kind="job")
     except Exception as e:      # báo lên giao diện, không làm chết luồng
         state = {"state": "error", "error": f"{type(e).__name__}: {e}"}
+        applog.error("Việt hóa game: lọc câu (Claude Haiku)", state["error"], traceback.format_exc(), kind="job")
     REVIEWING.discard(pid)
     with _lock:
         try:
@@ -1774,7 +1778,8 @@ def apply(pid: str):
         return {"job": job}
     job = {"state": "running", "text": "Đang chuẩn bị…", "done": 0, "total": 0, "started": time.time(), "name": p["name"]}
     _apply_jobs[pid] = job
-    threading.Thread(target=_apply_run, args=(pid, job), daemon=True, name="gametr-apply").start()
+    threading.Thread(target=applog.wrap("Việt hóa game: áp dụng vào game", _apply_run, pid, job, job=job, game=p["name"]),
+                     daemon=True, name="gametr-apply").start()
     return {"job": job}
 
 
@@ -1982,7 +1987,8 @@ def find_text(pid: str, body: FindIn):
              for i, it in enumerate(p["items"]) if ql in it["t"].lower()][:20]
     job = {"state": "running", "q": q, "text": "Đang tìm…", "done": 0, "total": 0, "known": known, "hits": [], "started": time.time()}
     _find_jobs[pid] = job
-    threading.Thread(target=_find_run, args=(p, job), daemon=True, name="gametr-find").start()
+    threading.Thread(target=applog.wrap("Việt hóa game: tìm chữ chưa dịch", _find_run, p, job, job=job, game=p["name"]),
+                     daemon=True, name="gametr-find").start()
     return job
 
 
@@ -2129,7 +2135,8 @@ def ui_scan(pid: str, force: bool = False):
         return {"state": "done", "skip": True, "added": 0}
     job = {"state": "running", "text": "Đang tìm chữ nút / menu…", "done": 0, "total": 0, "added": 0, "started": time.time(), "name": p["name"]}
     _ui_jobs[pid] = job
-    threading.Thread(target=_ui_run, args=(pid, job), daemon=True, name="gametr-uiscan").start()
+    threading.Thread(target=applog.wrap("Việt hóa game: tìm chữ nút / menu", _ui_run, pid, job, job=job, game=p["name"]),
+                     daemon=True, name="gametr-uiscan").start()
     return job
 
 
@@ -2254,7 +2261,7 @@ def fonts_scan(pid: str):
             job.update(state="done", text="Xong")
         except Exception as e:      # báo lên giao diện
             job.update(state="error", text=str(e) if isinstance(e, (OSError, fontcheck.FontError)) else f"{type(e).__name__}: {e}")
-    threading.Thread(target=run, daemon=True, name="fontscan").start()
+    threading.Thread(target=applog.wrap("Việt hóa game: kiểm tra font", run, job=job, game=p["name"]), daemon=True, name="fontscan").start()
     return _font_state(p)
 
 
@@ -2432,9 +2439,13 @@ class Worker:
             res = None
             for attempt in range(12):
                 try:
+                    t0 = time.time()
                     res = translate.translate_texts([x[0] for x in prot], s2, kind="gamefile", context=ctx,
                                                     who=[it.get("who") or "" for it in src],
                                                     notes=[(it.get("ctx") or "")[:60] for it in src])
+                    if time.time() - t0 >= 60:
+                        applog.slow(f"Việt hóa game: dịch 1 lô {len(src)} câu ({s2.get('engine', '?')})", time.time() - t0, kind="job",
+                                    chars=sum(len(it["t"]) for it in src))
                     break
                 except translate.TranslateError as e:
                     if "tạm chặn" not in str(e) or attempt == 11:
@@ -2480,6 +2491,8 @@ def _context(p: dict, s: dict) -> tuple[str, dict]:
 
 
 def _status(pid, status, error=None, note=None):
+    if status == "error" and error:
+        applog.error("Việt hóa game: dịch", error, kind="job", project=pid)
     with _lock:
         try:
             p = _load(pid)

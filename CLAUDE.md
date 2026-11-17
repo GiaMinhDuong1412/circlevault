@@ -231,6 +231,14 @@ thanh cyan, tab vàng, nút xanh lá) – giữ nguyên khi thêm màn hình m�
     con, nhớ file đã tải (`uploaded`) để không trùng. Nút "☁ Lưu lên Drive" ở Nghe Nhạc. Hướng dẫn tạo client: artifact "Kết nối Google Drive".
   - Video tải về luôn ra .mp4 (`FFmpegVideoRemuxer`, cấu hình `video_format`: mp4 | original).
   - `ytdlp_update.py`: tải wheel yt-dlp (+ yt-dlp-ejs đúng phiên bản) từ PyPI vào `DATA/pylib`; `app/__init__.py` ưu tiên thư mục này.
+- **Nhật ký** (Cài đặt → Nhật ký, `backend/app/applog.py` + `frontend/js/logs.js`, người dùng yêu cầu): `DATA/logs/{loi,cham}.jsonl` (2 MB thì
+  xoay vòng `.1.jsonl`). Middleware ASGI `applog.Timing` đo mọi `/api/…` (bỏ luồng/hỏi tiến độ – `QUIET`): ≥ `SLOW_API` 3 s → chạy lâu
+  (tên gộp `_norm`: id → `{id}`), 5xx/ngoại lệ → lỗi kèm traceback, 400/422/424 → lỗi `level: warn` (thông báo người dùng thấy). Việc chạy
+  nền: `threading.Thread(target=applog.wrap(tên, fn, *args, job=job))` (đo + lỗi khi job kết thúc `state/status == "error"`), worker dịch
+  ghi lỗi trong `_status`/`_set_status`, lô dịch ≥ 60 s ghi chạy lâu, tải về lỗi ở `manager`; logging ERROR + `threading.excepthook`
+  (`applog.install`); lỗi JS của trang `POST /api/logs/client` (logs.js bắt window error/unhandledrejection). API (local_only):
+  `GET /api/logs` (errors, slow, `slow_sum` gộp theo chức năng xếp theo tổng thời gian, đuôi `nhat-ky.txt` của Electron), `DELETE`,
+  `GET /export` (file chữ gọn để gửi Claude). Không ghi query string. Chức năng mới chạy nền: bọc bằng `applog.wrap`.
 - **Thanh Tiến trình** (`backend/app/progress.py` `GET /api/progress`, `frontend/js/progress.js`): gom việc đang chạy (tải về + tải xong/lỗi
   15 phút, Worker Việt hóa game/truyện tranh/truyện chữ – chỉ đọc dự án đang chạy/đang chờ, lọc câu, kiểm tra font, cắt video). Màn rộng
   (khoảng trống phải ≥250px, không mở Facebook) = cột cố định bên phải `.cvp.dock`; hẹp/Facebook/bấm "–" (`cv-prog-min`) = nút nổi góc dưới TRÁI

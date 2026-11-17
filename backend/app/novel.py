@@ -592,6 +592,9 @@ class Worker:
 
 
 def _status(nid, status, error=None):
+    if status == "error" and error:
+        from . import applog
+        applog.error("Truyện chữ: dịch", error, kind="job")
     with _lock:
         try:
             nv = _load(nid)

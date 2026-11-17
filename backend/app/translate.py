@@ -786,6 +786,9 @@ class Worker:
 
 
 def _set_status(bid: str, status: str, error: str | None = None):
+    if status == "error" and error:
+        from . import applog
+        applog.error("Truyện tranh: dịch", error, kind="job")
     with _lock:
         try:
             b = _load(bid)

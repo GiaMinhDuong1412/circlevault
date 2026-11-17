@@ -1303,3 +1303,26 @@ body.yt-bar #toasts{bottom:calc(110px + env(safe-area-inset-bottom,0px))}
 .vf-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;border:2px solid var(--ink);border-radius:calc(8px*var(--rk,1));padding:6px 10px;background:var(--surface)}
 .vf-row>span:first-child{font-weight:700;overflow-wrap:anywhere}
 .vf-row .hint{flex:1 1 200px;overflow-wrap:anywhere}
+
+/* ---------- Cài đặt → Nhật ký (js/logs.js) */
+.logs .lg-tabs{display:flex;gap:8px;flex-wrap:wrap}
+.logs .lg-new{background:var(--red);color:#fff;border-radius:calc(3px*var(--rk,1));padding:2px 5px;font-size:11px}
+.logs .lg-warn{display:flex;gap:6px;align-items:center}
+.logs .lg-list{display:flex;flex-direction:column;gap:6px;max-height:560px;overflow:auto;padding-right:4px}
+.logs .lg-row{border:2px solid var(--ink);border-left-width:6px;border-left-color:var(--red);border-radius:calc(4px*var(--rk,1));background:var(--surface);min-width:0}
+.logs .lg-row.warn{border-left-color:var(--yellow)}
+.logs .lg-head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;width:100%;padding:8px 10px;background:none;border:0;color:var(--text);font:inherit;text-align:left;cursor:pointer;min-width:0}
+.logs .lg-head.static{cursor:default}
+.logs .lg-time{font-size:12px;opacity:.75;white-space:nowrap}
+.logs .lg-kind{font-size:11px}
+.logs .lg-name{font-size:13.5px}
+.logs .lg-msg{flex:1 1 260px;min-width:0;overflow-wrap:anywhere;font-size:13px;opacity:.9}
+.logs .lg-body{padding:0 10px 10px;display:flex;flex-direction:column;gap:6px}
+.logs .lg-pre{font:12px/1.45 var(--f-mono);background:var(--bg);border:2px solid var(--ink);border-radius:calc(4px*var(--rk,1));padding:10px;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.logs .lg-table{display:flex;flex-direction:column;border:2px solid var(--ink);border-radius:calc(4px*var(--rk,1));overflow:hidden}
+.logs .lg-tr{display:grid;grid-template-columns:minmax(0,3fr) 70px 100px 100px 140px;gap:8px;padding:8px 10px;border-top:1px solid var(--surface-2);align-items:center}
+.logs .lg-tr > span:first-child{position:relative;display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
+.logs .lg-th{border-top:0;background:var(--cyan);color:var(--on-accent);font-weight:800;font-size:12.5px}
+.logs .lg-bar{display:block;height:5px;background:var(--yellow);border:1px solid var(--ink);border-radius:calc(2px*var(--rk,1))}
+.logs .lg-recent summary{cursor:pointer;font-weight:700}
+@media (max-width:720px){.logs .lg-tr{grid-template-columns:minmax(0,1fr) 60px 80px}.logs .lg-tr > span:nth-child(4),.logs .lg-tr > span:nth-child(5){display:none}}

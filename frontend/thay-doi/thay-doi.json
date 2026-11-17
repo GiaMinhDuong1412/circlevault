@@ -2,6 +2,16 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-17-nhat-ky",
+      "date": "2026-11-17",
+      "title": "Cài đặt → Nhật ký: ghi mọi lỗi và việc chạy lâu",
+      "items": [
+        "Mục mới Nhật ký ở cuối tab Cài đặt: tab Lỗi ghi lỗi của MỌI chức năng (tải về, dịch, áp dụng vào game, font, cắt video, Google Drive, lỗi của trang…) kèm chi tiết kỹ thuật.",
+        "Tab Chạy lâu: gộp các việc chậm theo chức năng (số lần, trung bình, lâu nhất) – chức năng đứng đầu là chỗ nên cải tiến trước.",
+        "Nút Xuất file / Chép: gửi nhật ký cho Claude để sửa lỗi hoặc tăng tốc. Nhật ký chỉ nằm trên máy này."
+      ]
+    },
+    {
       "id": "2026-11-16-chu-nhiem-vu",
       "date": "2026-11-16",
       "title": "Việt hóa game: tìm thêm chữ nhiệm vụ, vật phẩm, lá bài…",

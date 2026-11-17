@@ -103,7 +103,9 @@ def _start(args, total, out, on_done, label) -> dict:
     _jobs[jid] = job
     for k in [k for k, v in _jobs.items() if v.get("finished_at") and v["finished_at"] < time.time() - 3600]:
         _jobs.pop(k, None)
-    threading.Thread(target=_run, args=(job, args, total, out, on_done), daemon=True).start()
+    from . import applog
+    threading.Thread(target=applog.wrap("Cắt / chuyển video (ffmpeg)", _run, job, args, total, out, on_done, job=job, limit=120),
+                     daemon=True).start()
     return {k: v for k, v in job.items() if not k.startswith("_")}
 
 

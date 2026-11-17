@@ -461,6 +461,7 @@ async function loadStorage() {
   try { S.config = await api('/api/config'); } catch (e) { toast(e.message, 'err'); return; }
   await Promise.all([loadStatus(), loadDrives()]);
   renderConfig(); renderTools();
+  if (CV.logs) CV.logs.load();
 }
 async function loadDrives() {
   try { S.drives = await api('/api/drives'); } catch (e) { S.drives = []; }

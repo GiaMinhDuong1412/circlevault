@@ -426,7 +426,8 @@ def upload(body: UploadIn):
            "total": total, "done": 0, "uploaded": 0, "skipped": 0, "errors": [], "current": None, "status": "queued",
            "bytes_total": sum((t.get("size") or 0) for g in groups for t in g[1]), "bytes_done": 0, "error": None}
     _jobs[jid] = job
-    threading.Thread(target=_run, args=(job, email, groups), daemon=True).start()
+    from . import applog
+    threading.Thread(target=applog.wrap("Google Drive: tải lên", _run, job, email, groups, job=job, limit=600), daemon=True).start()
     return {k: v for k, v in job.items()}
 
 

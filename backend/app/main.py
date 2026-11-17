@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 import json
 
-from . import config, db, detect, devices, discover, downloader, edit, gametr, gdrive, learn, music, novel, party, phone, progress, storage, translate, unitygame, voice, websites, ytdlp_update, ytmusic, ytvideo
+from . import applog, config, db, detect, devices, discover, downloader, edit, gametr, gdrive, learn, music, novel, party, phone, progress, storage, translate, unitygame, voice, websites, ytdlp_update, ytmusic, ytvideo
 from .manager import manager
 
 WEB = config.WEB
@@ -39,6 +39,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CircleVault", lifespan=lifespan)
 app.add_middleware(devices.Guard)   # qua Wi-Fi: chỉ thiết bị đã ghép bằng mã QR
+app.add_middleware(applog.Timing)   # nhật ký: lỗi + yêu cầu chạy lâu (tab Cài đặt → Nhật ký)
+applog.install()
+app.include_router(applog.router)
 app.include_router(ytmusic.router)
 app.include_router(ytmusic.acct)
 app.include_router(discover.router)

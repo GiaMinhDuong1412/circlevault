@@ -618,7 +618,9 @@ def new_job(path: str, prefer: str, specials, aes: str | None = None) -> str:
         for k in [k for k, j in _jobs.items() if time.time() - j["started"] > 6 * 3600]:
             _jobs.pop(k, None)
         _jobs[jid] = job
-    threading.Thread(target=_run_job, args=(job, prefer, specials), daemon=True, name="langscan").start()
+    from . import applog
+    threading.Thread(target=applog.wrap("Việt hóa game: quét thư mục game", _run_job, job, prefer, specials, job=job),
+                     daemon=True, name="langscan").start()
     return jid
 
 
