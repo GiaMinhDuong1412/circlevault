@@ -17,6 +17,7 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
+import yt_dlp
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -409,12 +410,39 @@ def _vcodec_rank(f: dict) -> int:
     return 3 if c.startswith("avc1") else 2 if c.startswith(("vp09", "vp9")) else 1 if c.startswith("av01") else 0
 
 
+# Lần lượt: như cũ (cookie tài khoản) → client khác → không cookie. YouTube hay chỉ trả ảnh cho một kiểu client
+# ("Requested format is not available" / "Only images are available"): thử kiểu khác thay vì bỏ cuộc.
+_PLAY_TRIES = ({}, {"extractor_args": {"youtube": {"player_client": ["tv", "mweb", "web_safari"]}}}, {"_anon": True})
+
+
+def _no_format(msg: str) -> bool:
+    m = (msg or "").lower()
+    return any(k in m for k in ("requested format", "only images", "no video formats", "format is not available"))
+
+
+def _play_info(vid: str) -> dict:
+    url = f"https://www.youtube.com/watch?v={vid}"
+    err = None
+    for extra in _PLAY_TRIES:
+        try:
+            info = _ydl_info(url, format="bv*+ba/b/bv*/ba*", **extra)
+        except HTTPException as e:
+            if err is None and not _no_format(str(e.detail)):
+                raise           # lỗi khác (mạng, riêng tư…) ở lần đầu: báo luôn
+            err = err or e      # lần sau lỗi kiểu khác (vd. không cookie bị đòi đăng nhập): giữ lỗi đầu
+            continue
+        if any(f.get("url") and f.get("protocol") in ("https", "http") and (f.get("vcodec") not in (None, "none")
+               or f.get("acodec") not in (None, "none")) for f in info.get("formats") or []):
+            return info
+    raise HTTPException(502, "NOFMT: " + str(err.detail if err else "YouTube không trả luồng phát."))
+
+
 def _resolve_play(vid: str, force: bool = False) -> dict:
     with _play_lock:
         hit = _play.get(vid)
         if hit and not force and hit["exp"] > time.time():
             return hit
-    info = _ydl_info(f"https://www.youtube.com/watch?v={vid}")
+    info = _play_info(vid)
     fmts = [f for f in info.get("formats") or [] if f.get("url") and f.get("protocol") in ("https", "http")
             and not f.get("has_drm")]
     none = (None, "none")
@@ -459,7 +487,13 @@ def _resolve_play(vid: str, force: bool = False) -> dict:
 def play(v: str):
     if not VID.match(v or ""):
         raise HTTPException(400, "Mã video không hợp lệ.")
-    e = _resolve_play(v)
+    try:
+        e = _resolve_play(v)
+    except HTTPException as ex:
+        if not str(ex.detail).startswith("NOFMT"):
+            raise
+        return {"mode": "embed", "fix": "ytdlp", "ver": yt_dlp.version.__version__,
+                "why": "YouTube chưa trả luồng phát cho video này (thường do yt-dlp đã cũ so với YouTube)."}
     meta = {k: e.get(k) for k in ("title", "channel", "channel_id", "views", "likes", "vertical")}
     if e["live"]:
         return {"mode": "embed", "why": "Video đang phát trực tiếp: xem bằng trình phát YouTube.", **meta}
