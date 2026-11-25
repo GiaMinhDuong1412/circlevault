@@ -51,8 +51,11 @@ _lock = threading.Lock()
 
 
 # ------------------------------------------------------------------ yt-dlp
-def _ydl_info(url: str, _process: bool = True, _warn: list | None = None, **extra) -> dict:
+def _ydl_info(url: str, _process: bool = True, _warn: list | None = None, _anon: bool = False, **extra) -> dict:
+    """`_anon`: không gửi cookie tài khoản (YouTube đôi khi chỉ trả ảnh cho phiên đăng nhập)."""
     cfg = config.load()
+    if _anon:
+        cfg = {**cfg, "use_youtube_account": False, "cookies_from_browser": None}
     log = downloader._Logger()
     if _warn is not None:
         log.warnings = _warn          # người gọi đọc cảnh báo của yt-dlp (vd. cookie hết hạn)

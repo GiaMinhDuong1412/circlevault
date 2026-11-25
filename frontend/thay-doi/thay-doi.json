@@ -2,6 +2,15 @@
   "_huong_dan": "Mỗi lần phát hành: thêm 1 mục MỚI LÊN ĐẦU danh sách (id không trùng). App máy tính và điện thoại hiện cuộn giấy 'Có gì mới' với các mục người dùng chưa xem.",
   "entries": [
     {
+      "id": "2026-11-25-yt-phat",
+      "date": "2026-11-25",
+      "title": "Mạng xã hội: trình phát YouTube tự thử cách khác khi lỗi định dạng",
+      "items": [
+        "Video báo \"Requested format is not available\" giờ được thử lại bằng kiểu kết nối khác của YouTube, rồi thử không dùng cookie tài khoản, trước khi chuyển sang trình phát nhúng.",
+        "Vẫn không được thì dưới video có nút Cập nhật yt-dlp (bấm xong app tự khởi động lại phần tải)."
+      ]
+    },
+    {
       "id": "2026-11-17-nhat-ky",
       "date": "2026-11-17",
       "title": "Cài đặt → Nhật ký: ghi mọi lỗi và việc chạy lâu",

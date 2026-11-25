@@ -372,7 +372,17 @@ async function setupPlayer(v, origin, my) {
   if (p.mode === 'embed') {
     host.innerHTML = embedHtml(v, origin);
     note.hidden = false;
-    note.innerHTML = `${esc(p.why || '')} Trình phát YouTube báo lỗi thì bấm <b>Mở bằng trình duyệt YouTube</b>.`;
+    note.innerHTML = `${esc(p.why || '')} Trình phát YouTube báo lỗi thì bấm <b>Mở bằng trình duyệt YouTube</b>.`
+      + (p.fix === 'ytdlp' ? ` <button type="button" class="btn yellow sm" id="ywUpdYt">Cập nhật yt-dlp${p.ver ? ' (đang ' + esc(p.ver) + ')' : ''}</button>` : '');
+    $('#ywUpdYt')?.addEventListener('click', async e => {
+      const b = e.currentTarget; b.disabled = true; b.textContent = 'Đang cập nhật yt-dlp…';
+      try {
+        const r = await api('/api/tools/update-ytdlp', {method: 'POST'});
+        toast(r.message);
+        if (r.need_restart && window.cvDesktop?.restartServer) { b.textContent = 'Đang khởi động lại…'; await window.cvDesktop.restartServer(); return; }
+        b.textContent = r.updated ? 'Đã cập nhật – khởi động lại app' : 'yt-dlp đã mới nhất';
+      } catch (err) { toast(err.message, 'err'); b.disabled = false; b.textContent = 'Cập nhật yt-dlp'; }
+    });
     return {p, vid: null};
   }
   const split = p.mode === 'split';
